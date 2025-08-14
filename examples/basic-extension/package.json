@@ -5,8 +5,7 @@
   "type": "module",
   "scripts": {
     "reclaim:setup": "node node_modules/@reclaimprotocol/browser-extension-sdk/build/scripts/install-assets.js --public-dir=public",
-    "prebuild": "npm run reclaim:setup",
-    "build": "npm run prebuild && vite build",
+    "build": "npm run reclaim:setup && vite build",
     "dev": "vite build --watch",
     "lint": "eslint .",
     "preview": "vite preview"

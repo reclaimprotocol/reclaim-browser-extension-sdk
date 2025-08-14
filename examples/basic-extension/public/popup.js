@@ -19,7 +19,7 @@ document.getElementById("startBtn").addEventListener("click", async () => {
     if (!appId || !appSecret || !providerId) return console.log("Fill appId, appSecret, providerId");
 
     request = await sdk.init(appId, appSecret, providerId, {
-      extensionID: "npofpaholknjhildbcdneamhbpbcjchd",
+      extensionID: "coonladadmdfhgildikmdodffiejakkh",
     });
     console.log("[popup] request", request);
     if (callbackUrl) request.setAppCallbackUrl(callbackUrl);

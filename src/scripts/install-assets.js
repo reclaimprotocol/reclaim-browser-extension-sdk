@@ -70,6 +70,14 @@ async function main() {
   const b343 = path.join(sdkBuild, "343.bundle.js");
   if (fs.existsSync(b343)) copyFile(b343, path.join(publicDir, "343.bundle.js"));
 
+  // 3) Copy SDK bundle into public/reclaim-browser-extension-sdk
+  copyFile(
+    path.join(sdkBuild, "ReclaimExtensionSDK.bundle.js"),
+    path.join(publicDir, "reclaim-browser-extension-sdk", "ReclaimExtensionSDK.bundle.js")
+  );
+  // optionally also MV2
+  // copyFile(path.join(sdkBuild, "ReclaimExtensionSDK-mv2.bundle.js"), path.join(publicDir, "reclaim-browser-extension-sdk", "ReclaimExtensionSDK-mv2.bundle.js"));
+
   console.log("[reclaim] setup complete");
 }
 

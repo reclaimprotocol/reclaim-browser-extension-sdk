@@ -251,7 +251,7 @@ class ReclaimContentScript {
         chrome.runtime.onMessage.addListener(this._boundChromeHandler);
       } catch {}
     } else {
-      this._boundWindowHandler = this._handleWindowMessage.bind(this);
+      this._boundWindowHandler = this.handleWindowMessage.bind(this);
       window.addEventListener("message", this._boundWindowHandler);
     }
   }

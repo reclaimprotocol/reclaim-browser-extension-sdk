@@ -19,7 +19,7 @@ const message = {
             action: "RECLAIM_START_VERIFICATION",
             messageId: "sjd101",
             data: templateData,
-            extensionID: "npofpaholknjhildbcdneamhbpbcjchd"
+            extensionID: "coonladadmdfhgildikmdodffiejakkh"
 }
 window.postMessage(message, '*');
 

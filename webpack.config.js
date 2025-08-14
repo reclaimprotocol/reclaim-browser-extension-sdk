@@ -217,12 +217,12 @@ const extensionConfig = {
 };
 
 /**
- * 2) BACKGROUND + SDK ESM CONFIG (ES modules)
+ * 2) BACKGROUND + SDK ESM CONFIG (ES modules) - MV3
  *    - background as ES module
  *    - SDK as ES module library
  */
 const backgroundEsmConfig = {
-  name: "background-esm",
+  name: "background-esm-mv3",
   mode: process.env.NODE_ENV || "development",
   devtool: isDevelopment ? "cheap-module-source-map" : "source-map",
   entry: {
@@ -246,4 +246,33 @@ const backgroundEsmConfig = {
   infrastructureLogging: { level: "info" },
 };
 
-module.exports = [extensionConfig, backgroundEsmConfig];
+/**
+ * 3) BACKGROUND + SDK COMMONJS CONFIG (CommonJS) - MV2/Firefox
+ *    - background as CommonJS
+ *    - SDK as CommonJS library
+ */
+const backgroundCommonJsConfig = {
+  name: "background-commonjs-mv2",
+  mode: process.env.NODE_ENV || "development",
+  devtool: isDevelopment ? "cheap-module-source-map" : "source-map",
+  entry: {
+    "background/background-mv2": { import: path.join(__dirname, "src", "background", "background.js") },
+    "ReclaimExtensionSDK-mv2": { import: path.join(__dirname, "src", "ReclaimExtensionSDK.js"), library: { type: "commonjs2" } },
+  },
+  output: {
+    filename: "[name].bundle.js",
+    path: path.resolve(__dirname, "build"),
+    clean: false,
+    publicPath: ASSET_PATH,
+    assetModuleFilename: "[name][ext]",
+    chunkFilename: "[name].bundle.js",
+  },
+  module: { rules: commonRules },
+  experiments: { asyncWebAssembly: true, syncWebAssembly: true },
+  resolve: commonResolve,
+  optimization: commonOptimization,
+  plugins: [...commonPlugins].filter(Boolean),
+  infrastructureLogging: { level: "info" },
+};
+
+module.exports = [extensionConfig, backgroundEsmConfig, backgroundCommonJsConfig];
