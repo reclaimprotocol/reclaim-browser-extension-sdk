@@ -1,0 +1,105 @@
+<div class="reclaim-popup-header">
+    <img class="reclaim-popup-logo" src="{{logoUrl}}" alt="Reclaim Protocol">
+    <h3 class="reclaim-popup-title">Reclaim Protocol</h3>
+</div>
+
+<div class="reclaim-popup-content">
+    <!-- Compact info grid -->
+    <div class="reclaim-info-grid">
+        <div class="reclaim-info-item">
+            <span class="reclaim-info-label">Source</span>
+            <span class="reclaim-info-value" data-tooltip="{{providerName}}">{{providerName}}</span>
+        </div>
+        <div class="reclaim-info-item">
+            <span class="reclaim-info-label">Description</span>
+            <span class="reclaim-info-value" data-tooltip="{{description}}">{{description}}</span>
+        </div>
+        <div class="reclaim-info-item">
+            <span class="reclaim-info-label">Data Required</span>
+            <span class="reclaim-info-value" data-tooltip="{{dataRequired}}">{{dataRequired}}</span>
+        </div>
+    </div>
+
+    <!-- Session ID with copy button -->
+    <div class="reclaim-session-section">
+        <div class="reclaim-session-content">
+            <span class="reclaim-info-label">Session ID</span>
+            <span class="reclaim-info-value" id="reclaim-session-id">{{sessionId}}</span>
+        </div>
+        <button class="reclaim-copy-icon" data-copy-target="reclaim-session-id">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M16 4H18C19.1046 4 20 4.89543 20 6V18C20 19.1046 19.1046 20 18 20H10C8.89543 20 8 19.1046 8 18V16M16 4L14 2H6C4.89543 2 4 2.89543 4 4V14C4 15.1046 4.89543 16 6 16H8M16 4V14C16 15.1046 15.1046 16 14 16H8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        </button>
+        <div class="reclaim-copy-feedback" id="reclaim-copy-feedback"></div>
+    </div>
+
+    <!-- Combined steps and status container -->
+    <div id="reclaim-verification-container" class="reclaim-verification-container">
+        <!-- Compact steps -->
+        <div id="reclaim-steps-container" class="reclaim-steps-container">
+            <div class="reclaim-steps-header">
+                <span class="reclaim-steps-icon">✨</span>
+                <span class="reclaim-steps-title">How it works</span>
+            </div>
+            <div class="reclaim-steps-list">
+                <div class="reclaim-step">
+                    <span class="reclaim-step-number">1</span>
+                    <span class="reclaim-step-text">Log in to your {{providerName}} account</span>
+                </div>
+                <div class="reclaim-step">
+                    <span class="reclaim-step-number">2</span>
+                    <span class="reclaim-step-text">Navigate to the Dashboard</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Status container -->
+        <div id="reclaim-status-container" class="reclaim-status-container">
+            <!-- Success Icon -->
+            <div id="reclaim-success-icon" class="reclaim-status-icon" style="display: none;">
+                <div class="reclaim-icon-circle">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path class="reclaim-success-checkmark" d="M5 13L9 17L19 7" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </div>
+            </div>
+
+            <!-- Error Icon -->
+            <div id="reclaim-error-icon" class="reclaim-status-icon" style="display: none;">
+                <div class="reclaim-icon-circle error">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M18 6L6 18M6 6L18 18" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </div>
+            </div>
+
+            <!-- Circular Loader -->
+            <div id="reclaim-circular-loader" class="reclaim-circular-loader" style="display: none;">
+                <svg viewBox="25 25 50 50">
+                    <defs>
+                        <linearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                            <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:1" />
+                            <stop offset="100%" style="stop-color:#06b6d4;stop-opacity:1" />
+                        </linearGradient>
+                    </defs>
+                    <circle cx="50" cy="50" r="20"></circle>
+                </svg>
+            </div>
+
+            <!-- Compact progress section -->
+            <div id="reclaim-status-progress" class="reclaim-status-progress" style="display: none;">
+                <div class="reclaim-progress-header">
+                    <span id="reclaim-status-text" class="reclaim-status-text">Preparing verification...</span>
+                    <span id="reclaim-progress-counter" class="reclaim-progress-counter"></span>
+                </div>
+                <div class="reclaim-progress-bar-container">
+                    <div id="reclaim-progress-bar" class="reclaim-progress-bar"></div>
+                </div>
+            </div>
+
+            <!-- Status Message -->
+            <div id="reclaim-status-message" class="reclaim-status-message"></div>
+        </div>
+    </div>
+</div> 

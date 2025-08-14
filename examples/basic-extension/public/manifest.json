@@ -1,0 +1,58 @@
+{
+  "manifest_version": 3,
+  "name": "Basic Vite React Extension",
+  "description": "A basic Vite React extension",
+  "version": "1.0.0",
+  "action": {
+    "default_popup": "extensionPopup.html"
+  },
+  "background": {
+    "service_worker": "extensionBackground.js",
+    "type": "module"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; worker-src 'self';"
+  },
+  "content_scripts": [
+    {
+      "js": ["reclaim-browser-extension-sdk/content/content.bundle.js", "extensionContent.js"],
+      "run_at": "document_start",
+      "matches": ["<all_urls>"],
+      "type": "module"
+    }
+  ],
+  "host_permissions": ["<all_urls>"],
+  "permissions": ["offscreen", "cookies"],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "reclaim-browser-extension-sdk/offscreen/offscreen.html",
+        "reclaim-browser-extension-sdk/offscreen/offscreen.bundle.js"
+      ],
+      "matches": ["<all_urls>"]
+    },
+    {
+      "resources": ["assets/img/logo.png", "assets/img/logo.png"],
+      "matches": ["<all_urls>"]
+    },
+    {
+      "resources": ["reclaim-browser-extension-sdk/interceptor/network-interceptor.bundle.js"],
+      "matches": ["<all_urls>"]
+    },
+    {
+      "resources": ["reclaim-browser-extension-sdk/interceptor/injection-scripts.bundle.js"],
+      "matches": ["<all_urls>"]
+    },
+    {
+      "resources": [
+        "reclaim-browser-extension-sdk/content/components/reclaim-provider-verification-popup.css",
+        "reclaim-browser-extension-sdk/content/components/reclaim-provider-verification-popup.html"
+      ],
+      "matches": ["<all_urls>"]
+    },
+    {
+      "resources": ["343.bundle.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
