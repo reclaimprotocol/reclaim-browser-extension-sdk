@@ -3,9 +3,7 @@
   "name": "Basic Vite React Extension",
   "description": "A basic Vite React extension",
   "version": "1.0.0",
-  "action": {
-    "default_popup": "extensionPopup.html"
-  },
+  "action": { "default_title": "Reclaim", "default_popup": "popup.html" },
   "background": {
     "service_worker": "extensionBackground.js",
     "type": "module"
