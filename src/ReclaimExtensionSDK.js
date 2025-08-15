@@ -60,6 +60,24 @@ class ReclaimExtensionProofRequest {
     };
     this._boundWindowListener = this._handleWindowMessage.bind(this);
     window.addEventListener("message", this._boundWindowListener);
+
+    this._mode = typeof chrome !== "undefined" && chrome.runtime && location?.protocol === "chrome-extension:" ? "extension" : "web";
+    if (this._mode === "extension") {
+      this._boundChromeHandler = (message) => {
+        const { action, data, error } = message || {};
+        const messageId = data?.sessionId;
+        if (this.sessionId && this.sessionId !== messageId) return;
+        if (action === "PROOF_SUBMITTED") {
+          const proofs = data?.formattedProofs || data?.proof || data;
+          this._emit("completed", proofs);
+        } else if (action === "PROOF_SUBMISSION_FAILED" || action === "PROOF_GENERATION_FAILED") {
+          this._emit("error", error || new Error("Verification failed"));
+        }
+      };
+      try {
+        chrome.runtime.onMessage.addListener(this._boundChromeHandler);
+      } catch {}
+    }
   }
 
   static async init(applicationId, appSecret, providerId, options = {}) {
@@ -214,7 +232,7 @@ class ReclaimExtensionProofRequest {
         offError && offError();
       };
 
-      if (this._mode === "extension") {
+      if (typeof chrome !== "undefined" && chrome.runtime && typeof chrome.runtime.sendMessage === "function") {
         try {
           chrome.runtime.sendMessage(
             { action: "START_VERIFICATION", source: "content-script", target: "background", data: templateData },
@@ -236,6 +254,11 @@ class ReclaimExtensionProofRequest {
 
   dispose() {
     window.removeEventListener("message", this._boundWindowListener);
+    if (this._boundChromeHandler && chrome?.runtime?.onMessage?.removeListener) {
+      try {
+        chrome.runtime.onMessage.removeListener(this._boundChromeHandler);
+      } catch {}
+    }
     this._listeners.started.clear();
     this._listeners.completed.clear();
     this._listeners.error.clear();
