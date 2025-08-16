@@ -62,6 +62,7 @@ class ReclaimExtensionProofRequest {
     window.addEventListener("message", this._boundWindowListener);
 
     this._mode = typeof chrome !== "undefined" && chrome.runtime && location?.protocol === "chrome-extension:" ? "extension" : "web";
+    // No global runtime listener here. Each ReclaimExtensionProofRequest instance already listens and emits.
     if (this._mode === "extension") {
       this._boundChromeHandler = (message) => {
         const { action, data, error } = message || {};
@@ -312,22 +313,22 @@ class ReclaimExtensionSDK {
     this._backgroundInitialized = false;
     this._ctx = null;
     this._mode = typeof chrome !== "undefined" && chrome.runtime && location?.protocol === "chrome-extension:" ? "extension" : "web";
-    if (this._mode === "extension") {
-      this._boundChromeHandler = (message) => {
-        const { action, data, error } = message || {};
-        const messageId = data?.sessionId;
-        if (!action || (this.sessionId && this.sessionId !== messageId)) return;
-        if (action === "PROOF_SUBMITTED") {
-          const proofs = data?.formattedProofs || data?.proof || data;
-          this._emit("completed", proofs);
-        } else if (action === "PROOF_SUBMISSION_FAILED" || action === "PROOF_GENERATION_FAILED") {
-          this._emit("error", error || new Error("Verification failed"));
-        }
-      };
-      try {
-        chrome.runtime.onMessage.addListener(this._boundChromeHandler);
-      } catch {}
-    }
+    // if (this._mode === "extension") {
+    //   this._boundChromeHandler = (message) => {
+    //     const { action, data, error } = message || {};
+    //     const messageId = data?.sessionId;
+    //     if (!action || (this.sessionId && this.sessionId !== messageId)) return;
+    //     if (action === "PROOF_SUBMITTED") {
+    //       const proofs = data?.formattedProofs || data?.proof || data;
+    //       this._emit("completed", proofs);
+    //     } else if (action === "PROOF_SUBMISSION_FAILED" || action === "PROOF_GENERATION_FAILED") {
+    //       this._emit("error", error || new Error("Verification failed"));
+    //     }
+    //   };
+    //   try {
+    //     chrome.runtime.onMessage.addListener(this._boundChromeHandler);
+    //   } catch {}
+    // }
   }
 
   // Must be called from the consumer's own background service worker.

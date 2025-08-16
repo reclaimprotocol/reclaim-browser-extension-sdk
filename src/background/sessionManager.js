@@ -326,6 +326,16 @@ export async function submitProofs(ctx) {
       } catch (error) {
         ctx.debugLogger.error(ctx.DebugLogType.BACKGROUND, "[BACKGROUND] Error navigating back or closing tab:", error);
       }
+    } else if (ctx.activeTabId) {
+      // Fallback: started from panel/popup, no original tab to return to
+      try {
+        setTimeout(async () => {
+          await chrome.tabs.remove(ctx.activeTabId);
+          ctx.activeTabId = null;
+        }, 3000);
+      } catch (e) {
+        /* ignore */
+      }
     }
     // Release concurrency guard on success
     ctx.activeSessionId = null;
