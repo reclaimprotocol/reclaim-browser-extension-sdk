@@ -26,7 +26,7 @@ config.plugins = (config.plugins || []).concat(
   new ZipPlugin({
     filename: `${packageInfo.name}-${packageInfo.version}.zip`,
     path: path.join(__dirname, "../", "zip"),
-  })
+  }),
 );
 
 webpack(config, function (err, stats) {

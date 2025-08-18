@@ -1,5 +1,10 @@
 // Import shared utility functions
-import { getValueFromJsonPath, getValueFromXPath, isJsonFormat, safeJsonParse } from "./params-extractor-utils.js";
+import {
+  getValueFromJsonPath,
+  getValueFromXPath,
+  isJsonFormat,
+  safeJsonParse,
+} from "./params-extractor-utils.js";
 import { debugLogger, DebugLogType } from "../logger";
 
 // Escape special regex characters in string
@@ -83,7 +88,8 @@ function matchesRequestCriteria(request, filterCriteria, parameters = {}) {
   // Check body match if enabled
   if (filterCriteria.bodySniff && filterCriteria.bodySniff.enabled) {
     const bodyTemplate = filterCriteria.bodySniff.template;
-    const requestBody = typeof request.body === "string" ? request.body : JSON.stringify(request.body);
+    const requestBody =
+      typeof request.body === "string" ? request.body : JSON.stringify(request.body);
 
     // For exact match
     if (bodyTemplate === requestBody) {
@@ -148,7 +154,11 @@ function matchesResponseFields(responseText, responseRedactions) {
         // If we get here but value is undefined, the path doesn't exist
         if (value === undefined || value === null) return false;
       } catch (error) {
-        debugLogger.error(DebugLogType.CLAIM, `[NETWORK-FILTER] Error checking jsonPath ${redaction.jsonPath}:`, error);
+        debugLogger.error(
+          DebugLogType.CLAIM,
+          `[NETWORK-FILTER] Error checking jsonPath ${redaction.jsonPath}:`,
+          error,
+        );
         return false;
       }
     }
@@ -158,7 +168,11 @@ function matchesResponseFields(responseText, responseRedactions) {
         const value = getValueFromXPath(responseText, redaction.xPath);
         if (!value) return false;
       } catch (error) {
-        debugLogger.error(DebugLogType.CLAIM, `[NETWORK-FILTER] Error checking xPath ${redaction.xPath}:`, error);
+        debugLogger.error(
+          DebugLogType.CLAIM,
+          `[NETWORK-FILTER] Error checking xPath ${redaction.xPath}:`,
+          error,
+        );
         return false;
       }
     }
@@ -168,7 +182,11 @@ function matchesResponseFields(responseText, responseRedactions) {
         const regex = new RegExp(redaction.regex);
         if (!regex.test(responseText)) return false;
       } catch (error) {
-        debugLogger.error(DebugLogType.CLAIM, `[NETWORK-FILTER] Error checking regex ${redaction.regex}:`, error);
+        debugLogger.error(
+          DebugLogType.CLAIM,
+          `[NETWORK-FILTER] Error checking regex ${redaction.regex}:`,
+          error,
+        );
         return false;
       }
     }
@@ -188,7 +206,9 @@ export const filterRequest = (request, filterCriteria, parameters = {}) => {
 
     // Then check if response matches (if we have response data)
     if (request.responseText && filterCriteria.responseMatches) {
-      if (!matchesResponseCriteria(request.responseText, filterCriteria.responseMatches, parameters)) {
+      if (
+        !matchesResponseCriteria(request.responseText, filterCriteria.responseMatches, parameters)
+      ) {
         return false;
       }
     }

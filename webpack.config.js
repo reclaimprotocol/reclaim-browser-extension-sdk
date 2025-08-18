@@ -25,10 +25,17 @@ const commonRules = [
       { loader: "style-loader" },
       { loader: "css-loader", options: { importLoaders: 1 } },
       { loader: "postcss-loader" },
-      { loader: "sass-loader", options: { sourceMap: true, sassOptions: { silenceDeprecations: ["legacy-js-api"] } } },
+      {
+        loader: "sass-loader",
+        options: { sourceMap: true, sassOptions: { silenceDeprecations: ["legacy-js-api"] } },
+      },
     ],
   },
-  { test: new RegExp(".(" + fileExtensions.join("|") + ")$"), type: "asset/resource", exclude: /node_modules/ },
+  {
+    test: new RegExp(".(" + fileExtensions.join("|") + ")$"),
+    type: "asset/resource",
+    exclude: /node_modules/,
+  },
   { test: /\.html$/, loader: "html-loader", exclude: /node_modules/ },
   {
     test: /\.(ts|tsx)$/,
@@ -41,7 +48,9 @@ const commonRules = [
       { loader: "source-map-loader" },
       {
         loader: require.resolve("babel-loader"),
-        options: { plugins: [isDevelopment && require.resolve("react-refresh/babel")].filter(Boolean) },
+        options: {
+          plugins: [isDevelopment && require.resolve("react-refresh/babel")].filter(Boolean),
+        },
       },
     ],
     exclude: /node_modules/,
@@ -96,7 +105,12 @@ const DROP_CONSOLE = process.env.DROP_CONSOLE === "false";
 
 const commonOptimization = {
   minimize: true,
-  minimizer: [new TerserPlugin({ extractComments: false, terserOptions: { compress: { drop_console: DROP_CONSOLE } } })],
+  minimizer: [
+    new TerserPlugin({
+      extractComments: false,
+      terserOptions: { compress: { drop_console: DROP_CONSOLE } },
+    }),
+  ],
   splitChunks: false,
 };
 
@@ -143,8 +157,18 @@ const extensionConfig = {
       library: { type: "umd", name: "ReclaimContent" },
     },
     // No library → classic script (IIFE-like)
-    "interceptor/network-interceptor": path.join(__dirname, "src", "interceptor", "network-interceptor.js"),
-    "interceptor/injection-scripts": path.join(__dirname, "src", "interceptor", "injection-scripts.js"),
+    "interceptor/network-interceptor": path.join(
+      __dirname,
+      "src",
+      "interceptor",
+      "network-interceptor.js",
+    ),
+    "interceptor/injection-scripts": path.join(
+      __dirname,
+      "src",
+      "interceptor",
+      "injection-scripts.js",
+    ),
     offscreen: path.join(__dirname, "src", "offscreen", "offscreen.js"),
   },
   output: {
@@ -203,7 +227,10 @@ const extensionConfig = {
       templateContent: ({ htmlWebpackPlugin, plugin }) => {
         const fs = require("fs");
         const ejs = require("ejs");
-        const raw = fs.readFileSync(path.join(__dirname, "src", "offscreen", "offscreen.html"), "utf8");
+        const raw = fs.readFileSync(
+          path.join(__dirname, "src", "offscreen", "offscreen.html"),
+          "utf8",
+        );
         return ejs.render(raw, {
           scriptPath: "./offscreen.bundle.js",
         });
@@ -212,7 +239,10 @@ const extensionConfig = {
   ].filter(Boolean),
   infrastructureLogging: { level: "info" },
   devServer: {
-    headers: { "Cross-Origin-Embedder-Policy": "require-corp", "Cross-Origin-Opener-Policy": "same-origin" },
+    headers: {
+      "Cross-Origin-Embedder-Policy": "require-corp",
+      "Cross-Origin-Opener-Policy": "same-origin",
+    },
   },
 };
 
@@ -227,7 +257,10 @@ const backgroundEsmConfig = {
   devtool: isDevelopment ? "cheap-module-source-map" : "source-map",
   entry: {
     "background/background": { import: path.join(__dirname, "src", "background", "background.js") },
-    ReclaimExtensionSDK: { import: path.join(__dirname, "src", "ReclaimExtensionSDK.js"), library: { type: "module" } },
+    ReclaimExtensionSDK: {
+      import: path.join(__dirname, "src", "ReclaimExtensionSDK.js"),
+      library: { type: "module" },
+    },
   },
   output: {
     filename: "[name].bundle.js",
@@ -239,7 +272,12 @@ const backgroundEsmConfig = {
     module: true,
   },
   module: { rules: commonRules },
-  experiments: { asyncWebAssembly: true, syncWebAssembly: true, topLevelAwait: true, outputModule: true },
+  experiments: {
+    asyncWebAssembly: true,
+    syncWebAssembly: true,
+    topLevelAwait: true,
+    outputModule: true,
+  },
   resolve: commonResolve,
   optimization: commonOptimization,
   plugins: [...commonPlugins].filter(Boolean),
@@ -256,8 +294,13 @@ const backgroundCommonJsConfig = {
   mode: process.env.NODE_ENV || "development",
   devtool: isDevelopment ? "cheap-module-source-map" : "source-map",
   entry: {
-    "background/background-mv2": { import: path.join(__dirname, "src", "background", "background.js") },
-    "ReclaimExtensionSDK-mv2": { import: path.join(__dirname, "src", "ReclaimExtensionSDK.js"), library: { type: "commonjs2" } },
+    "background/background-mv2": {
+      import: path.join(__dirname, "src", "background", "background.js"),
+    },
+    "ReclaimExtensionSDK-mv2": {
+      import: path.join(__dirname, "src", "ReclaimExtensionSDK.js"),
+      library: { type: "commonjs2" },
+    },
   },
   output: {
     filename: "[name].bundle.js",

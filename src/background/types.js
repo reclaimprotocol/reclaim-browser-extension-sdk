@@ -6,4 +6,4 @@
 //     sessionId: string;
 //     providerData: any;
 //     ...etc
-// } 
+// }

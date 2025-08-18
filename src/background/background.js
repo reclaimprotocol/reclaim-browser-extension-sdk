@@ -2,7 +2,11 @@
 import "../utils/polyfills";
 
 // Import necessary utilities and libraries
-import { fetchProviderData, updateSessionStatus, submitProofOnCallback } from "../utils/fetch-calls";
+import {
+  fetchProviderData,
+  updateSessionStatus,
+  submitProofOnCallback,
+} from "../utils/fetch-calls";
 import { RECLAIM_SESSION_STATUS, MESSAGE_ACTIONS, MESSAGE_SOURCES } from "../utils/constants";
 import { generateProof, formatProof } from "../utils/proof-generator";
 import { createClaimObject } from "../utils/claim-creator";
@@ -84,7 +88,11 @@ export default function initBackground() {
         appId: ctx.appId || "unknown",
       });
 
-      const cookies = await cookieUtils.getCookiesForUrl(request.url, ctx.debugLogger, ctx.DebugLogType);
+      const cookies = await cookieUtils.getCookiesForUrl(
+        request.url,
+        ctx.debugLogger,
+        ctx.DebugLogType,
+      );
       if (cookies) {
         request.cookieStr = cookies;
       }
@@ -142,7 +150,11 @@ export default function initBackground() {
   ctx.sessionTimerManager.setTimerDuration(30000);
   // Register message handler
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    console.log("background.js chrome.runtime.onMessage.addListener", { message, sender, sendResponse });
+    console.log("background.js chrome.runtime.onMessage.addListener", {
+      message,
+      sender,
+      sendResponse,
+    });
     messageRouter.handleMessage(ctx, message, sender, sendResponse);
     return true; // Required for async response
   });

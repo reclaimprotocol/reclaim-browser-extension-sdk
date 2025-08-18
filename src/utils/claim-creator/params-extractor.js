@@ -1,6 +1,11 @@
 // Utility functions for parameter extraction from various sources
 import { convertTemplateToRegex } from "./network-filter";
-import { getValueFromJsonPath, getValueFromXPath, isJsonFormat, safeJsonParse } from "./params-extractor-utils.js";
+import {
+  getValueFromJsonPath,
+  getValueFromXPath,
+  isJsonFormat,
+  safeJsonParse,
+} from "./params-extractor-utils.js";
 import { debugLogger, DebugLogType } from "../logger";
 
 /**
@@ -79,7 +84,12 @@ export const extractParamsFromBody = (bodyTemplate, actualBody, paramValues = {}
  * @param {Object} paramValues - Object to store extracted parameter values
  * @returns {Object} Updated paramValues object
  */
-export const extractParamsFromResponse = (responseText, responseMatches, responseRedactions, paramValues = {}) => {
+export const extractParamsFromResponse = (
+  responseText,
+  responseMatches,
+  responseRedactions,
+  paramValues = {},
+) => {
   if (!responseText) return paramValues;
 
   try {
@@ -92,7 +102,12 @@ export const extractParamsFromResponse = (responseText, responseMatches, respons
     }
 
     // Process responseMatches to extract parameters
-    if (responseMatches && responseMatches.length > 0 && responseRedactions && responseRedactions.length > 0) {
+    if (
+      responseMatches &&
+      responseMatches.length > 0 &&
+      responseRedactions &&
+      responseRedactions.length > 0
+    ) {
       // iterate over the responseMatches and responseRedactions both have elements with co related to the same index
       for (let i = 0; i < responseMatches.length; i++) {
         const match = responseMatches[i];
@@ -141,7 +156,11 @@ export const extractParamsFromResponse = (responseText, responseMatches, respons
       }
     }
   } catch (error) {
-    debugLogger.error(DebugLogType.CLAIM, "[PARAM-EXTRACTOR] Error extracting params from response:", error);
+    debugLogger.error(
+      DebugLogType.CLAIM,
+      "[PARAM-EXTRACTOR] Error extracting params from response:",
+      error,
+    );
   }
 
   return paramValues;

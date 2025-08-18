@@ -34,7 +34,7 @@ function getLatestCommitHash() {
             reject(new Error(`Failed to parse GitHub API response: ${error.message}`));
           }
         });
-      }
+      },
     );
     req.on("error", reject);
     req.setTimeout(10000, () => {
@@ -70,7 +70,14 @@ function getFileSize(filePath, commitHash, url = null) {
  * call progressCallback(delta) where delta is the number of bytes just received.
  * Follows redirects if necessary.
  */
-async function downloadFile(filePath, targetPath, progressCallback, commitHash, url = null, retries = 3) {
+async function downloadFile(
+  filePath,
+  targetPath,
+  progressCallback,
+  commitHash,
+  url = null,
+  retries = 3,
+) {
   if (!url) {
     url = `https://github.com/${REPO}/raw/${commitHash}/resources/${filePath}`;
   }
@@ -84,7 +91,15 @@ async function downloadFile(filePath, targetPath, progressCallback, commitHash, 
         const request = https.get(url, (response) => {
           if ([301, 302].includes(response.statusCode) && response.headers.location) {
             // Follow redirect
-            return downloadFile(filePath, targetPath, progressCallback, commitHash, response.headers.location).then(resolve).catch(reject);
+            return downloadFile(
+              filePath,
+              targetPath,
+              progressCallback,
+              commitHash,
+              response.headers.location,
+            )
+              .then(resolve)
+              .catch(reject);
           }
           response.on("data", (chunk) => {
             progressCallback(chunk.length);
@@ -106,7 +121,9 @@ async function downloadFile(filePath, targetPath, progressCallback, commitHash, 
       });
     } catch (error) {
       if (attempt === retries) {
-        throw new Error(`Failed to download ${filePath} after ${retries} attempts: ${error.message}`);
+        throw new Error(
+          `Failed to download ${filePath} after ${retries} attempts: ${error.message}`,
+        );
       }
       console.log(`\nRetry ${attempt}/${retries} for ${filePath}: ${error.message}`);
       // Exponential backoff: wait 2^attempt seconds before retrying
@@ -135,7 +152,14 @@ function formatBytes(n) {
  * - ETA = remaining bytes / speed
  * Also show the number of files finished.
  */
-function renderProgress(completedFiles, totalFiles, globalDownloaded, globalTotal, speed, currentFileName) {
+function renderProgress(
+  completedFiles,
+  totalFiles,
+  globalDownloaded,
+  globalTotal,
+  speed,
+  currentFileName,
+) {
   const progress = Math.min(globalTotal > 0 ? globalDownloaded / globalTotal : 0, 1);
   const barLength = 25;
   const filled = Math.round(progress * barLength);
@@ -175,7 +199,7 @@ async function main() {
         } catch {
           return false;
         }
-      })
+      }),
     ).then((results) => results.every((exists) => exists));
 
     if (allFilesExist) {
@@ -233,11 +257,11 @@ async function main() {
             globalDownloadedBytes,
             globalTotalBytes,
             speed,
-            path.basename(filePath)
+            path.basename(filePath),
           );
           process.stdout.write("\r\x1B[K" + progressStr);
         },
-        COMMIT_HASH
+        COMMIT_HASH,
       );
       completedFiles++;
 
@@ -250,7 +274,7 @@ async function main() {
         globalDownloadedBytes,
         globalTotalBytes,
         speed,
-        path.basename(filePath)
+        path.basename(filePath),
       );
       process.stdout.write("\r\x1B[K" + progressStr);
     }

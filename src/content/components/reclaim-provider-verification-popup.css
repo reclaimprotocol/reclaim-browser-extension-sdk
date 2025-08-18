@@ -8,9 +8,22 @@
   color: #ffffff;
   border-radius: 16px;
   padding: 0;
-  font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  font-family:
+    "SF Pro Display",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    Oxygen,
+    Ubuntu,
+    Cantarell,
+    "Open Sans",
+    "Helvetica Neue",
+    sans-serif;
   z-index: 9999;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.1);
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(255, 255, 255, 0.1);
   font-size: 13px;
   opacity: 1;
   transform: translateY(0);
@@ -22,7 +35,7 @@
 }
 
 .reclaim-popup::before {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   left: 0;
@@ -34,7 +47,9 @@
 .reclaim-popup.dragging {
   cursor: grabbing;
   user-select: none;
-  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.15);
+  box-shadow:
+    0 20px 48px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.15);
   transform: scale(1.01);
 }
 
@@ -185,7 +200,7 @@
 }
 
 .reclaim-info-tooltip::before {
-  content: '';
+  content: "";
   position: absolute;
   top: -6px;
   right: 12px;
@@ -223,7 +238,7 @@
 .reclaim-session-content .reclaim-info-value {
   text-align: left;
   font-size: 12px;
-  font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+  font-family: "SF Mono", "Monaco", "Menlo", monospace;
   word-break: break-all;
 }
 
@@ -442,7 +457,7 @@
 }
 
 .reclaim-progress-bar-container::before {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   left: 0;
@@ -466,7 +481,7 @@
 }
 
 .reclaim-progress-bar::after {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   left: 0;
@@ -561,27 +576,41 @@
 }
 
 @keyframes reclaim-shimmer {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
 }
 
 @keyframes reclaim-progress-shine {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
 }
 
 @keyframes reclaim-success-pulse {
-  0% { transform: scale(1); }
-  50% { transform: scale(1.05); }
-  100% { transform: scale(1); }
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 
 @keyframes reclaim-appear {
-  0% { 
+  0% {
     opacity: 0;
     transform: translateY(20px) scale(0.95);
   }
-  100% { 
+  100% {
     opacity: 1;
     transform: translateY(0) scale(1);
   }
@@ -612,16 +641,16 @@
     max-width: 100%;
     max-height: 90vh;
   }
-  
+
   .reclaim-popup-content {
     min-height: 240px;
     max-height: calc(90vh - 80px);
   }
-  
+
   .reclaim-info-value {
     max-width: 150px;
   }
-  
+
   .reclaim-info-tooltip {
     max-width: calc(100vw - 60px);
     right: -20px;
@@ -634,4 +663,4 @@
     background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 100%);
     border-color: rgba(255, 255, 255, 0.15);
   }
-} 
+}

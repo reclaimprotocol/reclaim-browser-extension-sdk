@@ -138,13 +138,18 @@
 
             try {
               // Process request middlewares
-              await Promise.all(self.requestMiddlewares.map((middleware) => middleware(requestData)));
+              await Promise.all(
+                self.requestMiddlewares.map((middleware) => middleware(requestData)),
+              );
             } catch (error) {
               debug.error("Error in request middleware:", error);
             }
 
             // Make the actual fetch call with potentially modified data
-            const response = await Reflect.apply(target, thisArg, [requestData.url, requestData.options]);
+            const response = await Reflect.apply(target, thisArg, [
+              requestData.url,
+              requestData.options,
+            ]);
 
             // FIX: Don't create a prototype-chained response, use the original
             // Just mark it non-destructively
@@ -224,7 +229,9 @@
             // Process request middlewares
             const runRequestMiddlewares = async () => {
               try {
-                await Promise.all(self.requestMiddlewares.map((middleware) => middleware(requestInfo)));
+                await Promise.all(
+                  self.requestMiddlewares.map((middleware) => middleware(requestInfo)),
+                );
               } catch (error) {
                 debug.error("Error in request middleware:", error);
               }
@@ -291,8 +298,8 @@
                         (this.getAllResponseHeaders() || "")
                           .split("\r\n")
                           .filter(Boolean)
-                          .map((line) => line.split(": "))
-                      )
+                          .map((line) => line.split(": ")),
+                      ),
                     ),
                   });
 
@@ -401,7 +408,9 @@
         let urlStr = "";
         try {
           if (typeof request.url === "string") {
-            urlStr = request.url.startsWith("http") ? request.url : new URL(request.url, window.location.origin).href;
+            urlStr = request.url.startsWith("http")
+              ? request.url
+              : new URL(request.url, window.location.origin).href;
           } else if (request.url && typeof request.url === "object" && request.url.url) {
             // Handle Request object
             urlStr = request.url.url;
@@ -434,7 +443,7 @@
             action: "INTERCEPTED_REQUEST",
             data: simpleRequest,
           },
-          "*"
+          "*",
         );
       } catch (error) {
         debug.error("Error posting request data:", error);
@@ -442,7 +451,9 @@
         let fallbackUrl = "";
         try {
           if (typeof request.url === "string") {
-            fallbackUrl = request.url.startsWith("http") ? request.url : new URL(request.url, window.location.origin).href;
+            fallbackUrl = request.url.startsWith("http")
+              ? request.url
+              : new URL(request.url, window.location.origin).href;
           } else if (request.url && typeof request.url === "object" && request.url.url) {
             fallbackUrl = request.url.url;
           } else if (request.url && typeof request.url === "object" && request.url.href) {
@@ -464,7 +475,7 @@
               body: null,
             },
           },
-          "*"
+          "*",
         );
       }
     });
@@ -517,7 +528,9 @@
         let urlStr = "";
         try {
           if (typeof request.url === "string") {
-            urlStr = request.url.startsWith("http") ? request.url : new URL(request.url, window.location.origin).href;
+            urlStr = request.url.startsWith("http")
+              ? request.url
+              : new URL(request.url, window.location.origin).href;
           } else if (request.url && typeof request.url === "object" && request.url.url) {
             // Handle Request object
             urlStr = request.url.url;
@@ -550,7 +563,7 @@
             action: "INTERCEPTED_RESPONSE",
             data: simpleResponse,
           },
-          "*"
+          "*",
         );
       } catch (error) {
         debug.error("Error posting response data:", error);
@@ -558,7 +571,9 @@
         let fallbackUrl = "";
         try {
           if (typeof request.url === "string") {
-            fallbackUrl = request.url.startsWith("http") ? request.url : new URL(request.url, window.location.origin).href;
+            fallbackUrl = request.url.startsWith("http")
+              ? request.url
+              : new URL(request.url, window.location.origin).href;
           } else if (request.url && typeof request.url === "object" && request.url.url) {
             fallbackUrl = request.url.url;
           } else if (request.url && typeof request.url === "object" && request.url.href) {
@@ -580,7 +595,7 @@
               body: null,
             },
           },
-          "*"
+          "*",
         );
       }
     });

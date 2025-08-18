@@ -168,7 +168,7 @@ export class LoggerService {
       if (!response.ok) {
         console.error(
           `Failed to send ${entries.length} logs [${new Blob([body]).size} B] (batch ${entries.length})`,
-          await response.text()
+          await response.text(),
         );
       }
     } catch (error) {

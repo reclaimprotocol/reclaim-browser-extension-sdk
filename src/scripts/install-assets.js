@@ -57,8 +57,14 @@ async function main() {
   const targetBase = path.join(publicDir, "reclaim-browser-extension-sdk");
 
   // content
-  copyFile(path.join(sdkBuild, "content", "content.bundle.js"), path.join(targetBase, "content", "content.bundle.js"));
-  copyDir(path.join(sdkBuild, "content", "components"), path.join(targetBase, "content", "components"));
+  copyFile(
+    path.join(sdkBuild, "content", "content.bundle.js"),
+    path.join(targetBase, "content", "content.bundle.js"),
+  );
+  copyDir(
+    path.join(sdkBuild, "content", "components"),
+    path.join(targetBase, "content", "components"),
+  );
 
   // interceptor
   copyDir(path.join(sdkBuild, "interceptor"), path.join(targetBase, "interceptor"));
@@ -73,7 +79,7 @@ async function main() {
   // 3) Copy SDK bundle into public/reclaim-browser-extension-sdk
   copyFile(
     path.join(sdkBuild, "ReclaimExtensionSDK.bundle.js"),
-    path.join(publicDir, "reclaim-browser-extension-sdk", "ReclaimExtensionSDK.bundle.js")
+    path.join(publicDir, "reclaim-browser-extension-sdk", "ReclaimExtensionSDK.bundle.js"),
   );
   // optionally also MV2
   // copyFile(path.join(sdkBuild, "ReclaimExtensionSDK-mv2.bundle.js"), path.join(publicDir, "reclaim-browser-extension-sdk", "ReclaimExtensionSDK-mv2.bundle.js"));

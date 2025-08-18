@@ -13,7 +13,7 @@ log(
   "background.verification", // type/category
   "abc123", // sessionId
   "provider-123", // providerId
-  "0x123456789" // appId
+  "0x123456789", // appId
 );
 
 // Log an error
@@ -26,7 +26,7 @@ try {
     "abc123", // sessionId
     "provider-123", // providerId
     "0x123456789", // appId
-    "Failed during verification process" // optional message
+    "Failed during verification process", // optional message
   );
 }
 

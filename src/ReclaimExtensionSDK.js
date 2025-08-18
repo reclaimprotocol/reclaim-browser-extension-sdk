@@ -1,7 +1,7 @@
 import "./utils/polyfills";
 import initBackground from "./background/background";
 import { BACKEND_URL, API_ENDPOINTS, RECLAIM_SDK_ACTIONS } from "./utils/constants";
-import { ethers } from "ethers";
+import { Wallet, keccak256, getBytes } from "ethers";
 
 // Global verification queue to serialize extension sessions (background is single-session)
 const _verificationQueue = [];
@@ -44,7 +44,7 @@ class ReclaimExtensionProofRequest {
     this.sdkVersion = `ext-${SDK_VERSION}`;
     this.resolvedProviderVersion = "";
     this.jsonProofResponse = false;
-    this.extensionID = options.extensionID || "reclaim-extension";
+    this.extensionID = options.extensionID || "";
     this.providerVersion = options.providerVersion || "";
     this.acceptAiProviders = !!options.acceptAiProviders;
     this.callbackUrl = options.callbackUrl || "";
@@ -61,7 +61,10 @@ class ReclaimExtensionProofRequest {
     this._boundWindowListener = this._handleWindowMessage.bind(this);
     window.addEventListener("message", this._boundWindowListener);
 
-    this._mode = typeof chrome !== "undefined" && chrome.runtime && location?.protocol === "chrome-extension:" ? "extension" : "web";
+    this._mode =
+      typeof chrome !== "undefined" && chrome.runtime && location?.protocol === "chrome-extension:"
+        ? "extension"
+        : "web";
     // No global runtime listener here. Each ReclaimExtensionProofRequest instance already listens and emits.
     if (this._mode === "extension") {
       this._boundChromeHandler = (message) => {
@@ -96,9 +99,9 @@ class ReclaimExtensionProofRequest {
 
     // Generate signature over canonicalized { providerId, timestamp }
     const canonical = `{"providerId":"${providerId}","timestamp":"${instance.timestamp}"}`;
-    const hash = ethers.keccak256(new TextEncoder().encode(canonical));
-    const wallet = new ethers.Wallet(appSecret);
-    const signature = await wallet.signMessage(ethers.getBytes(hash));
+    const hash = keccak256(new TextEncoder().encode(canonical));
+    const wallet = new Wallet(appSecret);
+    const signature = await wallet.signMessage(getBytes(hash));
     instance.signature = signature;
 
     // Init session on backend
@@ -180,7 +183,7 @@ class ReclaimExtensionProofRequest {
           messageId: this.sessionId,
           extensionID: this.extensionID,
         },
-        "*"
+        "*",
       );
       // Fallback timeout
       setTimeout(() => {
@@ -233,21 +236,38 @@ class ReclaimExtensionProofRequest {
         offError && offError();
       };
 
-      if (typeof chrome !== "undefined" && chrome.runtime && typeof chrome.runtime.sendMessage === "function") {
+      // choose path based on SDK mode, not on chrome.runtime presence
+      if (this._mode === "extension") {
         try {
           chrome.runtime.sendMessage(
-            { action: "START_VERIFICATION", source: "content-script", target: "background", data: templateData },
+            {
+              action: "START_VERIFICATION",
+              source: "content-script",
+              target: "background",
+              data: templateData,
+            },
             (resp) => {
-              if (resp && resp.success) this._emit("started", { sessionId: this.sessionId, messageId });
-            }
+              if (resp && resp.success)
+                this._emit("started", { sessionId: this.sessionId, messageId });
+            },
           );
         } catch (e) {
           this._emit("error", e instanceof Error ? e : new Error(String(e)));
         }
       } else {
+        // web page → talk to the injected content script via window.postMessage
+        if (!this.extensionID) {
+          this._emit("error", new Error("extensionID is required when running on a web page"));
+          return;
+        }
         window.postMessage(
-          { action: RECLAIM_SDK_ACTIONS.START_VERIFICATION, messageId, data: templateData, extensionID: this.extensionID },
-          "*"
+          {
+            action: RECLAIM_SDK_ACTIONS.START_VERIFICATION,
+            messageId,
+            data: templateData,
+            extensionID: this.extensionID,
+          },
+          "*",
         );
       }
     });
@@ -312,7 +332,10 @@ class ReclaimExtensionSDK {
   constructor() {
     this._backgroundInitialized = false;
     this._ctx = null;
-    this._mode = typeof chrome !== "undefined" && chrome.runtime && location?.protocol === "chrome-extension:" ? "extension" : "web";
+    this._mode =
+      typeof chrome !== "undefined" && chrome.runtime && location?.protocol === "chrome-extension:"
+        ? "extension"
+        : "web";
     // if (this._mode === "extension") {
     //   this._boundChromeHandler = (message) => {
     //     const { action, data, error } = message || {};
@@ -332,7 +355,7 @@ class ReclaimExtensionSDK {
   }
 
   // Must be called from the consumer's own background service worker.
-  runBackground() {
+  initializeBackground() {
     if (this._backgroundInitialized) return this._ctx;
     try {
       const ctx = initBackground();
@@ -346,7 +369,7 @@ class ReclaimExtensionSDK {
   }
 
   // Check if extension is installed and matches extensionID
-  checkExtensionInstalled({ extensionID, timeout = 500 } = {}) {
+  isExtensionInstalled({ extensionID, timeout = 500 } = {}) {
     return new Promise((resolve) => {
       const messageId = `reclaim-check-${Date.now()}`;
       const handler = (event) => {
@@ -360,7 +383,10 @@ class ReclaimExtensionSDK {
         }
       };
       window.addEventListener("message", handler);
-      window.postMessage({ action: RECLAIM_SDK_ACTIONS.CHECK_EXTENSION, extensionID, messageId }, "*");
+      window.postMessage(
+        { action: RECLAIM_SDK_ACTIONS.CHECK_EXTENSION, extensionID, messageId },
+        "*",
+      );
       setTimeout(() => {
         window.removeEventListener("message", handler);
         resolve(false);
@@ -368,7 +394,7 @@ class ReclaimExtensionSDK {
     });
   }
 
-  version() {
+  getVersion() {
     return SDK_VERSION;
   }
 
@@ -378,6 +404,6 @@ class ReclaimExtensionSDK {
   }
 }
 
-export const sdk = new ReclaimExtensionSDK();
+export const reclaimExtensionSDK = new ReclaimExtensionSDK();
 export { ReclaimExtensionProofRequest };
 export default ReclaimExtensionSDK;

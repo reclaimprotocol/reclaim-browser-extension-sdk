@@ -1,11 +1,11 @@
-import { sdk } from "./reclaim-browser-extension-sdk/ReclaimExtensionSDK.bundle.js";
+import { reclaimExtensionSDK } from "./reclaim-browser-extension-sdk/ReclaimExtensionSDK.bundle.js";
 
 const $ = (id) => document.getElementById(id);
 
 let request = null;
 
 // Extra signals around start
-console.log("[popup] SDK object", sdk);
+console.log("[popup] SDK object", reclaimExtensionSDK);
 console.log("[popup] Start button bound");
 
 document.getElementById("startBtn").addEventListener("click", async () => {
@@ -18,7 +18,7 @@ document.getElementById("startBtn").addEventListener("click", async () => {
     console.log({ appId, appSecret, providerId, callbackUrl });
     if (!appId || !appSecret || !providerId) return console.log("Fill appId, appSecret, providerId");
 
-    request = await sdk.init(appId, appSecret, providerId, {
+    request = await reclaimExtensionSDK.init(appId, appSecret, providerId, {
       extensionID: "coonladadmdfhgildikmdodffiejakkh",
     });
     console.log("[popup] request", request);

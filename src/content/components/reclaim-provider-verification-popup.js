@@ -1,4 +1,9 @@
-export function createProviderVerificationPopup(providerName, description, dataRequired, sessionId) {
+export function createProviderVerificationPopup(
+  providerName,
+  description,
+  dataRequired,
+  sessionId,
+) {
   // Inject CSS styles directly instead of importing them
   injectStyles();
 
@@ -38,7 +43,9 @@ export function createProviderVerificationPopup(providerName, description, dataR
     }
 
     try {
-      const cssUrl = chrome.runtime.getURL("reclaim-browser-extension-sdk/content/components/reclaim-provider-verification-popup.css");
+      const cssUrl = chrome.runtime.getURL(
+        "reclaim-browser-extension-sdk/content/components/reclaim-provider-verification-popup.css",
+      );
       const response = await fetch(cssUrl);
       const cssText = await response.text();
 
@@ -67,7 +74,9 @@ export function createProviderVerificationPopup(providerName, description, dataR
   // Function to load HTML template from external file
   async function loadHTMLTemplate() {
     try {
-      const htmlUrl = chrome.runtime.getURL("reclaim-browser-extension-sdk/content/components/reclaim-provider-verification-popup.html");
+      const htmlUrl = chrome.runtime.getURL(
+        "reclaim-browser-extension-sdk/content/components/reclaim-provider-verification-popup.html",
+      );
       const response = await fetch(htmlUrl);
       const htmlText = await response.text();
       return htmlText;
@@ -93,7 +102,7 @@ export function createProviderVerificationPopup(providerName, description, dataR
 
     // Replace template placeholders with actual values
     const renderedHTML = htmlTemplate
-      .replace(/\{\{logoUrl\}\}/g, chrome.runtime.getURL("assets/img/logo.png"))
+      // .replace(/\{\{logoUrl\}\}/g, chrome.runtime.getURL("assets/img/logo.png"))
       .replace(/\{\{providerName\}\}/g, providerName)
       .replace(/\{\{description\}\}/g, description)
       .replace(/\{\{dataRequired\}\}/g, dataRequired)

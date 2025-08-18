@@ -8,7 +8,10 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
   try {
     switch (action) {
       case ctx.MESSAGE_ACTIONS.CONTENT_SCRIPT_LOADED:
-        if (source === ctx.MESSAGE_SOURCES.CONTENT_SCRIPT && target === ctx.MESSAGE_SOURCES.BACKGROUND) {
+        if (
+          source === ctx.MESSAGE_SOURCES.CONTENT_SCRIPT &&
+          target === ctx.MESSAGE_SOURCES.BACKGROUND
+        ) {
           const isManaged = sender.tab?.id && ctx.managedTabs.has(sender.tab.id);
           chrome.tabs
             .sendMessage(sender.tab.id, {
@@ -17,7 +20,13 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
               target: ctx.MESSAGE_SOURCES.CONTENT_SCRIPT,
               data: { shouldInitialize: isManaged },
             })
-            .catch((err) => ctx.debugLogger.error(ctx.DebugLogType.BACKGROUND, "[BACKGROUND] Error sending initialization status:", err));
+            .catch((err) =>
+              ctx.debugLogger.error(
+                ctx.DebugLogType.BACKGROUND,
+                "[BACKGROUND] Error sending initialization status:",
+                err,
+              ),
+            );
 
           if (isManaged && ctx.initPopupMessage && ctx.initPopupMessage.has(sender.tab.id)) {
             const pendingMessage = ctx.initPopupMessage.get(sender.tab.id);
@@ -28,7 +37,7 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
                   ctx.debugLogger.error(
                     ctx.DebugLogType.BACKGROUND,
                     `[BACKGROUND] Error sending (pending) SHOW_PROVIDER_VERIFICATION_POPUP to tab ${sender.tab.id}:`,
-                    chrome.runtime.lastError.message
+                    chrome.runtime.lastError.message,
                   );
                 }
               })
@@ -36,8 +45,8 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
                 ctx.debugLogger.error(
                   ctx.DebugLogType.BACKGROUND,
                   `[BACKGROUND] Error sending (pending) SHOW_PROVIDER_VERIFICATION_POPUP to tab ${sender.tab.id} (promise catch):`,
-                  error
-                )
+                  error,
+                ),
               );
           }
 
@@ -50,7 +59,7 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
                   ctx.debugLogger.error(
                     ctx.DebugLogType.BACKGROUND,
                     `[BACKGROUND] Error sending (pending) PROVIDER_DATA_READY to tab ${sender.tab.id}:`,
-                    chrome.runtime.lastError.message
+                    chrome.runtime.lastError.message,
                   );
                 }
               })
@@ -58,8 +67,8 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
                 ctx.debugLogger.error(
                   ctx.DebugLogType.BACKGROUND,
                   `[BACKGROUND] Error sending (pending) PROVIDER_DATA_READY to tab ${sender.tab.id} (promise catch):`,
-                  error
-                )
+                  error,
+                ),
               );
             ctx.providerDataMessage.delete(sender.tab.id);
           }
@@ -69,7 +78,10 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
         }
         break;
       case ctx.MESSAGE_ACTIONS.REQUEST_PROVIDER_DATA:
-        if (source === ctx.MESSAGE_SOURCES.CONTENT_SCRIPT && target === ctx.MESSAGE_SOURCES.BACKGROUND) {
+        if (
+          source === ctx.MESSAGE_SOURCES.CONTENT_SCRIPT &&
+          target === ctx.MESSAGE_SOURCES.BACKGROUND
+        ) {
           ctx.loggerService.log({
             message: "Content script requested provider data",
             type: ctx.LOG_TYPES.BACKGROUND,
@@ -87,7 +99,9 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
             ctx.callbackUrl !== undefined // allow empty string as optional
           ) {
             ctx.loggerService.log({
-              message: "Sending the following provider data to content script: " + JSON.stringify(ctx.providerData),
+              message:
+                "Sending the following provider data to content script: " +
+                JSON.stringify(ctx.providerData),
               type: ctx.LOG_TYPES.BACKGROUND,
               sessionId: ctx.sessionId || "unknown",
               providerId: ctx.httpProviderId || "unknown",
@@ -105,18 +119,27 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
               },
             });
           } else {
-            sendResponse({ success: false, error: "Provider data not available or tab not managed" });
+            sendResponse({
+              success: false,
+              error: "Provider data not available or tab not managed",
+            });
           }
         }
         break;
       case ctx.MESSAGE_ACTIONS.CHECK_IF_MANAGED_TAB:
-        if (source === ctx.MESSAGE_SOURCES.CONTENT_SCRIPT && target === ctx.MESSAGE_SOURCES.BACKGROUND) {
+        if (
+          source === ctx.MESSAGE_SOURCES.CONTENT_SCRIPT &&
+          target === ctx.MESSAGE_SOURCES.BACKGROUND
+        ) {
           const isManaged = sender.tab?.id && ctx.managedTabs.has(sender.tab.id);
           sendResponse({ success: true, isManaged });
         }
         break;
       case ctx.MESSAGE_ACTIONS.START_VERIFICATION:
-        if (source === ctx.MESSAGE_SOURCES.CONTENT_SCRIPT && target === ctx.MESSAGE_SOURCES.BACKGROUND) {
+        if (
+          source === ctx.MESSAGE_SOURCES.CONTENT_SCRIPT &&
+          target === ctx.MESSAGE_SOURCES.BACKGROUND
+        ) {
           console.log("START VERIFICATION FROM BACKGROUND", { data });
           ctx.loggerService.log({
             message: "Starting a new verification with data: " + JSON.stringify(data),
@@ -144,7 +167,10 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
         }
         break;
       case ctx.MESSAGE_ACTIONS.CANCEL_VERIFICATION:
-        if (source === ctx.MESSAGE_SOURCES.CONTENT_SCRIPT && target === ctx.MESSAGE_SOURCES.BACKGROUND) {
+        if (
+          source === ctx.MESSAGE_SOURCES.CONTENT_SCRIPT &&
+          target === ctx.MESSAGE_SOURCES.BACKGROUND
+        ) {
           await sessionManager.cancelSession(ctx, data?.sessionId);
           sendResponse({ success: true });
         } else {
@@ -159,11 +185,18 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
         }
         break;
       case ctx.MESSAGE_ACTIONS.CLOSE_CURRENT_TAB:
-        if (source === ctx.MESSAGE_SOURCES.CONTENT_SCRIPT && target === ctx.MESSAGE_SOURCES.BACKGROUND) {
+        if (
+          source === ctx.MESSAGE_SOURCES.CONTENT_SCRIPT &&
+          target === ctx.MESSAGE_SOURCES.BACKGROUND
+        ) {
           if (sender.tab && sender.tab.id) {
             chrome.tabs.remove(sender.tab.id, () => {
               if (chrome.runtime.lastError) {
-                ctx.debugLogger.error(ctx.DebugLogType.BACKGROUND, "[BACKGROUND] Error closing tab:", chrome.runtime.lastError.message);
+                ctx.debugLogger.error(
+                  ctx.DebugLogType.BACKGROUND,
+                  "[BACKGROUND] Error closing tab:",
+                  chrome.runtime.lastError.message,
+                );
                 sendResponse({ success: false, error: chrome.runtime.lastError.message });
               } else {
                 if (ctx.managedTabs.has(sender.tab.id)) {
@@ -173,7 +206,10 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
               }
             });
           } else {
-            ctx.debugLogger.error(ctx.DebugLogType.BACKGROUND, "[BACKGROUND] CLOSE_CURRENT_TAB: No tab ID provided by sender.");
+            ctx.debugLogger.error(
+              ctx.DebugLogType.BACKGROUND,
+              "[BACKGROUND] CLOSE_CURRENT_TAB: No tab ID provided by sender.",
+            );
             sendResponse({ success: false, error: "No tab ID found to close." });
           }
         } else {
@@ -181,12 +217,23 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
         }
         return true;
       case ctx.MESSAGE_ACTIONS.FILTERED_REQUEST_FOUND:
-        if (source === ctx.MESSAGE_SOURCES.CONTENT_SCRIPT && target === ctx.MESSAGE_SOURCES.BACKGROUND) {
+        if (
+          source === ctx.MESSAGE_SOURCES.CONTENT_SCRIPT &&
+          target === ctx.MESSAGE_SOURCES.BACKGROUND
+        ) {
           if (ctx.filteredRequests.has(data.criteria.requestHash)) {
-            sendResponse({ success: true, result: ctx.filteredRequests.get(data.criteria.requestHash) });
+            sendResponse({
+              success: true,
+              result: ctx.filteredRequests.get(data.criteria.requestHash),
+            });
           } else {
             ctx.filteredRequests.set(data.criteria.requestHash, data.request);
-            const result = await ctx.processFilteredRequest(data.request, data.criteria, data.sessionId, data.loginUrl);
+            const result = await ctx.processFilteredRequest(
+              data.request,
+              data.criteria,
+              data.sessionId,
+              data.loginUrl,
+            );
             sendResponse({ success: true, result });
           }
         } else {
@@ -194,7 +241,10 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
         }
         break;
       case ctx.MESSAGE_ACTIONS.GET_CURRENT_TAB_ID:
-        if (source === ctx.MESSAGE_SOURCES.CONTENT_SCRIPT && target === ctx.MESSAGE_SOURCES.BACKGROUND) {
+        if (
+          source === ctx.MESSAGE_SOURCES.CONTENT_SCRIPT &&
+          target === ctx.MESSAGE_SOURCES.BACKGROUND
+        ) {
           sendResponse({ success: true, tabId: sender.tab?.id });
         } else {
           sendResponse({ success: false, error: "Action not supported" });
@@ -204,7 +254,11 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
         sendResponse({ success: false, error: "Action not supported" });
     }
   } catch (error) {
-    ctx.debugLogger.error(ctx.DebugLogType.BACKGROUND, `[BACKGROUND] Error handling ${action}:`, error);
+    ctx.debugLogger.error(
+      ctx.DebugLogType.BACKGROUND,
+      `[BACKGROUND] Error handling ${action}:`,
+      error,
+    );
     sendResponse({ success: false, error: error.message });
   }
   // Required for async response

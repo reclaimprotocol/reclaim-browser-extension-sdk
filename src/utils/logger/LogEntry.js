@@ -66,7 +66,9 @@ export class LogEntry {
     const stackTrace = error.stack || "";
     const errorMessage = error.message || error.toString();
 
-    const logLine = message ? `${message}: ${errorMessage}\n${stackTrace}` : `${errorMessage}\n${stackTrace}`;
+    const logLine = message
+      ? `${message}: ${errorMessage}\n${stackTrace}`
+      : `${errorMessage}\n${stackTrace}`;
 
     return new LogEntry({
       sessionId,

@@ -15,9 +15,11 @@ src/content/
 ## 🔧 Core Functionality
 
 ### 1. Network Interception & Filtering
+
 The content script coordinates with a network interceptor to capture and filter HTTP requests/responses based on provider-specific criteria.
 
 **Key Features:**
+
 - Intercepts network requests and responses via injected interceptor script
 - Filters requests based on provider configuration
 - Links requests with their corresponding responses
@@ -25,9 +27,11 @@ The content script coordinates with a network interceptor to capture and filter 
 - Automatically stops collection once all required requests are found
 
 ### 2. Provider Verification Popup
+
 A sophisticated UI component that guides users through the verification process with real-time status updates.
 
 **Features:**
+
 - Responsive popup positioned at bottom-right of the page
 - Multi-step verification flow with progress indicators
 - Real-time status updates (claim creation, proof generation, submission)
@@ -35,9 +39,11 @@ A sophisticated UI component that guides users through the verification process 
 - Modern glassmorphism design with animations
 
 ### 3. SDK Communication Bridge
+
 Facilitates communication between the Reclaim SDK running on web pages and the extension's background scripts.
 
 **Supported Actions:**
+
 - Extension detection and health checks
 - Verification process initiation
 - Real-time status updates
@@ -48,6 +54,7 @@ Facilitates communication between the Reclaim SDK running on web pages and the e
 ### Setting up Content Script in Your Extension
 
 1. **Manifest Configuration** (manifest.json):
+
 ```json
 {
   "content_scripts": [
@@ -62,6 +69,7 @@ Facilitates communication between the Reclaim SDK running on web pages and the e
 ```
 
 2. **Required Dependencies**:
+
 - Network interceptor script (must be web-accessible)
 - Background script for message handling
 - Provider configuration data
@@ -85,10 +93,10 @@ graph TD
     B -->|chrome.runtime.sendMessage| C[Background Script]
     C -->|chrome.tabs.sendMessage| B
     B -->|postMessage| A
-    
+
     B --> D[Network Interceptor]
     D -->|postMessage| B
-    
+
     B --> E[Verification Popup]
     E --> B
 ```
@@ -96,6 +104,7 @@ graph TD
 ## 📨 Message Actions Reference
 
 ### SDK Actions (Web Page ↔ Content Script)
+
 - `RECLAIM_EXTENSION_CHECK` - Check if extension is installed
 - `RECLAIM_EXTENSION_RESPONSE` - Extension availability response
 - `RECLAIM_START_VERIFICATION` - Start verification process
@@ -104,6 +113,7 @@ graph TD
 - `RECLAIM_VERIFICATION_FAILED` - Verification failed with error
 
 ### Internal Actions (Content Script ↔ Background Script)
+
 - `CONTENT_SCRIPT_LOADED` - Notify content script is ready
 - `SHOULD_INITIALIZE` - Check if content script should initialize
 - `REQUEST_PROVIDER_DATA` - Request provider configuration
@@ -113,6 +123,7 @@ graph TD
 - `INTERCEPTED_REQUEST/RESPONSE` - Network data captured
 
 ### Status Actions (Background Script → Content Script)
+
 - `CLAIM_CREATION_REQUESTED` - Claim creation started
 - `CLAIM_CREATION_SUCCESS/FAILED` - Claim creation result
 - `PROOF_GENERATION_STARTED` - Proof generation started
@@ -131,6 +142,7 @@ The popup component in `components/ProviderVerificationPopup.js` can be customiz
 **Behavior**: Modify status handlers for different verification states
 
 **Key Customization Points:**
+
 ```javascript
 // Popup positioning
 bottom: 20px;
@@ -219,9 +231,9 @@ const customFilter = (request, criteria, parameters) => {
 Enable debug logging by setting up the logger service:
 
 ```javascript
-import { debugLogger, DebugLogType } from '../utils/logger';
+import { debugLogger, DebugLogType } from "../utils/logger";
 
-debugLogger.log(DebugLogType.CONTENT, 'Your debug message here');
+debugLogger.log(DebugLogType.CONTENT, "Your debug message here");
 ```
 
 ## 🔄 Extension Lifecycle

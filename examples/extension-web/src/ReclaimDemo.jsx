@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { sdk } from '@reclaimprotocol/browser-extension-sdk';
+import { reclaimExtensionSDK } from '@reclaimprotocol/browser-extension-sdk';
 
 const PROVIDERS = [
   { id: '7519ad78-208a-425d-9fac-97c13b0f0d4d', name: 'Kaggle' },
@@ -22,7 +22,7 @@ export default function ReclaimDemo() {
 
   async function checkInstalled() {
     console.log("CHECKING INSTALLED", EXTENSION_ID);
-    const ok = await sdk.checkExtensionInstalled({ extensionID: EXTENSION_ID });
+    const ok = await reclaimExtensionSDK.isExtensionInstalled({ extensionID: EXTENSION_ID });
     console.log("CHECKED INSTALLED", ok);
     setInstalled(ok);
   }
@@ -32,8 +32,8 @@ export default function ReclaimDemo() {
       setLoading(true);
       setError('');
       setProofs(null);
-
-      const request = await sdk.init(APP_ID, APP_SECRET, providerId, {
+      console.log("STARTING", APP_ID, APP_SECRET, providerId, EXTENSION_ID);
+      const request = await reclaimExtensionSDK.init(APP_ID, APP_SECRET, providerId, {
         extensionID: EXTENSION_ID,
         // callbackUrl: 'https://your.server/receive-proofs' // optional
       });
@@ -116,7 +116,7 @@ export default function ReclaimDemo() {
         </pre>
       )}
       <div style={{ marginTop: 12, fontSize: 12, color: '#555' }}>
-        SDK version: {sdk.version()}
+        SDK version: {reclaimExtensionSDK.getVersion()}
       </div>
     </div>
   );

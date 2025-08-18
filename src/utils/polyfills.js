@@ -122,11 +122,11 @@ if (typeof process !== "undefined") {
 }
 
 // TextEncoder and TextDecoder are available in both browser and service worker
-if (typeof global.TextEncoder === "undefined" && !isServiceWorker) {
-  const encoding = require("text-encoding");
-  global.TextEncoder = encoding.TextEncoder;
-  global.TextDecoder = encoding.TextDecoder;
-}
+// if (typeof global.TextEncoder === "undefined" && !isServiceWorker) {
+//   const encoding = require("text-encoding");
+//   global.TextEncoder = encoding.TextEncoder;
+//   global.TextDecoder = encoding.TextDecoder;
+// }
 
 // Handle other Node.js-specific functionality
 if (typeof global.global === "undefined") {
@@ -150,13 +150,22 @@ if (typeof global.crypto.getRandomValues === "undefined") {
 
 // Handle other potential missing WebCrypto APIs
 if (typeof global.crypto.subtle === "undefined") {
-  debugLogger.warn(DebugLogType.POLYFILLS, "WebCrypto subtle API not available. Some functionality may not work.");
+  debugLogger.warn(
+    DebugLogType.POLYFILLS,
+    "WebCrypto subtle API not available. Some functionality may not work.",
+  );
   // Create a minimal fallback for subtle crypto
   global.crypto.subtle = {
     digest: async (algorithm, data) => {
-      debugLogger.warn(DebugLogType.POLYFILLS, `Crypto subtle digest (${algorithm}) called with browser fallback`);
+      debugLogger.warn(
+        DebugLogType.POLYFILLS,
+        `Crypto subtle digest (${algorithm}) called with browser fallback`,
+      );
       // This is just a minimal fallback - not secure for production
-      const hashInt = Array.from(new Uint8Array(data)).reduce((acc, val) => (acc * 31 + val) & 0xffffffff, 0);
+      const hashInt = Array.from(new Uint8Array(data)).reduce(
+        (acc, val) => (acc * 31 + val) & 0xffffffff,
+        0,
+      );
 
       // Convert to a byte array of appropriate length
       const result = new Uint8Array(32); // SHA-256 length

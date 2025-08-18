@@ -1,4 +1,9 @@
-import { extractParamsFromUrl, extractParamsFromBody, extractParamsFromResponse, separateParams } from "./params-extractor";
+import {
+  extractParamsFromUrl,
+  extractParamsFromBody,
+  extractParamsFromResponse,
+  separateParams,
+} from "./params-extractor";
 import { MESSAGE_ACTIONS, MESSAGE_SOURCES } from "../constants";
 import { ensureOffscreenDocument } from "../offscreen-manager";
 import { debugLogger, DebugLogType } from "../logger";
@@ -39,11 +44,22 @@ const getPrivateKeyFromOffscreen = () => {
         chrome.runtime.onMessage.removeListener(messageListener);
 
         if (message.success && message.privateKey) {
-          debugLogger.info(DebugLogType.CLAIM, "[CLAIM-CREATOR] Received private key from offscreen document");
+          debugLogger.info(
+            DebugLogType.CLAIM,
+            "[CLAIM-CREATOR] Received private key from offscreen document",
+          );
           resolve(message.privateKey);
         } else {
-          debugLogger.error(DebugLogType.CLAIM, "[CLAIM-CREATOR] Failed to get private key from offscreen:", message.error);
-          reject(new Error(message.error || "Unknown error getting private key from offscreen document."));
+          debugLogger.error(
+            DebugLogType.CLAIM,
+            "[CLAIM-CREATOR] Failed to get private key from offscreen:",
+            message.error,
+          );
+          reject(
+            new Error(
+              message.error || "Unknown error getting private key from offscreen document.",
+            ),
+          );
         }
         return false; // Indicate message has been handled
       }
@@ -52,7 +68,10 @@ const getPrivateKeyFromOffscreen = () => {
 
     chrome.runtime.onMessage.addListener(messageListener);
 
-    debugLogger.info(DebugLogType.CLAIM, "[CLAIM-CREATOR] Requesting private key from offscreen document");
+    debugLogger.info(
+      DebugLogType.CLAIM,
+      "[CLAIM-CREATOR] Requesting private key from offscreen document",
+    );
     chrome.runtime.sendMessage(
       {
         action: MESSAGE_ACTIONS.GET_PRIVATE_KEY,
@@ -63,12 +82,20 @@ const getPrivateKeyFromOffscreen = () => {
         if (chrome.runtime.lastError) {
           clearTimeout(callTimeout);
           chrome.runtime.onMessage.removeListener(messageListener);
-          debugLogger.error(DebugLogType.CLAIM, "[CLAIM-CREATOR] Error sending GET_PRIVATE_KEY message:", chrome.runtime.lastError.message);
-          reject(new Error(`Error sending message to offscreen document: ${chrome.runtime.lastError.message}`));
+          debugLogger.error(
+            DebugLogType.CLAIM,
+            "[CLAIM-CREATOR] Error sending GET_PRIVATE_KEY message:",
+            chrome.runtime.lastError.message,
+          );
+          reject(
+            new Error(
+              `Error sending message to offscreen document: ${chrome.runtime.lastError.message}`,
+            ),
+          );
         }
         // If offscreen.js calls sendResponse synchronously, it can be handled here
         // but the main logic relies on the async messageListener
-      }
+      },
     );
   });
 };
@@ -82,7 +109,11 @@ export const createClaimObject = async (request, providerData, sessionId, loginU
     await ensureOffscreenDocument();
     debugLogger.info(DebugLogType.CLAIM, "[CLAIM-CREATOR] Offscreen document is ready.");
   } catch (error) {
-    debugLogger.error(DebugLogType.CLAIM, "[CLAIM-CREATOR] Failed to ensure offscreen document:", error);
+    debugLogger.error(
+      DebugLogType.CLAIM,
+      "[CLAIM-CREATOR] Failed to ensure offscreen document:",
+      error,
+    );
     // Depending on requirements, you might want to throw error or handle differently
     throw new Error(`Failed to initialize offscreen document: ${error.message}`);
   }
@@ -166,7 +197,10 @@ export const createClaimObject = async (request, providerData, sessionId, loginU
 
   if (providerData?.bodySniff?.enabled && request.body) {
     // append the extracted parameters to the existing allParamValues
-    allParamValues = { ...allParamValues, ...extractParamsFromBody(providerData.bodySniff.template, request.body) };
+    allParamValues = {
+      ...allParamValues,
+      ...extractParamsFromBody(providerData.bodySniff.template, request.body),
+    };
   }
 
   // 3. Extract params from response if available
@@ -174,7 +208,11 @@ export const createClaimObject = async (request, providerData, sessionId, loginU
     // append the extracted parameters to the existing allParamValues
     allParamValues = {
       ...allParamValues,
-      ...extractParamsFromResponse(request.responseText, providerData.responseMatches, providerData.responseRedactions || []),
+      ...extractParamsFromResponse(
+        request.responseText,
+        providerData.responseMatches,
+        providerData.responseRedactions || [],
+      ),
     };
   }
 

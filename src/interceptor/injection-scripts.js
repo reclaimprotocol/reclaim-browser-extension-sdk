@@ -11,7 +11,8 @@
 
   // Backend API configuration
   const BACKEND_URL = "https://api.reclaimprotocol.org";
-  const PROVIDER_API_ENDPOINT = (providerId) => `${BACKEND_URL}/api/providers/${providerId}/custom-injection`;
+  const PROVIDER_API_ENDPOINT = (providerId) =>
+    `${BACKEND_URL}/api/providers/${providerId}/custom-injection`;
 
   // Debug utility for logging
   const debug = {
@@ -84,7 +85,7 @@
           action: "RECLAIM_GET_PROVIDER_ID",
           source: "injection-script",
         },
-        "*"
+        "*",
       );
 
       // Timeout after 5 seconds
@@ -145,12 +146,22 @@
 
       // Create a new function context to execute the script
       // This allows the script to access the page's globals while providing isolation
-      const scriptFunction = new Function("window", "document", "console", "localStorage", "sessionStorage", "providerData", scriptContent);
+      const scriptFunction = new Function(
+        "window",
+        "document",
+        "console",
+        "localStorage",
+        "sessionStorage",
+        "providerData",
+        scriptContent,
+      );
 
       // Execute the script with current window context
       scriptFunction(window, document, console, localStorage, sessionStorage, providerData);
 
-      debug.info(`Successfully executed injection script for provider: ${providerData.name || "Unknown"}`);
+      debug.info(
+        `Successfully executed injection script for provider: ${providerData.name || "Unknown"}`,
+      );
 
       // Dispatch a custom event to notify that injection script has been executed
       window.dispatchEvent(
@@ -160,7 +171,7 @@
             providerName: providerData.name,
             timestamp: Date.now(),
           },
-        })
+        }),
       );
     } catch (error) {
       debug.error(`Error executing injection script:`, error);
@@ -174,7 +185,7 @@
             error: error.message,
             timestamp: Date.now(),
           },
-        })
+        }),
       );
     }
   }

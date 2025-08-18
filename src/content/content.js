@@ -18,7 +18,9 @@ const injectNetworkInterceptor = function () {
 
   try {
     const script = document.createElement("script");
-    const src = chrome.runtime.getURL("reclaim-browser-extension-sdk/interceptor/network-interceptor.bundle.js");
+    const src = chrome.runtime.getURL(
+      "reclaim-browser-extension-sdk/interceptor/network-interceptor.bundle.js",
+    );
     console.log("src", src);
     script.src = src;
     script.type = "text/javascript";
@@ -80,7 +82,9 @@ const injectDynamicInjectionScript = function () {
 
   try {
     const script = document.createElement("script");
-    script.src = chrome.runtime.getURL("reclaim-browser-extension-sdk/interceptor/injection-scripts.bundle.js");
+    script.src = chrome.runtime.getURL(
+      "reclaim-browser-extension-sdk/interceptor/injection-scripts.bundle.js",
+    );
     script.type = "text/javascript";
 
     // Set highest priority attributes
@@ -141,16 +145,30 @@ try {
     if (action === MESSAGE_ACTIONS.PROOF_SUBMITTED) {
       try {
         const proofs = data?.formattedProofs || data?.proof || data;
-        window.postMessage({ action: RECLAIM_SDK_ACTIONS.VERIFICATION_COMPLETED, messageId: data?.sessionId, data: { proofs } }, "*");
+        window.postMessage(
+          {
+            action: RECLAIM_SDK_ACTIONS.VERIFICATION_COMPLETED,
+            messageId: data?.sessionId,
+            data: { proofs },
+          },
+          "*",
+        );
       } catch {}
       sendResponse?.({ success: true });
       return true;
     }
-    if (action === MESSAGE_ACTIONS.PROOF_SUBMISSION_FAILED || action === MESSAGE_ACTIONS.PROOF_GENERATION_FAILED) {
+    if (
+      action === MESSAGE_ACTIONS.PROOF_SUBMISSION_FAILED ||
+      action === MESSAGE_ACTIONS.PROOF_GENERATION_FAILED
+    ) {
       try {
         window.postMessage(
-          { action: RECLAIM_SDK_ACTIONS.VERIFICATION_FAILED, messageId: data?.sessionId, error: data?.error || "Verification failed" },
-          "*"
+          {
+            action: RECLAIM_SDK_ACTIONS.VERIFICATION_FAILED,
+            messageId: data?.sessionId,
+            error: data?.error || "Verification failed",
+          },
+          "*",
         );
       } catch {}
       sendResponse?.({ success: true });
@@ -234,7 +252,10 @@ class ReclaimContentScript {
     // Flag to track if this is a managed tab (will be set during init)
     this.isManagedTab = false;
 
-    this._mode = typeof chrome !== "undefined" && chrome.runtime && location?.protocol === "chrome-extension:" ? "extension" : "web";
+    this._mode =
+      typeof chrome !== "undefined" && chrome.runtime && location?.protocol === "chrome-extension:"
+        ? "extension"
+        : "web";
     if (this._mode === "extension") {
       this._boundChromeHandler = (message) => {
         const { action, data, error } = message || {};
@@ -310,9 +331,9 @@ class ReclaimContentScript {
                 this.startNetworkFiltering();
               }
             }
-          }
+          },
         );
-      }
+      },
     );
   }
 
@@ -346,7 +367,8 @@ class ReclaimContentScript {
         }
 
         loggerService.log({
-          message: "Provider data received from background script and will proceed with network filtering.",
+          message:
+            "Provider data received from background script and will proceed with network filtering.",
           type: LOG_TYPES.CONTENT,
           sessionId: data.sessionId,
           providerId: data.httpProviderId,
@@ -395,7 +417,7 @@ class ReclaimContentScript {
                   this.providerName,
                   this.description,
                   this.dataRequired,
-                  this.sessionId
+                  this.sessionId,
                 );
               } catch (e) {
                 return;
@@ -414,7 +436,7 @@ class ReclaimContentScript {
                 () => {
                   appendPopupLogic();
                 },
-                { once: true }
+                { once: true },
               );
             } else {
               appendPopupLogic();
@@ -429,8 +451,11 @@ class ReclaimContentScript {
                 appId: this.appId,
               });
             }
-            sendResponse({ success: true, message: "Popup display process initiated and will proceed on DOM readiness." });
-          }
+            sendResponse({
+              success: true,
+              message: "Popup display process initiated and will proceed on DOM readiness.",
+            });
+          },
         );
         break;
 
@@ -478,7 +503,7 @@ class ReclaimContentScript {
               messageId: data?.sessionId,
               error: data?.error || "Verification failed",
             },
-            "*"
+            "*",
           );
         } catch (e) {
           // noop
@@ -498,7 +523,7 @@ class ReclaimContentScript {
               messageId: data?.sessionId,
               data: { proofs },
             },
-            "*"
+            "*",
           );
         } catch (e) {
           // noop
@@ -518,7 +543,7 @@ class ReclaimContentScript {
               messageId: data?.sessionId,
               error: data?.error || "Proof submission failed",
             },
-            "*"
+            "*",
           );
         } catch (e) {
           // noop
@@ -546,7 +571,10 @@ class ReclaimContentScript {
 
   checkExtensionId(extensionID) {
     try {
-      const runtimeId = typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id ? chrome.runtime.id : null;
+      const runtimeId =
+        typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id
+          ? chrome.runtime.id
+          : null;
       console.log("RUNTIME ID", { runtimeId });
       console.log("EXTENSION ID", { extensionID });
       if (!extensionID) {
@@ -578,7 +606,7 @@ class ReclaimContentScript {
           messageId: messageId,
           installed: true,
         },
-        "*"
+        "*",
       );
     }
 
@@ -591,7 +619,7 @@ class ReclaimContentScript {
           providerId: this.httpProviderId || null,
           source: "content-script",
         },
-        "*"
+        "*",
       );
       return;
     }
@@ -657,7 +685,7 @@ class ReclaimContentScript {
                 messageId: messageId,
                 sessionId: data.sessionId,
               },
-              "*"
+              "*",
             );
           } else {
             window.postMessage(
@@ -666,10 +694,10 @@ class ReclaimContentScript {
                 messageId: messageId,
                 error: response?.error || "Failed to start verification",
               },
-              "*"
+              "*",
             );
           }
-        }
+        },
       );
     }
 
@@ -685,7 +713,7 @@ class ReclaimContentScript {
           data: { sessionId: this.sessionId },
         },
         // eslint-disable-next-line @typescript-eslint/no-empty-function
-        () => {}
+        () => {},
       );
     }
   }
@@ -881,7 +909,15 @@ class ReclaimContentScript {
         responseText: responseBody,
       };
 
-      console.log("formattedRequest", { formattedRequest, providerData: this.providerData });
+      console.log(
+        formattedRequest.url,
+        formattedRequest.url === "https://www.kaggle.com/api/i/users.UsersService/GetCurrentUser",
+      );
+      if (
+        formattedRequest.url === "https://www.kaggle.com/api/i/users.UsersService/GetCurrentUser"
+      ) {
+        console.log("formattedRequest", { formattedRequest, providerData: this.providerData });
+      }
 
       // Check against each criteria in provider data
       for (const criteria of this.providerData.requestData) {
@@ -897,7 +933,11 @@ class ReclaimContentScript {
           this.filteredRequests.push(key);
 
           // Send to background script for cookie fetching and claim creation
-          this.sendFilteredRequestToBackground(formattedRequest, criteria, this.providerData.loginUrl);
+          this.sendFilteredRequestToBackground(
+            formattedRequest,
+            criteria,
+            this.providerData.loginUrl,
+          );
         }
       }
     }
@@ -938,7 +978,8 @@ class ReclaimContentScript {
   // Send filtered request to background script
   sendFilteredRequestToBackground(formattedRequest, matchingCriteria, loginUrl) {
     loggerService.log({
-      message: "Sending filtered request to background script: " + JSON.stringify(formattedRequest.url),
+      message:
+        "Sending filtered request to background script: " + JSON.stringify(formattedRequest.url),
       type: LOG_TYPES.CONTENT,
       sessionId: this.sessionId,
       providerId: this.httpProviderId,
@@ -958,7 +999,7 @@ class ReclaimContentScript {
       },
       (response) => {
         // Background response handled silently
-      }
+      },
     );
   }
 

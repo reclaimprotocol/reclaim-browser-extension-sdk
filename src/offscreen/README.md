@@ -14,9 +14,11 @@ src/offscreen/
 ## 🔧 Core Functionality
 
 ### 1. Cryptographic Proof Generation
+
 The primary function of the offscreen document is to generate zero-knowledge proofs using the Reclaim Protocol's attestor-core library.
 
 **Key Features:**
+
 - WebAssembly-based cryptographic operations
 - Timeout protection (60-second limit)
 - Session status tracking
@@ -24,18 +26,22 @@ The primary function of the offscreen document is to generate zero-knowledge pro
 - Memory-safe operations
 
 ### 2. Private Key Generation
+
 Generates secure private keys using the browser's native crypto APIs.
 
 **Features:**
+
 - Uses `window.crypto.getRandomValues()` for entropy
 - 256-bit private key generation
 - Hex-encoded output format
 - Secure random number generation
 
 ### 3. WebSocket Support
+
 Provides native WebSocket access for the attestor-core library to communicate with Reclaim's infrastructure.
 
 **Features:**
+
 - Native browser WebSocket implementation
 - Isolated network context
 - Cross-origin communication support
@@ -45,17 +51,13 @@ Provides native WebSocket access for the attestor-core library to communicate wi
 ### Setting up Offscreen Document in Your Extension
 
 1. **Manifest Configuration** (manifest.json):
+
 ```json
 {
-  "permissions": [
-    "offscreen"
-  ],
+  "permissions": ["offscreen"],
   "web_accessible_resources": [
     {
-      "resources": [
-        "offscreen/offscreen.html",
-        "offscreen/offscreen.bundle.js"
-      ],
+      "resources": ["offscreen/offscreen.html", "offscreen/offscreen.bundle.js"],
       "matches": ["<all_urls>"]
     }
   ],
@@ -66,6 +68,7 @@ Provides native WebSocket access for the attestor-core library to communicate wi
 ```
 
 2. **Required Dependencies**:
+
 - `@reclaimprotocol/attestor-core` - Core proof generation library
 - WebAssembly runtime support
 - Custom WebSocket wrapper for offscreen context
@@ -90,13 +93,13 @@ Cross-Origin-Opener-Policy: same-origin
 graph TD
     A[Background Script] -->|GENERATE_PROOF| B[Offscreen Document]
     B -->|GENERATE_PROOF_RESPONSE| A
-    
+
     A -->|GET_PRIVATE_KEY| B
     B -->|GET_PRIVATE_KEY_RESPONSE| A
-    
+
     A -->|PING_OFFSCREEN| B
     B -->|OFFSCREEN_DOCUMENT_READY| A
-    
+
     B --> C[Attestor Core]
     C --> D[WebSocket Connection]
     D --> E[Reclaim Network]
@@ -105,11 +108,13 @@ graph TD
 ## 📨 Message Actions Reference
 
 ### Incoming Actions (Background Script → Offscreen Document)
+
 - `PING_OFFSCREEN` - Health check and readiness verification
 - `GENERATE_PROOF` - Generate cryptographic proof from claim data
 - `GET_PRIVATE_KEY` - Generate a new private key
 
 ### Outgoing Actions (Offscreen Document → Background Script)
+
 - `OFFSCREEN_DOCUMENT_READY` - Document initialized and ready
 - `GENERATE_PROOF_RESPONSE` - Proof generation result (success/failure)
 - `GET_PRIVATE_KEY_RESPONSE` - Private key generation result
@@ -124,10 +129,10 @@ The proof generation logic can be customized in the `generateProof()` method:
 async generateProof(claimData) {
   // Custom pre-processing
   const processedData = await this.preprocessClaimData(claimData);
-  
+
   // Custom timeout (default: 60 seconds)
   const timeoutMs = 120000; // 2 minutes
-  
+
   // Custom error handling
   try {
     const result = await createClaimOnAttestor(processedData);
@@ -144,8 +149,11 @@ Modify the private key generation format:
 
 ```javascript
 // Default: Hex format
-const privateKey = '0x' + Array.from(randomBytes)
-  .map(b => b.toString(16).padStart(2, '0')).join('');
+const privateKey =
+  "0x" +
+  Array.from(randomBytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 
 // Custom: Base64 format
 const privateKey = btoa(String.fromCharCode(...randomBytes));
@@ -161,8 +169,8 @@ Customize session status updates:
 ```javascript
 // Custom status types
 const CUSTOM_STATUS = {
-  PREPROCESSING_STARTED: 'CUSTOM_PREPROCESSING_STARTED',
-  VALIDATION_COMPLETE: 'CUSTOM_VALIDATION_COMPLETE'
+  PREPROCESSING_STARTED: "CUSTOM_PREPROCESSING_STARTED",
+  VALIDATION_COMPLETE: "CUSTOM_VALIDATION_COMPLETE",
 };
 
 // Update session with custom status
@@ -207,9 +215,9 @@ await updateSessionStatus(sessionId, CUSTOM_STATUS.PREPROCESSING_STARTED);
 Enable debug logging for offscreen operations:
 
 ```javascript
-import { debugLogger, DebugLogType } from '../utils/logger';
+import { debugLogger, DebugLogType } from "../utils/logger";
 
-debugLogger.log(DebugLogType.OFFSCREEN, 'Your debug message here');
+debugLogger.log(DebugLogType.OFFSCREEN, "Your debug message here");
 ```
 
 ## 📊 Performance Considerations
@@ -237,19 +245,16 @@ debugLogger.log(DebugLogType.OFFSCREEN, 'Your debug message here');
 4. **Cleanup**: Automatically managed by Chrome's offscreen document lifecycle
 5. **Persistence**: Document persists across service worker restarts
 
-
 ## ⚡ Advanced Configuration
 
 ### WebAssembly Optimization
 
 ```javascript
 // Custom WASM configuration
-if (typeof WebAssembly !== 'undefined') {
+if (typeof WebAssembly !== "undefined") {
   // Enable SIMD if available
-  const simdSupported = await WebAssembly.validate(
-    new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])
-  );
-  
+  const simdSupported = await WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]));
+
   if (simdSupported) {
     global.WASM_FEATURES = { simd: true };
   }
@@ -261,12 +266,12 @@ if (typeof WebAssembly !== 'undefined') {
 ```javascript
 // Additional security headers
 const additionalHeaders = [
-  { httpEquiv: 'Permissions-Policy', content: 'camera=(), microphone=()' },
-  { httpEquiv: 'X-Content-Type-Options', content: 'nosniff' }
+  { httpEquiv: "Permissions-Policy", content: "camera=(), microphone=()" },
+  { httpEquiv: "X-Content-Type-Options", content: "nosniff" },
 ];
 
-additionalHeaders.forEach(header => {
-  const meta = document.createElement('meta');
+additionalHeaders.forEach((header) => {
+  const meta = document.createElement("meta");
   meta.httpEquiv = header.httpEquiv;
   meta.content = header.content;
   document.head.appendChild(meta);
@@ -279,15 +284,13 @@ additionalHeaders.forEach(header => {
 // Batch proof generation
 class BatchProofGenerator extends OffscreenProofGenerator {
   async generateBatchProofs(claimDataArray) {
-    const proofs = await Promise.allSettled(
-      claimDataArray.map(data => this.generateProof(data))
-    );
-    
+    const proofs = await Promise.allSettled(claimDataArray.map((data) => this.generateProof(data)));
+
     return proofs.map((result, index) => ({
       index,
-      success: result.status === 'fulfilled',
+      success: result.status === "fulfilled",
       proof: result.value,
-      error: result.reason
+      error: result.reason,
     }));
   }
 }

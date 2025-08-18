@@ -8,7 +8,11 @@ import { debugLogger, DebugLogType } from "../logger";
 // Main function to generate proof using offscreen document
 export const generateProof = async (claimData) => {
   try {
-    debugLogger.info(DebugLogType.PROOF, "[PROOF-GENERATOR] Starting proof generation with data:", claimData);
+    debugLogger.info(
+      DebugLogType.PROOF,
+      "[PROOF-GENERATOR] Starting proof generation with data:",
+      claimData,
+    );
     if (!claimData) {
       throw new Error("No claim data provided for proof generation");
     }
@@ -18,7 +22,10 @@ export const generateProof = async (claimData) => {
     // Generate the proof using the offscreen document
     return new Promise((resolve, reject) => {
       const messageTimeout = setTimeout(() => {
-        debugLogger.error(DebugLogType.PROOF, "[PROOF-GENERATOR] Timeout waiting for offscreen document to generate proof");
+        debugLogger.error(
+          DebugLogType.PROOF,
+          "[PROOF-GENERATOR] Timeout waiting for offscreen document to generate proof",
+        );
         reject({
           success: false,
           error: "Timeout waiting for offscreen document to generate proof",
@@ -38,7 +45,11 @@ export const generateProof = async (claimData) => {
 
           // Check if the proof generation was successful
           if (!response.success) {
-            debugLogger.error(DebugLogType.PROOF, "[PROOF-GENERATOR] Proof generation failed:", response.error);
+            debugLogger.error(
+              DebugLogType.PROOF,
+              "[PROOF-GENERATOR] Proof generation failed:",
+              response.error,
+            );
             resolve({
               success: false,
               error: response.error || "Unknown error in proof generation",
@@ -70,18 +81,23 @@ export const generateProof = async (claimData) => {
             debugLogger.error(
               DebugLogType.PROOF,
               "[PROOF-GENERATOR] Error sending message to offscreen document:",
-              chrome.runtime.lastError
+              chrome.runtime.lastError,
             );
             reject({
               success: false,
-              error: chrome.runtime.lastError.message || "Error communicating with offscreen document",
+              error:
+                chrome.runtime.lastError.message || "Error communicating with offscreen document",
             });
           }
-        }
+        },
       );
     });
   } catch (error) {
-    debugLogger.error(DebugLogType.PROOF, "[PROOF-GENERATOR] Error in proof generation process:", error);
+    debugLogger.error(
+      DebugLogType.PROOF,
+      "[PROOF-GENERATOR] Error in proof generation process:",
+      error,
+    );
     return {
       success: false,
       error: error.message || "Unknown error in proof generation process",
