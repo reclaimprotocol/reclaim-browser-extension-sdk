@@ -21,7 +21,7 @@ Add to your extension app’s package.json:
 ```json
 {
   "scripts": {
-    "reclaim:setup": "node node_modules/@reclaimprotocol/browser-extension-sdk/build/scripts/install-assets.js --public-dir=public"
+    "reclaim-extension-setup": "node node_modules/@reclaimprotocol/browser-extension-sdk/build/scripts/install-assets.js --public-dir=public"
   }
 }
 ```
@@ -29,7 +29,7 @@ Add to your extension app’s package.json:
 Run:
 
 ```bash
-npm run reclaim:setup
+npm run reclaim-extension-setup
 ```
 
 What this does:
