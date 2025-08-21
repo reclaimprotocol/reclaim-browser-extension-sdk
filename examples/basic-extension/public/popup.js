@@ -19,7 +19,7 @@ document.getElementById("startBtn").addEventListener("click", async () => {
     if (!appId || !appSecret || !providerId) return console.log("Fill appId, appSecret, providerId");
 
     request = await reclaimExtensionSDK.init(appId, appSecret, providerId, {
-      extensionID: "coonladadmdfhgildikmdodffiejakkh",
+      extensionID: "giclhcgjpilblajdkdkdboobjpaoanlk",
     });
     console.log("[popup] request", request);
     if (callbackUrl) request.setAppCallbackUrl(callbackUrl);

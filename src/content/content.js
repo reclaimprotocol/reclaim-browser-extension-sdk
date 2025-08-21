@@ -279,7 +279,7 @@ class ReclaimContentScript {
 
   init() {
     // Listen for messages from the web page
-    window.addEventListener("message", this.handleWindowMessage.bind(this));
+    // window.addEventListener("message", this.handleWindowMessage.bind(this));
 
     if (!shouldInitialize) {
       console.log("shouldInitialize", shouldInitialize);
