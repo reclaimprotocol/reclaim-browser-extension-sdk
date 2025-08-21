@@ -180,9 +180,30 @@ try {
 
 // On load, immediately check if this tab should be initialized
 (async function () {
-  // injectNetworkInterceptor();
-  // injectDynamicInjectionScript();
   try {
+    injectNetworkInterceptor();
+    // Early managed-tab check to inject interceptor only for verification tabs
+    try {
+      chrome.runtime.sendMessage(
+        {
+          action: MESSAGE_ACTIONS.CHECK_IF_MANAGED_TAB,
+          source: MESSAGE_SOURCES.CONTENT_SCRIPT,
+          target: MESSAGE_SOURCES.BACKGROUND,
+          data: {},
+        },
+        (resp) => {
+          // If this tab is managed, set the flag and inject immediately to catch login-time requests
+          if (resp?.success && resp.isManaged) {
+            shouldInitialize = true;
+            injectNetworkInterceptor(); // safe: guarded by interceptorInjected
+            // Optional: if you also want the extra script:
+            // injectDynamicInjectionScript();
+          }
+        },
+      );
+    } catch (e) {
+      // ignore
+    }
     // Notify background script that content script is loaded
     console.log("content.js script loaded!!!");
     chrome.runtime.sendMessage({

@@ -15,14 +15,23 @@ document.getElementById("startBtn").addEventListener("click", async () => {
     const appSecret = $("appSecret").value.trim();
     const providerId = $("providerId").value.trim();
     const callbackUrl = $("callbackUrl").value.trim();
+
     console.log({ appId, appSecret, providerId, callbackUrl });
-    if (!appId || !appSecret || !providerId) return console.log("Fill appId, appSecret, providerId");
+
+    if (!appId || !appSecret || !providerId) {
+      console.error("Fill appId, appSecret, providerId");
+      return;
+    }
 
     request = await reclaimExtensionSDK.init(appId, appSecret, providerId, {
       extensionID: "giclhcgjpilblajdkdkdboobjpaoanlk",
     });
+
     console.log("[popup] request", request);
-    if (callbackUrl) request.setAppCallbackUrl(callbackUrl);
+    if (callbackUrl) {
+      request.setAppCallbackUrl(callbackUrl);
+    }
+    
     request.setParams({ demo: "1" });
     request.addContext("0x0", "popup demo");
 

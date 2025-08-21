@@ -59,6 +59,14 @@ Add these before other entries:
 }
 ```
 
+**What these do:**
+
+- `content_security_policy`: Allows WebAssembly execution needed for proof generation
+- `host_permissions`: Enables the SDK to interact with provider websites for verification
+- `permissions`:
+  - `offscreen`: Required for proof generation in background
+  - `cookies`: Needed to access provider authentication cookies
+
 If you use dynamic content script registration (recommended for Vite/CRA), also add:
 
 ```json
@@ -66,6 +74,10 @@ If you use dynamic content script registration (recommended for Vite/CRA), also 
   "permissions": ["offscreen", "cookies", "scripting"]
 }
 ```
+
+**Additional permission:**
+
+- `scripting`: Enables dynamic content script registration (required for Vite/CRA builds)
 
 ---
 
@@ -90,6 +102,13 @@ If you use dynamic content script registration (recommended for Vite/CRA), also 
   ]
 }
 ```
+
+**What these resources are for:**
+
+- `offscreen.*`: Background proof generation and WebAssembly execution
+- `interceptor/*`: Network request interception for provider authentication
+- `content/components/*`: UI popup for provider verification flow
+- `matches: ["<all_urls>"]`: Makes resources available on all websites where verification might occur
 
 ### Load the SDK content bridge (choose ONE)
 
