@@ -10,7 +10,7 @@ export const formatProof = (proof, requestData) => {
       },
     ],
     taskId: null,
-    publicData: null,
+    publicData: proof.publicData ?? null,
     providerRequest: requestData,
   };
   return formattedProof;

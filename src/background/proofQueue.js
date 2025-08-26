@@ -16,16 +16,21 @@ export function addToProofGenerationQueue(ctx, claimData, requestHash) {
 }
 
 export async function processNextQueueItem(ctx) {
+  if (ctx.aborted) return; // stop immediately
   if (ctx.isProcessingQueue || ctx.proofGenerationQueue.length === 0) {
     if (ctx.proofGenerationQueue.length === 0) {
       if (ctx.generatedProofs.size === ctx.providerData.requestData.length) {
         ctx.sessionTimerManager.clearAllTimers();
-        setTimeout(() => ctx.submitProofs(), 0);
-        return;
+        if (!ctx.expectManyClaims) {
+          setTimeout(() => ctx.submitProofs(), 0);
+        }
+        // else: hold until canExpectManyClaims(false)
+      } else {
+        ctx.sessionTimerManager.resumeSessionTimer();
       }
-      ctx.sessionTimerManager.resumeSessionTimer();
+      return;
     }
-    return;
+    ctx.sessionTimerManager.resumeSessionTimer();
   }
 
   ctx.isProcessingQueue = true;
@@ -33,6 +38,7 @@ export async function processNextQueueItem(ctx) {
   const task = ctx.proofGenerationQueue.shift();
 
   try {
+    if (ctx.aborted) return;
     chrome.tabs.sendMessage(ctx.activeTabId, {
       action: ctx.MESSAGE_ACTIONS.PROOF_GENERATION_STARTED,
       source: ctx.MESSAGE_SOURCES.BACKGROUND,
@@ -47,7 +53,13 @@ export async function processNextQueueItem(ctx) {
       providerId: ctx.httpProviderId || "unknown",
       appId: ctx.appId || "unknown",
     });
-    const proofResponseObject = await ctx.generateProof(task.claimData);
+    const proofResponseObject = await ctx.generateProof({
+      ...task.claimData,
+      publicData: ctx.publicData ?? null,
+    });
+
+    if (ctx.aborted) return;
+
     if (!proofResponseObject.success) {
       ctx.failSession("Proof generation failed: " + proofResponseObject.error, task.requestHash);
       return;
@@ -95,12 +107,17 @@ export async function processNextQueueItem(ctx) {
   } finally {
     ctx.isProcessingQueue = false;
 
+    if (ctx.aborted) return;
+
     if (ctx.proofGenerationQueue.length > 0) {
       processNextQueueItem(ctx);
     } else {
       if (ctx.generatedProofs.size === ctx.providerData.requestData.length) {
         ctx.sessionTimerManager.clearAllTimers();
-        setTimeout(() => ctx.submitProofs(), 0);
+        if (!ctx.expectManyClaims) {
+          setTimeout(() => ctx.submitProofs(), 0);
+        }
+        // else: hold until canExpectManyClaims(false)
       } else {
         ctx.sessionTimerManager.resumeSessionTimer();
       }

@@ -4,6 +4,7 @@ import './ReclaimDemo.css';
 
 const PROVIDERS = [
   { id: '7519ad78-208a-425d-9fac-97c13b0f0d4d', name: 'Kaggle' },
+  { id: 'fbf83028-fbed-4414-b593-fa5d3e3fa131', name: 'Trex - Binance' },
 ];
 
 const APP_ID = import.meta.env.VITE_RECLAIM_APP_ID;

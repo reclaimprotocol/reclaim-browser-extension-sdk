@@ -1,3 +1,65 @@
+window.Reclaim = window.Reclaim || {};
+let __reclaimParams = {};
+
+Object.defineProperty(window.Reclaim, "parameters", {
+  get: () => ({ ...__reclaimParams }), // read-only copy
+  // eslint-disable-next-line @typescript-eslint/no-empty-function
+  set: () => {},
+  enumerable: true,
+  configurable: false,
+});
+
+window.Reclaim.updatePublicData = function (obj) {
+  try {
+    const publicData = JSON.stringify(obj ?? {});
+    window.postMessage(
+      {
+        action: "RECLAIM_SET_PUBLIC_DATA",
+        data: { publicData },
+      },
+      "*",
+    );
+  } catch (e) {
+    console.error("Reclaim.updatePublicData error:", e);
+  }
+};
+
+window.Reclaim.canExpectManyClaims = function (flag) {
+  try {
+    window.postMessage(
+      { action: "RECLAIM_SET_EXPECT_MANY_CLAIMS", data: { expectMany: !!flag } },
+      "*",
+    );
+  } catch {}
+};
+
+window.Reclaim.reportProviderError = function (msg) {
+  try {
+    window.postMessage(
+      {
+        action: "RECLAIM_REPORT_PROVIDER_ERROR",
+        data: { message: String(msg || "Provider error") },
+      },
+      "*",
+    );
+  } catch (e) {
+    console.error("Reclaim.reportProviderError error:", e);
+  }
+};
+
+window.addEventListener("message", (e) => {
+  if (e.source !== window) return;
+  const { action, data } = e.data || {};
+  if (action === "RECLAIM_PARAMETERS_UPDATE" && data?.parameters) {
+    __reclaimParams = data.parameters || {};
+  }
+});
+
+// Ask content for the current snapshot (which pulls from background ctx)
+try {
+  window.postMessage({ action: "RECLAIM_PARAMETERS_GET" }, "*");
+} catch {}
+
 /**
  * Dynamic Injection Script Loader
  * Fetches provider-specific injection scripts from the backend and executes them
@@ -45,8 +107,7 @@
   function getProviderIdFromStorage() {
     try {
       // Simplified to single key as per user's modification
-      const keyValue = "reclaimProviderId";
-      localStorage.setItem(keyValue, "7519ad78-208a-425d-9fac-97c13b0f0d4d");
+      const keyValue = "reclaimBrowserExtensionProviderId";
       const value = localStorage.getItem(keyValue);
       if (value) {
         debug.info(`Found provider ID in localStorage[${keyValue}]: ${value}`);
@@ -191,6 +252,72 @@
   }
 
   /**
+   * Execute the fetched injection script without eval
+   */
+  function executeInjectionScriptNoEval(scriptContent, providerData) {
+    const finish = (ok) => {
+      if (!ok) return;
+      debug.info(
+        `Successfully executed injection script for provider: ${providerData.name || "Unknown"}`,
+      );
+      window.dispatchEvent(
+        new CustomEvent("reclaimInjectionScriptExecuted", {
+          detail: {
+            providerId: providerData.httpProviderId,
+            providerName: providerData.name,
+            timestamp: Date.now(),
+          },
+        }),
+      );
+    };
+
+    try {
+      // 1) Blob URL approach
+      const blob = new Blob(
+        [String(scriptContent) + "\n//# sourceURL=reclaim-browser-extension-custom-injection.js"],
+        {
+          type: "text/javascript",
+        },
+      );
+      const url = URL.createObjectURL(blob);
+      const s = document.createElement("script");
+      s.src = url;
+      s.async = false;
+      s.defer = false;
+      s.onload = () => {
+        URL.revokeObjectURL(url);
+        finish(true);
+      };
+      s.onerror = () => {
+        URL.revokeObjectURL(url);
+        // 2) Inline with nonce fallback
+        try {
+          const nonceEl = document.querySelector("script[nonce]");
+          const pageNonce = nonceEl?.nonce || nonceEl?.getAttribute?.("nonce") || "";
+          if (!pageNonce) throw new Error("No page nonce found");
+          const inl = document.createElement("script");
+          inl.nonce = pageNonce;
+          inl.textContent = String(scriptContent);
+          (document.documentElement || document.head || document).insertBefore(
+            inl,
+            (document.documentElement || document.head).firstChild,
+          );
+          finish(true);
+        } catch (e2) {
+          debug.error("All non-eval injection methods failed:", e2);
+          finish(false);
+        }
+      };
+      (document.documentElement || document.head || document).insertBefore(
+        s,
+        (document.documentElement || document.head).firstChild,
+      );
+    } catch (e) {
+      debug.error("Failed to inject script without eval:", e);
+    }
+  }
+
+  /**
    * Main function to load and execute injection script
    */
   async function loadAndExecuteInjectionScript() {
@@ -210,16 +337,23 @@
         return;
       }
 
-      // Fetch the injection script from backend
-      const injectionData = await fetchProviderInjectionScript(providerId);
+      // Fetch the injection script from localStorage
+      const injectionScript = localStorage.getItem(
+        `reclaimBrowserExtensionInjectionScript:${providerId}`,
+      );
 
-      if (!injectionData) {
+      if (!injectionScript) {
         debug.info("No injection script to execute");
         return;
       }
 
+      const providerData = {
+        httpProviderId: providerId,
+        name: "Unknown Provider",
+      };
+
       // Execute the fetched script
-      executeInjectionScript(injectionData.script, injectionData.providerData);
+      executeInjectionScript(injectionScript, providerData);
     } catch (error) {
       debug.error("Error in loadAndExecuteInjectionScript:", error);
     }
