@@ -5,7 +5,7 @@ export async function startVerification(ctx, templateData) {
   try {
     // clear all the member variables
     ctx.providerData = null;
-    ctx.parameters = null;
+    ctx.parameters = {};
     ctx.httpProviderId = null;
     ctx.appId = null;
     ctx.sessionId = null;
@@ -14,6 +14,7 @@ export async function startVerification(ctx, templateData) {
     ctx.filteredRequests = new Map();
     ctx.initPopupMessage = new Map();
     ctx.providerDataMessage = new Map();
+    ctx.aborted = false;
 
     // Reset timers and timer state variables
     ctx.sessionTimerManager.clearAllTimers();
@@ -171,6 +172,9 @@ export async function failSession(ctx, errorMessage, requestHash) {
 
   // Clear all timers
   ctx.sessionTimerManager.clearAllTimers();
+
+  // abort immediately to stop queue/offscreen processing
+  ctx.aborted = true;
 
   // Update session status to failed
   if (ctx.sessionId) {
@@ -421,6 +425,9 @@ export async function cancelSession(ctx, sessionId) {
   try {
     ctx.sessionTimerManager.clearAllTimers();
 
+    // abort immediately to stop queue/offscreen processing
+    ctx.aborted = true;
+
     // Update status as failed due to cancellation (no explicit CANCELLED status available)
     if (ctx.sessionId) {
       try {
@@ -514,7 +521,7 @@ export async function cancelSession(ctx, sessionId) {
     ctx.proofGenerationQueue = [];
     ctx.isProcessingQueue = false;
     ctx.providerData = null;
-    ctx.parameters = null;
+    ctx.parameters = {};
     ctx.httpProviderId = null;
     ctx.appId = null;
     ctx.sessionId = null;

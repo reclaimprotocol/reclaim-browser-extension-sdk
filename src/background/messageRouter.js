@@ -89,7 +89,7 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
             providerId: ctx.httpProviderId || "unknown",
             appId: ctx.appId || "unknown",
           });
-          console.log({ sender, ctx, REQUEST_PROVIDER_DATA: "REQUEST_PROVIDER_DATA" });
+
           if (
             sender.tab?.id &&
             ctx.managedTabs.has(sender.tab.id) &&
@@ -111,7 +111,7 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
               success: true,
               data: {
                 providerData: ctx.providerData,
-                parameters: ctx.parameters,
+                parameters: ctx.parameters || {},
                 sessionId: ctx.sessionId,
                 callbackUrl: ctx.callbackUrl,
                 httpProviderId: ctx.httpProviderId,
@@ -258,6 +258,41 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
           sendResponse({ success: false, error: "Tab is not managed by extension" });
         }
         break;
+      case ctx.MESSAGE_ACTIONS.UPDATE_EXPECT_MANY_CLAIMS: {
+        if (sender.tab?.id && ctx.managedTabs.has(sender.tab.id)) {
+          const turningOff = ctx.expectManyClaims && !data?.expectMany;
+          ctx.expectManyClaims = !!data?.expectMany;
+
+          // If turning OFF and proofs are already ready, finish now
+          if (turningOff && ctx.generatedProofs.size > 0) {
+            try {
+              await ctx.submitProofs();
+            } catch {}
+          }
+          sendResponse({ success: true });
+        } else {
+          sendResponse({ success: false, error: "Tab is not managed by extension" });
+        }
+        break;
+      }
+      case ctx.MESSAGE_ACTIONS.GET_PARAMETERS:
+        if (sender.tab?.id && ctx.managedTabs.has(sender.tab.id)) {
+          sendResponse({ success: true, parameters: ctx.parameters || {} });
+        } else {
+          sendResponse({ success: false, error: "Tab is not managed by extension" });
+        }
+        break;
+      // src/background/messageRouter.js
+      case ctx.MESSAGE_ACTIONS.REPORT_PROVIDER_ERROR: {
+        if (sender.tab?.id && ctx.managedTabs.has(sender.tab.id)) {
+          ctx.aborted = true;
+          await ctx.failSession(ctx, data?.message || "Provider error");
+          sendResponse({ success: true });
+        } else {
+          sendResponse({ success: false, error: "Tab is not managed by extension" });
+        }
+        break;
+      }
       default:
         sendResponse({ success: false, error: "Action not supported" });
     }

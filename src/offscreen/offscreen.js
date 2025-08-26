@@ -148,6 +148,8 @@ class OffscreenProofGenerator {
         }, 60000);
       });
 
+      console.log({ claimData: JSON.stringify(claimData) }, "Offscreen claimData");
+
       const attestorPromise = createClaimOnAttestor(claimData);
       const result = await Promise.race([attestorPromise, timeoutPromise]);
 

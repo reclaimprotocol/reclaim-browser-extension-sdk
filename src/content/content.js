@@ -179,7 +179,6 @@ try {
 // On load, immediately check if this tab should be initialized
 (async function () {
   try {
-    injectNetworkInterceptor();
     // Early managed-tab check to inject interceptor only for verification tabs
     try {
       chrome.runtime.sendMessage(
@@ -259,7 +258,7 @@ class ReclaimContentScript {
 
     // Filtering state
     this.providerData = null;
-    this.parameters = null;
+    this.parameters = {};
     this.sessionId = null;
     this.httpProviderId = null;
     this.appId = null;
@@ -752,6 +751,69 @@ class ReclaimContentScript {
       );
       return;
     }
+
+    if (
+      action === RECLAIM_SDK_ACTIONS.SET_EXPECT_MANY_CLAIMS &&
+      typeof data?.expectMany === "boolean"
+    ) {
+      chrome.runtime.sendMessage(
+        {
+          action: MESSAGE_ACTIONS.UPDATE_EXPECT_MANY_CLAIMS,
+          source: MESSAGE_SOURCES.CONTENT_SCRIPT,
+          target: MESSAGE_SOURCES.BACKGROUND,
+          data: { expectMany: !!data.expectMany },
+        },
+        // eslint-disable-next-line @typescript-eslint/no-empty-function
+        () => {},
+      );
+      return;
+    }
+
+    if (action === RECLAIM_SDK_ACTIONS.PARAMETERS_GET) {
+      chrome.runtime.sendMessage(
+        {
+          action: MESSAGE_ACTIONS.GET_PARAMETERS,
+          source: MESSAGE_SOURCES.CONTENT_SCRIPT,
+          target: MESSAGE_SOURCES.BACKGROUND,
+          data: {},
+        },
+        (resp) => {
+          const params = resp?.success ? resp.parameters || {} : this.parameters || {};
+          this.parameters = params;
+          window.postMessage(
+            { action: RECLAIM_SDK_ACTIONS.PARAMETERS_UPDATE, data: { parameters: params } },
+            "*",
+          );
+        },
+      );
+      return;
+    }
+
+    // Whenever you set this.parameters (e.g., after REQUEST_PROVIDER_DATA, PROVIDER_DATA_READY, or SET_PARAMETERS), also:
+    if (action === RECLAIM_SDK_ACTIONS.SET_PARAMETERS) {
+      this.parameters = data?.parameters || {};
+      window.postMessage(
+        {
+          action: RECLAIM_SDK_ACTIONS.PARAMETERS_UPDATE,
+          data: { parameters: this.parameters || {} },
+        },
+        "*",
+      );
+    }
+
+    if (action === RECLAIM_SDK_ACTIONS.REPORT_PROVIDER_ERROR && data?.message) {
+      chrome.runtime.sendMessage(
+        {
+          action: MESSAGE_ACTIONS.REPORT_PROVIDER_ERROR,
+          source: MESSAGE_SOURCES.CONTENT_SCRIPT,
+          target: MESSAGE_SOURCES.BACKGROUND,
+          data: { message: String(data.message) },
+        },
+        // eslint-disable-next-line @typescript-eslint/no-empty-function
+        () => {},
+      );
+      return;
+    }
   }
 
   // Store intercepted request
@@ -864,6 +926,10 @@ class ReclaimContentScript {
   // Start filtering intercepted network requests
   startNetworkFiltering() {
     if (!this.providerData) {
+      return;
+    }
+
+    if (this.providerData?.injectionType === "NONE") {
       return;
     }
 

@@ -31,12 +31,14 @@ export default function initBackground() {
     // State
     activeTabId: null,
     providerData: null,
-    parameters: null,
+    parameters: {},
     httpProviderId: null,
     appId: null,
     sessionId: null,
     callbackUrl: null,
     publicData: null,
+    aborted: false,
+    expectManyClaims: false,
     originalTabId: null,
     managedTabs: new Set(),
     generatedProofs: new Map(),
@@ -161,9 +163,23 @@ export default function initBackground() {
   });
 
   // Listen for tab removals to clean up managedTabs
-  chrome.tabs.onRemoved.addListener((tabId) => {
+  chrome.tabs.onRemoved.addListener(async (tabId) => {
     if (ctx.managedTabs.has(tabId)) {
       ctx.managedTabs.delete(tabId);
+    }
+
+    if (tabId === ctx.activeTabId) {
+      ctx.activeTabId = null;
+      const allRequiredDone =
+        ctx.providerData &&
+        ctx.generatedProofs.size === (ctx.providerData.requestData?.length || 0);
+
+      if (!ctx.aborted && ctx.sessionId && !allRequiredDone) {
+        ctx.aborted = true;
+        try {
+          await ctx.failSession("Verification tab closed by user");
+        } catch (_) {}
+      }
     }
   });
   console.log("🚀 BACKGROUND INITIALIZATION COMPLETE");

@@ -1,4 +1,14 @@
 window.Reclaim = window.Reclaim || {};
+let __reclaimParams = {};
+
+Object.defineProperty(window.Reclaim, "parameters", {
+  get: () => ({ ...__reclaimParams }), // read-only copy
+  // eslint-disable-next-line @typescript-eslint/no-empty-function
+  set: () => {},
+  enumerable: true,
+  configurable: false,
+});
+
 window.Reclaim.updatePublicData = function (obj) {
   try {
     const publicData = JSON.stringify(obj ?? {});
@@ -13,6 +23,42 @@ window.Reclaim.updatePublicData = function (obj) {
     console.error("Reclaim.updatePublicData error:", e);
   }
 };
+
+window.Reclaim.canExpectManyClaims = function (flag) {
+  try {
+    window.postMessage(
+      { action: "RECLAIM_SET_EXPECT_MANY_CLAIMS", data: { expectMany: !!flag } },
+      "*",
+    );
+  } catch {}
+};
+
+window.Reclaim.reportProviderError = function (msg) {
+  try {
+    window.postMessage(
+      {
+        action: "RECLAIM_REPORT_PROVIDER_ERROR",
+        data: { message: String(msg || "Provider error") },
+      },
+      "*",
+    );
+  } catch (e) {
+    console.error("Reclaim.reportProviderError error:", e);
+  }
+};
+
+window.addEventListener("message", (e) => {
+  if (e.source !== window) return;
+  const { action, data } = e.data || {};
+  if (action === "RECLAIM_PARAMETERS_UPDATE" && data?.parameters) {
+    __reclaimParams = data.parameters || {};
+  }
+});
+
+// Ask content for the current snapshot (which pulls from background ctx)
+try {
+  window.postMessage({ action: "RECLAIM_PARAMETERS_GET" }, "*");
+} catch {}
 
 /**
  * Dynamic Injection Script Loader
