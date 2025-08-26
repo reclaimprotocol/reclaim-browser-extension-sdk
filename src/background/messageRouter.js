@@ -250,6 +250,14 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
           sendResponse({ success: false, error: "Action not supported" });
         }
         break;
+      case ctx.MESSAGE_ACTIONS.UPDATE_PUBLIC_DATA:
+        if (sender.tab?.id && ctx.managedTabs.has(sender.tab.id)) {
+          ctx.publicData = typeof data?.publicData === "string" ? data.publicData : null;
+          sendResponse({ success: true });
+        } else {
+          sendResponse({ success: false, error: "Tab is not managed by extension" });
+        }
+        break;
       default:
         sendResponse({ success: false, error: "Action not supported" });
     }

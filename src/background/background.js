@@ -36,6 +36,7 @@ export default function initBackground() {
     appId: null,
     sessionId: null,
     callbackUrl: null,
+    publicData: null,
     originalTabId: null,
     managedTabs: new Set(),
     generatedProofs: new Map(),

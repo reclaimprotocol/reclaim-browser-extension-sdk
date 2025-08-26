@@ -13,7 +13,6 @@ let injectionScriptInjected = false;
 
 // Function to inject the network interceptor - will be called conditionally
 const injectNetworkInterceptor = function () {
-  console.log("injectNetworkInterceptor", interceptorInjected);
   if (interceptorInjected) return;
 
   try {
@@ -21,7 +20,6 @@ const injectNetworkInterceptor = function () {
     const src = chrome.runtime.getURL(
       "reclaim-browser-extension-sdk/interceptor/network-interceptor.bundle.js",
     );
-    console.log("src", src);
     script.src = src;
     script.type = "text/javascript";
 
@@ -195,9 +193,10 @@ try {
           // If this tab is managed, set the flag and inject immediately to catch login-time requests
           if (resp?.success && resp.isManaged) {
             shouldInitialize = true;
+
             injectNetworkInterceptor(); // safe: guarded by interceptorInjected
             // Optional: if you also want the extra script:
-            // injectDynamicInjectionScript();
+            injectDynamicInjectionScript();
           }
         },
       );
@@ -225,7 +224,7 @@ try {
           injectNetworkInterceptor();
 
           // Also inject the dynamic injection script loader
-          // injectDynamicInjectionScript();
+          injectDynamicInjectionScript();
 
           // And initialize the content script
           window.reclaimContentScript = new ReclaimContentScript();
@@ -336,7 +335,6 @@ class ReclaimContentScript {
             data: { url: window.location.href },
           },
           (response) => {
-            console.log("response", response);
             if (response.success) {
               this.providerData = response.data.providerData;
               this.parameters = response.data.parameters;
@@ -347,7 +345,12 @@ class ReclaimContentScript {
               // Store provider ID in website's localStorage for injection script access
               this.setProviderIdInLocalStorage(this.httpProviderId);
 
-              console.log("this.isFiltering", this.isFiltering);
+              // Store injection script in website's localStorage for injection script access
+              this.setProviderInjectionScriptInLocalStorage(
+                this.httpProviderId,
+                this.providerData?.customInjection,
+              );
+
               if (!this.isFiltering) {
                 this.startNetworkFiltering();
               }
@@ -360,7 +363,6 @@ class ReclaimContentScript {
 
   handleMessage(message, sender, sendResponse) {
     const { action, data, source } = message;
-    console.log({ message });
 
     switch (action) {
       case MESSAGE_ACTIONS.SHOULD_INITIALIZE:
@@ -382,6 +384,9 @@ class ReclaimContentScript {
 
         // Store provider ID in website's localStorage for injection script access
         this.setProviderIdInLocalStorage(this.httpProviderId);
+
+        // Store injection script in website's localStorage for injection script access
+        this.setProviderInjectionScriptInLocalStorage(this.httpProviderId, data?.customInjection);
 
         if (!this.isFiltering) {
           this.startNetworkFiltering();
@@ -596,8 +601,6 @@ class ReclaimContentScript {
         typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id
           ? chrome.runtime.id
           : null;
-      console.log("RUNTIME ID", { runtimeId });
-      console.log("EXTENSION ID", { extensionID });
       if (!extensionID) {
         // Non-strict mode: if caller didn't specify an ID, treat this extension as installed
         return !!runtimeId;
@@ -669,12 +672,9 @@ class ReclaimContentScript {
     // Handle start verification request from SDK
     if (action === RECLAIM_SDK_ACTIONS.START_VERIFICATION && data) {
       // Forward the template data to background script
-      console.log("START VERIFICATION", { extensionID, data });
       if (!this.checkExtensionId(extensionID)) {
-        console.log("EXTENSION ID NOT MATCHING", { extensionID });
         return;
       }
-      console.log("EXTENSION ID MATCHING", { extensionID });
       loggerService.log({
         message: "Starting verification with data from SDK: " + JSON.stringify(data),
         type: LOG_TYPES.CONTENT,
@@ -736,6 +736,21 @@ class ReclaimContentScript {
         // eslint-disable-next-line @typescript-eslint/no-empty-function
         () => {},
       );
+    }
+
+    if (action === RECLAIM_SDK_ACTIONS.SET_PUBLIC_DATA && data?.publicData !== null) {
+      this.publicData = String(data?.publicData);
+      chrome.runtime.sendMessage(
+        {
+          action: MESSAGE_ACTIONS.UPDATE_PUBLIC_DATA,
+          source: MESSAGE_SOURCES.CONTENT_SCRIPT,
+          target: MESSAGE_SOURCES.BACKGROUND,
+          data: { publicData: this.publicData },
+        },
+        // eslint-disable-next-line @typescript-eslint/no-empty-function
+        () => {},
+      );
+      return;
     }
   }
 
@@ -848,7 +863,6 @@ class ReclaimContentScript {
 
   // Start filtering intercepted network requests
   startNetworkFiltering() {
-    console.log("startNetworkFiltering", { providerData: this.providerData });
     if (!this.providerData) {
       return;
     }
@@ -929,16 +943,6 @@ class ReclaimContentScript {
         headers: requestValue.headers || {},
         responseText: responseBody,
       };
-
-      console.log(
-        formattedRequest.url,
-        formattedRequest.url === "https://www.kaggle.com/api/i/users.UsersService/GetCurrentUser",
-      );
-      if (
-        formattedRequest.url === "https://www.kaggle.com/api/i/users.UsersService/GetCurrentUser"
-      ) {
-        console.log("formattedRequest", { formattedRequest, providerData: this.providerData });
-      }
 
       // Check against each criteria in provider data
       for (const criteria of this.providerData.requestData) {
@@ -1040,7 +1044,7 @@ class ReclaimContentScript {
 
     try {
       console.log("Storing provider ID in localStorage:", providerId);
-      localStorage.setItem("reclaimProviderId", providerId);
+      localStorage.setItem("reclaimBrowserExtensionProviderId", providerId);
       loggerService.log({
         message: `Provider ID ${providerId} stored in localStorage.`,
         type: LOG_TYPES.CONTENT,
@@ -1051,6 +1055,52 @@ class ReclaimContentScript {
     } catch (e) {
       loggerService.log({
         message: `Failed to store provider ID ${providerId} in localStorage: ${e.message}`,
+        type: LOG_TYPES.ERROR,
+        sessionId: this.sessionId,
+        providerId: this.httpProviderId,
+        appId: this.appId,
+      });
+    }
+  }
+
+  // Helper method to store provider injection script in website's localStorage
+  setProviderInjectionScriptInLocalStorage(providerId, injectionScript) {
+    // Don't store null, undefined, or 'unknown' values
+    if (!providerId || providerId === "unknown") {
+      loggerService.log({
+        message: `Skipping localStorage storage for injection script for invalid provider ID: ${providerId}`,
+        type: LOG_TYPES.CONTENT,
+        sessionId: this.sessionId,
+        providerId: this.httpProviderId,
+        appId: this.appId,
+      });
+      return;
+    }
+
+    if (!injectionScript?.length) {
+      loggerService.log({
+        message: `Skipping localStorage storage for injection script`,
+        type: LOG_TYPES.CONTENT,
+        sessionId: this.sessionId,
+        providerId: this.httpProviderId,
+        appId: this.appId,
+      });
+      return;
+    }
+
+    try {
+      console.log("Storing provider ID in localStorage:", providerId);
+      localStorage.setItem(`reclaimBrowserExtensionInjectionScript:${providerId}`, injectionScript);
+      loggerService.log({
+        message: `Injection script stored in localStorage.`,
+        type: LOG_TYPES.CONTENT,
+        sessionId: this.sessionId,
+        providerId: this.httpProviderId,
+        appId: this.appId,
+      });
+    } catch (e) {
+      loggerService.log({
+        message: `Failed to store injection script in localStorage: ${e.message}`,
         type: LOG_TYPES.ERROR,
         sessionId: this.sessionId,
         providerId: this.httpProviderId,

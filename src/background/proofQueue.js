@@ -47,7 +47,11 @@ export async function processNextQueueItem(ctx) {
       providerId: ctx.httpProviderId || "unknown",
       appId: ctx.appId || "unknown",
     });
-    const proofResponseObject = await ctx.generateProof(task.claimData);
+    const proofResponseObject = await ctx.generateProof({
+      ...task.claimData,
+      publicData: ctx.publicData ?? null,
+    });
+
     if (!proofResponseObject.success) {
       ctx.failSession("Proof generation failed: " + proofResponseObject.error, task.requestHash);
       return;

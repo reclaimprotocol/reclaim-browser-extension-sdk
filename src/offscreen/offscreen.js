@@ -129,7 +129,6 @@ class OffscreenProofGenerator {
   }
 
   async generateProof(claimData) {
-    console.log({ claimData }, "Offscreen generateProof claimData received");
     if (!claimData) {
       throw new Error("No claim data provided for proof generation");
     }
@@ -149,15 +148,10 @@ class OffscreenProofGenerator {
         }, 60000);
       });
 
-      console.log({ claimData }, "Offscreen createClaimOnAttestor claimData");
-
       const attestorPromise = createClaimOnAttestor(claimData);
-
-      console.log({ attestorPromise }, "Offscreen attestorPromise");
-
       const result = await Promise.race([attestorPromise, timeoutPromise]);
 
-      console.log({ result }, "Offscreen result");
+      result.publicData = typeof claimData.publicData === "string" ? claimData.publicData : null;
 
       await updateSessionStatus(sessionId, RECLAIM_SESSION_STATUS.PROOF_GENERATION_SUCCESS);
       return result;

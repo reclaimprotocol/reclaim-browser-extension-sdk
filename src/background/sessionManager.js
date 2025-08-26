@@ -250,7 +250,7 @@ export async function submitProofs(ctx) {
       return;
     }
 
-    const formattedProofs = [];
+    let formattedProofs = [];
     for (const requestData of ctx.providerData.requestData) {
       if (ctx.generatedProofs.has(requestData.requestHash)) {
         const proof = ctx.generatedProofs.get(requestData.requestHash);
@@ -258,6 +258,12 @@ export async function submitProofs(ctx) {
         formattedProofs.push(formattedProof);
       }
     }
+
+    // after building formattedProofs[]
+    formattedProofs = formattedProofs.map((fp) => ({
+      ...fp,
+      publicData: ctx.publicData ?? null,
+    }));
 
     let submitted = false;
     // If callbackUrl provided, submit; otherwise just signal completion
