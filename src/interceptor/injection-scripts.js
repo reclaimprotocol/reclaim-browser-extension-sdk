@@ -47,13 +47,30 @@ window.Reclaim.reportProviderError = function (msg) {
   }
 };
 
+window.Reclaim.requestClaim = function (rdObject) {
+  try {
+    window.postMessage({ action: "RECLAIM_REQUEST_CLAIM", data: { rdObject } }, "*");
+  } catch (e) {
+    console.error("Reclaim.requestClaim error:", e);
+  }
+};
+
 window.addEventListener("message", (e) => {
   if (e.source !== window) return;
   const { action, data } = e.data || {};
   if (action === "RECLAIM_PARAMETERS_UPDATE" && data?.parameters) {
-    __reclaimParams = data.parameters || {};
+    const p = data.parameters || {};
+    // ignore empty updates if we already have something
+    if (Object.keys(p).length === 0 && Object.keys(__reclaimParams).length > 0) return;
+    __reclaimParams = p;
   }
 });
+
+window.Reclaim.refreshParameters = function () {
+  try {
+    window.postMessage({ action: "RECLAIM_PARAMETERS_GET" }, "*");
+  } catch {}
+};
 
 // Ask content for the current snapshot (which pulls from background ctx)
 try {

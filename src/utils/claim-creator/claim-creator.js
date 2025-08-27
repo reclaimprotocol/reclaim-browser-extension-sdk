@@ -175,8 +175,16 @@ export const createClaimObject = async (request, providerData, sessionId, loginU
   }
 
   // Process body if available
-  if (providerData?.bodySniff?.enabled && request.body) {
-    params.body = providerData?.bodySniff?.template;
+  // if (providerData?.bodySniff?.enabled && request.body) {
+  //   params.body = providerData?.bodySniff?.template;
+  // }
+
+  if (request.body) {
+    if (providerData?.bodySniff?.enabled) {
+      params.body = providerData.bodySniff.template;
+    } else {
+      params.body = request.body; // pass-through raw body
+    }
   }
 
   // Process cookie string if available in request
@@ -186,6 +194,10 @@ export const createClaimObject = async (request, providerData, sessionId, loginU
 
   // Extract dynamic parameters from various sources
   let allParamValues = {};
+
+  if (request?.extractedParams && typeof request.extractedParams === "object") {
+    allParamValues = { ...allParamValues, ...request.extractedParams };
+  }
 
   // 1. Extract params from URL if provider has URL template
   if (providerData.urlType === "TEMPLATE" && request.url) {

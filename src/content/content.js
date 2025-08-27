@@ -335,11 +335,22 @@ class ReclaimContentScript {
           },
           (response) => {
             if (response.success) {
+              console.log(response, "response from provider data");
               this.providerData = response.data.providerData;
               this.parameters = response.data.parameters;
               this.sessionId = response.data.sessionId;
               this.httpProviderId = response.data.httpProviderId || "unknown";
               this.appId = response.data.appId || "unknown";
+
+              console.log(this.parameters, "this.parameters REQUEST_PROVIDER_DATA");
+
+              window.postMessage(
+                {
+                  action: RECLAIM_SDK_ACTIONS.PARAMETERS_UPDATE,
+                  data: { parameters: this.parameters || {} },
+                },
+                "*",
+              );
 
               // Store provider ID in website's localStorage for injection script access
               this.setProviderIdInLocalStorage(this.httpProviderId);
@@ -380,6 +391,15 @@ class ReclaimContentScript {
         this.sessionId = data.sessionId;
         this.httpProviderId = data.httpProviderId || "unknown";
         this.appId = data.appId || "unknown";
+
+        console.log(this.parameters, "this.parameters PROVIDER_DATA_READY");
+        window.postMessage(
+          {
+            action: RECLAIM_SDK_ACTIONS.PARAMETERS_UPDATE,
+            data: { parameters: this.parameters || {} },
+          },
+          "*",
+        );
 
         // Store provider ID in website's localStorage for injection script access
         this.setProviderIdInLocalStorage(this.httpProviderId);
@@ -692,7 +712,16 @@ class ReclaimContentScript {
           // Store parameters and session ID for later use
           if (data.parameters) {
             this.parameters = data.parameters;
+            console.log(data.parameters, this.parameters, "data.parameters START_VERIFICATION");
+            window.postMessage(
+              {
+                action: RECLAIM_SDK_ACTIONS.PARAMETERS_UPDATE,
+                data: { parameters: this.parameters || {} },
+              },
+              "*",
+            );
           }
+
           if (data.sessionId) {
             this.sessionId = data.sessionId;
           }
@@ -808,6 +837,55 @@ class ReclaimContentScript {
           source: MESSAGE_SOURCES.CONTENT_SCRIPT,
           target: MESSAGE_SOURCES.BACKGROUND,
           data: { message: String(data.message) },
+        },
+        // eslint-disable-next-line @typescript-eslint/no-empty-function
+        () => {},
+      );
+      return;
+    }
+
+    if (action === RECLAIM_SDK_ACTIONS.REQUEST_CLAIM && data?.rdObject) {
+      const rdObject = data.rdObject || {};
+      // Basic hash for status linkage
+      const requestHash = `rc-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+      // Request format expected by createClaimObject path
+      const request = {
+        url: String(rdObject.url || ""),
+        method: String(rdObject.method || "GET"),
+        headers: rdObject.headers || {},
+        body: rdObject.requestBody != null ? String(rdObject.requestBody) : null,
+        responseText: null,
+        // pass through extracted params so claim-creator can merge into paramValues
+        extractedParams: rdObject.extractedParams || {},
+      };
+
+      // Minimal providerData-like criteria for createClaimObject
+      const criteria = {
+        url: String(rdObject.url || ""),
+        expectedPageUrl: "",
+        urlType: "TEMPLATE",
+        method: String(rdObject.method || "GET"),
+        responseMatches: Array.isArray(rdObject.responseMatches) ? rdObject.responseMatches : [],
+        responseRedactions: Array.isArray(rdObject.responseRedactions)
+          ? rdObject.responseRedactions
+          : [],
+        bodySniff: { enabled: false, template: "" },
+        additionalClientOptions: null,
+        requestHash,
+      };
+
+      chrome.runtime.sendMessage(
+        {
+          action: MESSAGE_ACTIONS.REQUEST_CLAIM,
+          source: MESSAGE_SOURCES.CONTENT_SCRIPT,
+          target: MESSAGE_SOURCES.BACKGROUND,
+          data: {
+            request,
+            criteria,
+            sessionId: this.sessionId,
+            loginUrl: this.providerData?.loginUrl || "",
+          },
         },
         // eslint-disable-next-line @typescript-eslint/no-empty-function
         () => {},

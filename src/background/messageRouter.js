@@ -293,6 +293,29 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
         }
         break;
       }
+      case ctx.MESSAGE_ACTIONS.REQUEST_CLAIM: {
+        if (
+          source === ctx.MESSAGE_SOURCES.CONTENT_SCRIPT &&
+          target === ctx.MESSAGE_SOURCES.BACKGROUND &&
+          sender.tab?.id &&
+          ctx.managedTabs.has(sender.tab.id)
+        ) {
+          try {
+            const result = await ctx.processFilteredRequest(
+              data.request, // carries url/method/headers/body/extractedParams
+              data.criteria, // responseMatches/redactions, requestHash
+              data.sessionId, // current session
+              data.loginUrl || "", // referer/login
+            );
+            sendResponse({ success: true, result });
+          } catch (e) {
+            sendResponse({ success: false, error: e?.message || String(e) });
+          }
+        } else {
+          sendResponse({ success: false, error: "Tab is not managed by extension" });
+        }
+        break;
+      }
       default:
         sendResponse({ success: false, error: "Action not supported" });
     }
