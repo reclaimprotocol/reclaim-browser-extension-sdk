@@ -4,6 +4,9 @@ import './ReclaimDemo.css';
 
 const PROVIDERS = [
   { id: '7519ad78-208a-425d-9fac-97c13b0f0d4d', name: 'Kaggle' },
+  { id: '6b6d447f-caa7-461c-bd13-5c4738d7b4f9', name: 'Kaggle Injections' },
+  { id: 'c9656893-ab80-4f17-9e88-0bcc33da123b', name: 'Kaggle Cascading' },
+  { id: '214861a3-191b-427b-9862-75e301f1e63b', name: 'Tiktok' },
   { id: 'fbf83028-fbed-4414-b593-fa5d3e3fa131', name: 'Trex - Binance' },
 ];
 
@@ -47,6 +50,7 @@ export default function ReclaimDemo() {
       });
 
       request.on('error', (e) => {
+        console.log(e, "Error");
         setError(e?.message || String(e));
         setLoading(false);
       });
@@ -146,3 +150,7 @@ export default function ReclaimDemo() {
     </div>
   );
 }
+
+
+
+

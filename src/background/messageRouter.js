@@ -286,7 +286,7 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
       case ctx.MESSAGE_ACTIONS.REPORT_PROVIDER_ERROR: {
         if (sender.tab?.id && ctx.managedTabs.has(sender.tab.id)) {
           ctx.aborted = true;
-          await ctx.failSession(ctx, data?.message || "Provider error");
+          await ctx.failSession(data?.message || "Provider error");
           sendResponse({ success: true });
         } else {
           sendResponse({ success: false, error: "Tab is not managed by extension" });

@@ -254,6 +254,10 @@ export async function submitProofs(ctx) {
       return;
     }
 
+    if (ctx.expectManyClaims) {
+      return;
+    }
+
     let formattedProofs = [];
     for (const requestData of ctx.providerData.requestData) {
       if (ctx.generatedProofs.has(requestData.requestHash)) {
