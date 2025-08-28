@@ -152,8 +152,13 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
 
           // Concurrency guard
           if (ctx.activeSessionId && ctx.activeSessionId !== data.sessionId) {
-            sendResponse({ success: false, error: "Another verification is in progress" });
-            break;
+            // If no managed tabs remain, clear stale guard and continue
+            if (ctx.managedTabs.size === 0) {
+              ctx.activeSessionId = null;
+            } else {
+              sendResponse({ success: false, error: "Another verification is in progress" });
+              break;
+            }
           }
           ctx.activeSessionId = data.sessionId || ctx.activeSessionId;
 
@@ -301,12 +306,18 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
           ctx.managedTabs.has(sender.tab.id)
         ) {
           try {
+            const sessId = ctx.sessionId || data.sessionId;
+            if (!sessId) {
+              sendResponse({ success: false, error: "Session not initialized" });
+              break;
+            }
             const result = await ctx.processFilteredRequest(
               data.request, // carries url/method/headers/body/extractedParams
               data.criteria, // responseMatches/redactions, requestHash
               data.sessionId, // current session
               data.loginUrl || "", // referer/login
             );
+            console.log({ result }, "result REQUEST_CLAIM???");
             sendResponse({ success: true, result });
           } catch (e) {
             sendResponse({ success: false, error: e?.message || String(e) });

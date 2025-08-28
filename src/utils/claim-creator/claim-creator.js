@@ -102,7 +102,7 @@ const getPrivateKeyFromOffscreen = () => {
 
 export const createClaimObject = async (request, providerData, sessionId, loginUrl) => {
   debugLogger.info(DebugLogType.CLAIM, "[CLAIM-CREATOR] Creating claim object from request data");
-
+  console.log({ request, providerData, sessionId, loginUrl }, " CREATE_CLAIM_OBJECT");
   // Ensure offscreen document is ready
   try {
     debugLogger.info(DebugLogType.CLAIM, "[CLAIM-CREATOR] Ensuring offscreen document is ready...");
@@ -196,6 +196,7 @@ export const createClaimObject = async (request, providerData, sessionId, loginU
   let allParamValues = {};
 
   if (request?.extractedParams && typeof request.extractedParams === "object") {
+    console.log(request.extractedParams, "request.extractedParams CREATE_CLAIM_OBJECT");
     allParamValues = { ...allParamValues, ...request.extractedParams };
   }
 
@@ -228,9 +229,16 @@ export const createClaimObject = async (request, providerData, sessionId, loginU
     };
   }
 
+  console.log(allParamValues, "allParamValues CREATE_CLAIM_OBJECT1");
+
   // 5. Separate parameters into public and secret
   const { publicParams, secretParams: secretParamValues } = separateParams(allParamValues);
 
+  console.log(
+    publicParams,
+    secretParamValues,
+    "publicParams, secretParamValues CREATE_CLAIM_OBJECT2",
+  );
   // Add parameter values to respective objects
   if (Object.keys(publicParams).length > 0) {
     params.paramValues = publicParams;

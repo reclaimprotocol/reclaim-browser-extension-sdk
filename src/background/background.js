@@ -41,6 +41,7 @@ export default function initBackground() {
     expectManyClaims: false,
     originalTabId: null,
     managedTabs: new Set(),
+    providerRequestsByHash: new Map(),
     generatedProofs: new Map(),
     filteredRequests: new Map(),
     proofGenerationQueue: [],
@@ -77,7 +78,16 @@ export default function initBackground() {
 
   // Add processFilteredRequest to context (move from class)
   ctx.processFilteredRequest = async function (request, criteria, sessionId, loginUrl) {
+    console.log(
+      { request, criteria, sessionId, loginUrl, ctx },
+      "request, criteria, sessionId, loginUrl PROCESS_FILTERED_REQUEST",
+    );
     try {
+      sessionId = ctx.sessionId || sessionId;
+      if (!sessionId) {
+        ctx.failSession("Session not initialized for claim request", criteria?.requestHash);
+        return { success: false, error: "Session not initialized" };
+      }
       if (!ctx.firstRequestReceived) {
         ctx.firstRequestReceived = true;
         ctx.sessionTimerManager.startSessionTimer();
@@ -122,7 +132,7 @@ export default function initBackground() {
         return { success: false, error: error.message };
       }
 
-      console.log({ claimData });
+      console.log({ claimData }, "claimData PROCESS_FILTERED_REQUEST");
 
       if (claimData) {
         chrome.tabs.sendMessage(ctx.activeTabId, {
@@ -138,6 +148,20 @@ export default function initBackground() {
           providerId: ctx.httpProviderId || "unknown",
           appId: ctx.appId || "unknown",
         });
+      }
+      const providerRequest = {
+        url: criteria?.url || request?.url || "",
+        expectedPageUrl: criteria?.expectedPageUrl || "",
+        urlType: criteria?.urlType || "EXACT",
+        method: criteria?.method || request?.method || "GET",
+        responseMatches: Array.isArray(criteria?.responseMatches) ? criteria.responseMatches : [],
+        responseRedactions: Array.isArray(criteria?.responseRedactions)
+          ? criteria.responseRedactions
+          : [],
+        requestHash: criteria?.requestHash,
+      };
+      if (providerRequest.requestHash) {
+        ctx.providerRequestsByHash.set(providerRequest.requestHash, providerRequest);
       }
       proofQueue.addToProofGenerationQueue(ctx, claimData, criteria.requestHash);
       return { success: true, message: "Proof generation queued" };
@@ -164,22 +188,25 @@ export default function initBackground() {
 
   // Listen for tab removals to clean up managedTabs
   chrome.tabs.onRemoved.addListener(async (tabId) => {
-    if (ctx.managedTabs.has(tabId)) {
-      ctx.managedTabs.delete(tabId);
+    console.log("chrome.tabs.onRemoved", tabId, ctx);
+    const wasManaged = ctx.managedTabs.has(tabId);
+    if (wasManaged) ctx.managedTabs.delete(tabId);
+
+    const lostActive = tabId === ctx.activeTabId;
+    const noManagedLeft = ctx.managedTabs.size === 0;
+
+    // If there is an active session and we lost its tab(s), fail immediately.
+    if (ctx.activeSessionId && (lostActive || noManagedLeft) && !ctx.aborted) {
+      ctx.aborted = true;
+      try {
+        await ctx.failSession("Verification tab closed by user");
+      } catch {}
     }
 
-    if (tabId === ctx.activeTabId) {
-      ctx.activeTabId = null;
-      const allRequiredDone =
-        ctx.providerData &&
-        ctx.generatedProofs.size === (ctx.providerData.requestData?.length || 0);
-
-      if (!ctx.aborted && ctx.sessionId && !allRequiredDone) {
-        ctx.aborted = true;
-        try {
-          await ctx.failSession("Verification tab closed by user");
-        } catch (_) {}
-      }
+    if (lostActive) ctx.activeTabId = null;
+    if (noManagedLeft) {
+      ctx.originalTabId = null;
+      ctx.activeSessionId = null; // clear stale guard
     }
   });
   console.log("🚀 BACKGROUND INITIALIZATION COMPLETE");

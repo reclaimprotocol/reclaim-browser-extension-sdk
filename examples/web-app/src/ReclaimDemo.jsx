@@ -50,6 +50,7 @@ export default function ReclaimDemo() {
       setStatusUrl(request.getStatusUrl());
 
       request.on('completed', (p) => {
+        console.log(p, "completed");
         setProofs(p);
         setLoading(false);
       });
@@ -61,6 +62,7 @@ export default function ReclaimDemo() {
       });
 
       const p = await request.startVerification();
+      console.log(p, "p startVerification");
       setProofs(p);
     } catch (e) {
       setError(e?.message || String(e));

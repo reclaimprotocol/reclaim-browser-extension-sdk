@@ -1,9 +1,21 @@
 window.Reclaim = window.Reclaim || {};
 let __reclaimParams = {};
 
+try {
+  const ls = localStorage.getItem("reclaimBrowserExtensionParameters");
+  if (ls) __reclaimParams = JSON.parse(ls) || {};
+} catch {}
+
 Object.defineProperty(window.Reclaim, "parameters", {
-  get: () => ({ ...__reclaimParams }), // read-only copy
-  // eslint-disable-next-line @typescript-eslint/no-empty-function
+  get: () => {
+    if (Object.keys(__reclaimParams).length > 0) return { ...__reclaimParams };
+    try {
+      const ls = localStorage.getItem("reclaimBrowserExtensionParameters");
+      return ls ? JSON.parse(ls) : {};
+    } catch {
+      return {};
+    }
+  },
   set: () => {},
   enumerable: true,
   configurable: false,
@@ -55,24 +67,28 @@ window.Reclaim.requestClaim = function (rdObject) {
   }
 };
 
+window.Reclaim.getParametersSync = function () {
+  try {
+    const ls = localStorage.getItem("reclaimBrowserExtensionParameters");
+    return ls ? JSON.parse(ls) : {};
+  } catch {
+    return {};
+  }
+};
+
 window.addEventListener("message", (e) => {
   if (e.source !== window) return;
   const { action, data } = e.data || {};
   if (action === "RECLAIM_PARAMETERS_UPDATE" && data?.parameters) {
     const p = data.parameters || {};
-    // ignore empty updates if we already have something
     if (Object.keys(p).length === 0 && Object.keys(__reclaimParams).length > 0) return;
     __reclaimParams = p;
+    try {
+      localStorage.setItem("reclaimBrowserExtensionParameters", JSON.stringify(__reclaimParams));
+    } catch {}
   }
 });
 
-window.Reclaim.refreshParameters = function () {
-  try {
-    window.postMessage({ action: "RECLAIM_PARAMETERS_GET" }, "*");
-  } catch {}
-};
-
-// Ask content for the current snapshot (which pulls from background ctx)
 try {
   window.postMessage({ action: "RECLAIM_PARAMETERS_GET" }, "*");
 } catch {}
