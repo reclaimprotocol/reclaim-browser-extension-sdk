@@ -102,7 +102,6 @@ const getPrivateKeyFromOffscreen = () => {
 
 export const createClaimObject = async (request, providerData, sessionId, loginUrl) => {
   debugLogger.info(DebugLogType.CLAIM, "[CLAIM-CREATOR] Creating claim object from request data");
-  console.log({ request, providerData, sessionId, loginUrl }, " CREATE_CLAIM_OBJECT");
   // Ensure offscreen document is ready
   try {
     debugLogger.info(DebugLogType.CLAIM, "[CLAIM-CREATOR] Ensuring offscreen document is ready...");
@@ -119,7 +118,10 @@ export const createClaimObject = async (request, providerData, sessionId, loginU
   }
 
   // Generate appropriate user agent for the platform
-  const userAgent = await generateChromeAndroidUserAgent();
+  // const userAgent = await generateChromeAndroidUserAgent();
+
+  const userAgent =
+    (typeof navigator !== "undefined" && navigator.userAgent) || generateChromeAndroidUserAgent();
 
   // Define public headers that should be in params
   const PUBLIC_HEADERS = [
@@ -153,7 +155,7 @@ export const createClaimObject = async (request, providerData, sessionId, loginU
       "User-Agent": userAgent,
     };
     const secretHeaders = {
-      Referer: loginUrl ?? "",
+      Referer: (request.referer && String(request.referer)) || loginUrl || origin || "",
     };
 
     Object.entries(request.headers).forEach(([key, value]) => {
@@ -164,6 +166,10 @@ export const createClaimObject = async (request, providerData, sessionId, loginU
         secretHeaders[key] = value;
       }
     });
+
+    if (origin && !publicHeaders.Origin && !request.headers?.Origin) {
+      publicHeaders.Origin = origin;
+    }
 
     if (Object.keys(publicHeaders).length > 0) {
       params.headers = publicHeaders;
@@ -196,7 +202,6 @@ export const createClaimObject = async (request, providerData, sessionId, loginU
   let allParamValues = {};
 
   if (request?.extractedParams && typeof request.extractedParams === "object") {
-    console.log(request.extractedParams, "request.extractedParams CREATE_CLAIM_OBJECT");
     allParamValues = { ...allParamValues, ...request.extractedParams };
   }
 
@@ -229,16 +234,9 @@ export const createClaimObject = async (request, providerData, sessionId, loginU
     };
   }
 
-  console.log(allParamValues, "allParamValues CREATE_CLAIM_OBJECT1");
-
   // 5. Separate parameters into public and secret
   const { publicParams, secretParams: secretParamValues } = separateParams(allParamValues);
 
-  console.log(
-    publicParams,
-    secretParamValues,
-    "publicParams, secretParamValues CREATE_CLAIM_OBJECT2",
-  );
   // Add parameter values to respective objects
   if (Object.keys(publicParams).length > 0) {
     params.paramValues = publicParams;
@@ -335,8 +333,6 @@ export const createClaimObject = async (request, providerData, sessionId, loginU
       url: "wss://attestor.reclaimprotocol.org/ws",
     },
   };
-
-  console.log("claimObject", claimObject);
 
   debugLogger.info(DebugLogType.CLAIM, "[CLAIM-CREATOR] Claim object created successfully");
 

@@ -7,8 +7,6 @@ import { WebSocket } from "../utils/offscreen-websocket";
 import { updateSessionStatus } from "../utils/fetch-calls";
 import { debugLogger, DebugLogType } from "../utils/logger";
 
-console.log({ chrome }, "Offscreen chrome");
-
 // Ensure WebAssembly is available
 if (typeof WebAssembly === "undefined") {
   debugLogger.error(DebugLogType.OFFSCREEN, "WebAssembly is not available in this browser context");
@@ -33,8 +31,6 @@ document.head.appendChild(metaCOOP);
 // Ensure WebSocket is globally available in the offscreen context
 window.WebSocket = WebSocket;
 
-console.log({ window });
-
 class OffscreenProofGenerator {
   constructor() {
     this.init();
@@ -46,7 +42,6 @@ class OffscreenProofGenerator {
   }
 
   sendReadySignal() {
-    console.log("Sending ready signal");
     chrome.runtime.sendMessage({
       action: MESSAGE_ACTIONS.OFFSCREEN_DOCUMENT_READY,
       source: MESSAGE_SOURCES.OFFSCREEN,
@@ -56,8 +51,6 @@ class OffscreenProofGenerator {
 
   handleMessage(message, sender, sendResponse) {
     const { action, source, target, data } = message;
-
-    console.log({ message, sender, sendResponse }, "Offscreen handleMessage message received");
 
     if (target !== MESSAGE_SOURCES.OFFSCREEN) return;
 
@@ -148,23 +141,15 @@ class OffscreenProofGenerator {
         }, 60000);
       });
 
-      console.log({ claimData }, "Offscreen claimData");
-      console.log(JSON.stringify(claimData, null, 2));
-
       const attestorPromise = createClaimOnAttestor(claimData);
 
-      console.log({ attestorPromise }, "attestorPromise createClaimOnAttestor");
-
       const result = await Promise.race([attestorPromise, timeoutPromise]);
-
-      console.log({ result }, "createClaimOnAttestor result");
 
       result.publicData = typeof claimData.publicData === "string" ? claimData.publicData : null;
 
       await updateSessionStatus(sessionId, RECLAIM_SESSION_STATUS.PROOF_GENERATION_SUCCESS);
       return result;
     } catch (error) {
-      console.log({ error }, "Offscreen error");
       await updateSessionStatus(sessionId, RECLAIM_SESSION_STATUS.PROOF_GENERATION_FAILED);
       throw error;
     }
@@ -173,4 +158,3 @@ class OffscreenProofGenerator {
 
 // Initialize the offscreen document
 const proofGenerator = new OffscreenProofGenerator();
-console.log({ proofGenerator }, "Offscreen proofGenerator initialized");

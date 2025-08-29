@@ -1,8 +1,6 @@
 /* eslint-disable @typescript-eslint/no-this-alias */
 
 (function () {
-  console.log("NETWORK INTERCEPTOR!!! LOADED!!!!");
-
   const injectionFunction = function () {
     /**
      * Debug utility for consistent logging across the interceptor

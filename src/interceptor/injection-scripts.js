@@ -102,8 +102,6 @@ try {
 (function () {
   "use strict";
 
-  console.log("INJECTION SCRIPTS!!! LOADED!!!!");
-
   // Backend API configuration
   const BACKEND_URL = "https://api.reclaimprotocol.org";
   const PROVIDER_API_ENDPOINT = (providerId) =>

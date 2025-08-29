@@ -33,14 +33,11 @@ export const fetchProviderData = async (providerId, sessionId, appId) => {
 
 export const updateSessionStatus = async (sessionId, status, providerId, appId) => {
   try {
-    console.log({ sessionId, status, providerId, appId }, "updateSessionStatus");
     const response = await fetch(`${API_ENDPOINTS.UPDATE_SESSION_STATUS()}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sessionId, status }),
     });
-
-    console.log({ response }, "updateSessionStatus response");
 
     if (!response.ok) {
       throw new Error("Failed to update session status");
@@ -54,10 +51,8 @@ export const updateSessionStatus = async (sessionId, status, providerId, appId) 
     });
 
     const res = await response.json();
-    console.log({ res }, "updateSessionStatus res");
     return res;
   } catch (error) {
-    console.log({ error }, "updateSessionStatus error");
     loggerService.logError({
       error: "Error updating session status: " + error.toString(),
       type: LOG_TYPES.FETCH_DATA,

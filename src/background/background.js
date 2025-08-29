@@ -22,8 +22,6 @@ import * as proofQueue from "./proofQueue";
 import * as cookieUtils from "./cookieUtils";
 
 export default function initBackground() {
-  console.log("🚀 BACKGROUND INIT FUNCTION CALLED");
-
   installOffscreenReadyListener();
 
   // Context object to hold shared state and dependencies
@@ -78,10 +76,6 @@ export default function initBackground() {
 
   // Add processFilteredRequest to context (move from class)
   ctx.processFilteredRequest = async function (request, criteria, sessionId, loginUrl) {
-    console.log(
-      { request, criteria, sessionId, loginUrl, ctx },
-      "request, criteria, sessionId, loginUrl PROCESS_FILTERED_REQUEST",
-    );
     try {
       sessionId = ctx.sessionId || sessionId;
       if (!sessionId) {
@@ -132,8 +126,6 @@ export default function initBackground() {
         return { success: false, error: error.message };
       }
 
-      console.log({ claimData }, "claimData PROCESS_FILTERED_REQUEST");
-
       if (claimData) {
         chrome.tabs.sendMessage(ctx.activeTabId, {
           action: ctx.MESSAGE_ACTIONS.CLAIM_CREATION_SUCCESS,
@@ -177,18 +169,12 @@ export default function initBackground() {
   ctx.sessionTimerManager.setTimerDuration(30000);
   // Register message handler
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    console.log("background.js chrome.runtime.onMessage.addListener", {
-      message,
-      sender,
-      sendResponse,
-    });
     messageRouter.handleMessage(ctx, message, sender, sendResponse);
     return true; // Required for async response
   });
 
   // Listen for tab removals to clean up managedTabs
   chrome.tabs.onRemoved.addListener(async (tabId) => {
-    console.log("chrome.tabs.onRemoved", tabId, ctx);
     const wasManaged = ctx.managedTabs.has(tabId);
     if (wasManaged) ctx.managedTabs.delete(tabId);
 

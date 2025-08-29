@@ -16,3 +16,11 @@ export const LOG_TYPES = {
   PROOF_VERIFICATION: "reclaim_browser_extension.ProofVerification",
   OFFSCREEN: "reclaim_browser_extension.Offscreen",
 };
+
+export const LOG_SOURCES = {
+  BACKGROUND: "background",
+  CONTENT: "content",
+  OFFSCREEN: "offscreen",
+  POPUP: "popup",
+  INJECTION: "injection",
+};

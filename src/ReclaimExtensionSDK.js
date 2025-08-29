@@ -359,7 +359,6 @@ class ReclaimExtensionSDK {
     if (this._backgroundInitialized) return this._ctx;
     try {
       const ctx = initBackground();
-      console.log("CONTEXT INITIALIZED", ctx);
       this._backgroundInitialized = true;
       this._ctx = ctx;
       return ctx;

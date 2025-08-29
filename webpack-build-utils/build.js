@@ -14,7 +14,6 @@ var webpack = require("webpack"),
   ZipPlugin = require("zip-webpack-plugin");
 
 fs.rmSync(path.resolve(__dirname, "../build"), { recursive: true, force: true });
-console.log({ config });
 
 delete config.chromeExtensionBoilerplate;
 

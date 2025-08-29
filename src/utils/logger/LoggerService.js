@@ -11,6 +11,7 @@ export class LoggerService {
     this.maxBatchSize = 20;
     this.flushInterval = 5000; // 5 seconds
     this.flushIntervalId = null;
+    this.deviceId = null;
 
     // Start the flush interval
     this.startFlushInterval();
@@ -63,13 +64,17 @@ export class LoggerService {
    * @param {string} options.message - The message to log.
    * @param {string} options.type - The type/category of the log.
    */
-  log({ sessionId, providerId, appId, message, type }) {
+  log({ sessionId, providerId, appId, message, type, source, tabId, url }) {
     const logEntry = new LogEntry({
       sessionId,
       providerId,
       appId,
       logLine: message,
       type,
+      source,
+      tabId,
+      url,
+      time: new Date(),
     });
 
     this.addLog(logEntry);
@@ -86,17 +91,64 @@ export class LoggerService {
    * @param {string} options.type - The type/category of the log.
    * @param {string} [options.message] - Optional message to include with the error.
    */
-  logError({ sessionId, providerId, appId, error, type, message }) {
-    const logEntry = LogEntry.fromError({
+  logError({ sessionId, providerId, appId, error, type, message, source, tabId, url }) {
+    const stackTrace = error.stack || "";
+    const errorMessage = error.message || error.toString();
+
+    const logLine = message
+      ? `${message}: ${errorMessage}\n${stackTrace}`
+      : `${errorMessage}\n${stackTrace}`;
+
+    const logEntry = new LogEntry({
       sessionId,
       providerId,
       appId,
-      error,
+      logLine,
       type,
-      message,
+      source,
+      tabId,
+      url,
+      time: new Date(),
     });
 
     this.addLog(logEntry);
+  }
+
+  /**
+   * Get the device ID for logging (persistent).
+   *
+   * @returns {Promise<string>} The device ID.
+   */
+  async getDeviceLoggingId() {
+    if (this.deviceId) {
+      return this.deviceId;
+    }
+
+    // Try to get from storage first
+    try {
+      if (typeof chrome !== "undefined" && chrome.storage) {
+        const result = await chrome.storage.local.get(["reclaim_device_id"]);
+        if (result.reclaim_device_id) {
+          this.deviceId = result.reclaim_device_id;
+          return this.deviceId;
+        }
+      }
+    } catch (error) {
+      console.warn("Failed to get device ID from storage:", error);
+    }
+
+    // Generate new device ID
+    this.deviceId = crypto.randomUUID();
+
+    // Store for future use
+    try {
+      if (typeof chrome !== "undefined" && chrome.storage) {
+        await chrome.storage.local.set({ reclaim_device_id: this.deviceId });
+      }
+    } catch (error) {
+      console.warn("Failed to store device ID:", error);
+    }
+    return this.deviceId;
   }
 
   /**

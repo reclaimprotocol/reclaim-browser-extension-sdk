@@ -140,7 +140,6 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
           source === ctx.MESSAGE_SOURCES.CONTENT_SCRIPT &&
           target === ctx.MESSAGE_SOURCES.BACKGROUND
         ) {
-          console.log("START VERIFICATION FROM BACKGROUND", { data });
           ctx.loggerService.log({
             message: "Starting a new verification with data: " + JSON.stringify(data),
             type: ctx.LOG_TYPES.BACKGROUND,
@@ -317,7 +316,7 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
               data.sessionId, // current session
               data.loginUrl || "", // referer/login
             );
-            console.log({ result }, "result REQUEST_CLAIM???");
+
             sendResponse({ success: true, result });
           } catch (e) {
             sendResponse({ success: false, error: e?.message || String(e) });

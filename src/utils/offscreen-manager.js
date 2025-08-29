@@ -105,7 +105,6 @@ async function createOffscreenDocumentInternal() {
 }
 
 async function waitForOffscreenReadyInternal(timeoutMs = 15000) {
-  console.log("waitForOffscreenReadyInternal", { offscreenReady });
   if (offscreenReady) {
     debugLogger.info(
       DebugLogType.OFFSCREEN,
@@ -122,13 +121,11 @@ async function waitForOffscreenReadyInternal(timeoutMs = 15000) {
   // Proactively ping the offscreen document.
   // This can help if the offscreen document is already running but this manager missed the initial ready signal.
   try {
-    console.log("Sending ping to offscreen document...");
     chrome.runtime.sendMessage({
       action: MESSAGE_ACTIONS.PING_OFFSCREEN,
       source: MESSAGE_SOURCES.BACKGROUND,
       target: MESSAGE_SOURCES.OFFSCREEN,
     });
-    console.log("Ping sent to offscreen document");
   } catch (e) {
     debugLogger.warn(DebugLogType.OFFSCREEN, " Synchronous error sending ping:", e);
   }
@@ -213,7 +210,6 @@ export async function ensureOffscreenDocument() {
   if (!offscreenCreationPromise) {
     debugLogger.info(DebugLogType.OFFSCREEN, "No existing context/promise, initiating creation.");
     offscreenCreationPromise = createOffscreenDocumentInternal().finally(() => {
-      console.log("OFFSCREEN CREATION PROMISE FINISHED", offscreenCreationPromise);
       offscreenCreationPromise = null; // Clear promise once operation (success or fail) is done
     });
     await offscreenCreationPromise;
