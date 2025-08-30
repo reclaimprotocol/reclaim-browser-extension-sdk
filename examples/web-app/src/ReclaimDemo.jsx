@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { reclaimExtensionSDK } from '@reclaimprotocol/browser-extension-sdk';
+import { reclaimExtensionSDK, reclaimProofRequestConfig } from '@reclaimprotocol/browser-extension-sdk';
 import './ReclaimDemo.css';
 
 const PROVIDERS = [
@@ -32,7 +32,7 @@ export default function ReclaimDemo() {
     setInstalled(ok);
   }
 
-  async function start() {
+  async function start2() {
     try {
       setLoading(true);
       setError('');
@@ -80,6 +80,62 @@ export default function ReclaimDemo() {
       setLoading(false);
     }
   }
+
+
+  async function start() {
+    try {
+      setLoading(true);
+      setError('');
+      setProofs(null);
+
+      const BASE_URL = "http://localhost:8000";
+      const res = await fetch(`${BASE_URL}/generate-config`);
+      const { reclaimProofRequestConfig } = await res.json();
+      console.log(reclaimProofRequestConfig, "reclaimProofRequestConfig");
+
+      const request = reclaimProofRequestConfig.fromJsonString(reclaimProofRequestConfig, {
+        extensionID: EXTENSION_ID,
+      });
+      
+
+      // request.setParams({
+      //   // srivatsan
+      //   username: "76561198886166562",
+      //   // mushaheed
+      //   // username: "white_shadow_x7"
+      // });
+
+    //   request.setParams({
+    //     "theirTradeLink": "https://steamcommunity.com/tradeoffer/new/?partner=482038931&token=7d8YweiW",
+    //     "tradeOfferMessage": "Hello, my first one....",
+    //     "myTradeAssets": "{\"assets\":[],\"currency\":[],\"ready\":false}",
+    //     "theirTradeAssets": "{\"assets\":[{\"appid\":753,\"contextid\":\"6\",\"amount\":\"1\",\"assetid\":\"16773845215\"}],\"currency\":[],\"ready\":false}"
+    // });
+
+      setReq(request);
+      setStatusUrl(request.getStatusUrl());
+
+      request.on('completed', (p) => {
+        console.log(p, "completed");
+        setProofs(p);
+        setLoading(false);
+      });
+
+      request.on('error', (e) => {
+        console.log(e, "Error");
+        setError(e?.message || String(e));
+        setLoading(false);
+      });
+
+      const p = await request.startVerification();
+      console.log(p, "p startVerification");
+      setProofs(p);
+    } catch (e) {
+      setError(e?.message || String(e));
+      setLoading(false);
+    }
+  }
+
 
   async function cancel() {
     // eslint-disable-next-line no-empty

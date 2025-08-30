@@ -114,7 +114,44 @@ class ReclaimExtensionProofRequest {
     });
     instance.sessionId = initRes.sessionId || "";
     instance.resolvedProviderVersion = initRes.resolvedProviderVersion || "";
+    console.log("instance from init", instance);
+    return instance;
+  }
 
+  static fromJsonString(json, options = {}) {
+    const cfg = typeof json === "string" ? JSON.parse(json) : json;
+    return this.fromConfig(cfg, options);
+  }
+
+  static fromConfig(config, options = {}) {
+    if (!config || typeof config !== "object") throw new Error("invalid config");
+    const instance = new ReclaimExtensionProofRequest(
+      String(config.applicationId || ""),
+      String(config.providerId || ""),
+      options || {},
+    );
+
+    instance.sessionId = String(config.sessionId || "");
+    instance.signature = String(config.signature || "");
+    instance.timestamp = String(config.timeStamp || config.timestamp || Date.now());
+    instance.parameters = config.parameters || {};
+    instance.context = config.context || instance.context;
+    instance.callbackUrl = String(config.appCallbackUrl || config.callbackUrl || "");
+    instance.jsonProofResponse = !!(config.jsonProofResponse ?? instance.jsonProofResponse);
+    instance.resolvedProviderVersion = String(config.resolvedProviderVersion || "");
+    instance.providerVersion = String(config.providerVersion || "");
+    instance.redirectUrl = String(config.redirectUrl || "");
+    instance.acceptAiProviders = !!(
+      config.acceptAiProviders ??
+      config.options?.acceptAiProviders ??
+      instance.acceptAiProviders
+    );
+
+    if (options?.extensionID) instance.extensionID = String(options.extensionID);
+
+    // Keep sdkVersion as ext-* (do not trust inbound js sdkVersion)
+    // instance.sdkVersion already set to ext-<version>
+    console.log("instance from fromConfig", instance);
     return instance;
   }
 
@@ -400,6 +437,10 @@ class ReclaimExtensionSDK {
   // Primary API: create a per-request instance
   async init(applicationId, appSecret, providerId, options = {}) {
     return await ReclaimExtensionProofRequest.init(applicationId, appSecret, providerId, options);
+  }
+
+  fromJsonString(json, options = {}) {
+    return ReclaimExtensionProofRequest.fromJsonString(json, options);
   }
 }
 
