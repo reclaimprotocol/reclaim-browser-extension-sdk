@@ -85,20 +85,6 @@ export default function ReclaimDemo() {
       });
       
 
-      // request.setParams({
-      //   // srivatsan
-      //   username: "76561198886166562",
-      //   // mushaheed
-      //   // username: "white_shadow_x7"
-      // });
-
-    //   request.setParams({
-    //     "theirTradeLink": "https://steamcommunity.com/tradeoffer/new/?partner=482038931&token=7d8YweiW",
-    //     "tradeOfferMessage": "Hello, my first one....",
-    //     "myTradeAssets": "{\"assets\":[],\"currency\":[],\"ready\":false}",
-    //     "theirTradeAssets": "{\"assets\":[{\"appid\":753,\"contextid\":\"6\",\"amount\":\"1\",\"assetid\":\"16773845215\"}],\"currency\":[],\"ready\":false}"
-    // });
-
       setReq(request);
       setStatusUrl(request.getStatusUrl());
 
