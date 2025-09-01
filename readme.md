@@ -1,10 +1,29 @@
-# Reclaim Protocol Browser Extension SDK Integration Guide
+# Reclaim Protocol Browser Extension SDK — Integration Guide
 
-This guide will walk you through integrating the Reclaim Protocol Browser Extension SDK into your own browser extension or web application.  
-It covers installation, manifest configuration, background initialization, content script setup, and how to trigger verification flows from a popup, panel, or webpage.  
-Follow this step-by-step guide to ensure smooth integration with Chrome Manifest V3 extensions (including Vite/CRA builds).
+Lightweight SDK to trigger Reclaim verification flows from **your website** or **your own extension UI (popup/panel)**.  
+It wires content ↔ background, opens the provider tab, generates proofs via an **offscreen** document (WebAssembly), and emits completion events.
 
-A lightweight SDK to trigger Reclaim verification flows from your website or your own extension UI (popup/panel). It wires content ↔ background, opens the provider tab, generates proofs via an offscreen document, and emits completion events.
+> Chrome **Manifest V3** compatible (Vite/CRA builds included).
+
+---
+
+## Table of Contents
+
+1. [Install](#install)
+2. [One-time Asset Setup](#one-time-asset-setup)
+3. [Manifest (MV3) — Security & Permissions](#manifest-mv3--security--permissions)
+4. [Manifest (MV3) — Required Entries](#manifest-mv3--required-entries)
+5. [Load the SDK Content Bridge](#load-the-sdk-content-bridge)
+6. [Common Step (Both Approaches): Initialize Background](#common-step-both-approaches-initialize-background)
+7. [Approach 1: Use the SDK **inside your own extension** (popup/panel)](#approach-1-use-the-sdk-inside-your-own-extension-popuppanel)
+8. [Approach 2: Basic setup in your extension + **start from a web app**](#approach-2-basic-setup-in-your-extension--start-from-a-web-app)
+9. [Optional: Don’t expose keys client-side — generate a request config on your server](#optional-dont-expose-keys-client-side--generate-a-request-config-on-your-server)
+10. [Vite/CRX specifics](#vitecrx-specifics)
+11. [Troubleshooting](#troubleshooting)
+12. [Checklist](#checklist)
+13. [Types](#types)
+
+---
 
 ## Install
 
@@ -12,11 +31,13 @@ A lightweight SDK to trigger Reclaim verification flows from your website or you
 npm i @reclaimprotocol/browser-extension-sdk
 ```
 
-## One-time asset setup
+---
 
-Copies the SDK’s prebuilt classic bundles into your extension’s static folder so they are not re-bundled (Chrome requires classic scripts for content).
+## One-time Asset Setup
 
-Add to your extension app’s package.json:
+Copies the SDK’s **prebuilt classic bundles** into your extension’s `public/` (so they are **not** re-bundled; Chrome content scripts must be classic, not ESM).
+
+**package.json**
 
 ```json
 {
@@ -26,28 +47,26 @@ Add to your extension app’s package.json:
 }
 ```
 
-Run:
+**Run**
 
 ```bash
 npm run reclaim-extension-setup
 ```
 
-What this does:
+This ensures the following exist in your final build (no hashing, no ESM):
 
-- Copies node_modules/@reclaimprotocol/browser-extension-sdk/build/** → public/reclaim-browser-extension-sdk/**
-- Ensures the following exist in your final build (no hashing, no ESM):
-  - reclaim-browser-extension-sdk/content/content.bundle.js
-  - reclaim-browser-extension-sdk/offscreen/offscreen.html
-  - reclaim-browser-extension-sdk/offscreen/offscreen.bundle.js
-  - reclaim-browser-extension-sdk/interceptor/network-interceptor.bundle.js
-  - reclaim-browser-extension-sdk/interceptor/injection-scripts.bundle.js
-  - reclaim-browser-extension-sdk/content/components/reclaim-provider-verification-popup.(css|html)
+- `reclaim-browser-extension-sdk/content/content.bundle.js`
+- `reclaim-browser-extension-sdk/offscreen/offscreen.html`
+- `reclaim-browser-extension-sdk/offscreen/offscreen.bundle.js`
+- `reclaim-browser-extension-sdk/interceptor/network-interceptor.bundle.js`
+- `reclaim-browser-extension-sdk/interceptor/injection-scripts.bundle.js`
+- `reclaim-browser-extension-sdk/content/components/reclaim-provider-verification-popup.(css|html)`
 
 ---
 
-## Manifest (MV3) — security & permissions
+## Manifest (MV3) — Security & Permissions
 
-Add these before other entries:
+Add **before** other entries:
 
 ```json
 {
@@ -59,15 +78,7 @@ Add these before other entries:
 }
 ```
 
-**What these do:**
-
-- `content_security_policy`: Allows WebAssembly execution needed for proof generation
-- `host_permissions`: Enables the SDK to interact with provider websites for verification
-- `permissions`:
-  - `offscreen`: Required for proof generation in background
-  - `cookies`: Needed to access provider authentication cookies
-
-If you use dynamic content script registration (recommended for Vite/CRA), also add:
+If you use **dynamic** content script registration (recommended for Vite/CRA), add `"scripting"`:
 
 ```json
 {
@@ -75,13 +86,17 @@ If you use dynamic content script registration (recommended for Vite/CRA), also 
 }
 ```
 
-**Additional permission:**
+**Why these:**
 
-- `scripting`: Enables dynamic content script registration (required for Vite/CRA builds)
+- **CSP** enables WebAssembly for proof generation.
+- **host_permissions** lets the SDK interact with provider sites.
+- **offscreen** is required for background proof generation.
+- **cookies** gives access to provider auth cookies.
+- **scripting** is required for **dynamic** content script registration.
 
 ---
 
-## Manifest (MV3) — required entries
+## Manifest (MV3) — Required Entries
 
 ### Web-accessible resources
 
@@ -103,16 +118,19 @@ If you use dynamic content script registration (recommended for Vite/CRA), also 
 }
 ```
 
-**What these resources are for:**
+**What they’re for**
 
-- `offscreen.*`: Background proof generation and WebAssembly execution
-- `interceptor/*`: Network request interception for provider authentication
-- `content/components/*`: UI popup for provider verification flow
-- `matches: ["<all_urls>"]`: Makes resources available on all websites where verification might occur
+- `offscreen.*`: proof generation + WebAssembly
+- `interceptor/*`: network interception for provider auth
+- `content/components/*`: built-in verification popup UI
 
-### Load the SDK content bridge (choose ONE)
+---
 
-Static (manifest):
+## Load the SDK Content Bridge
+
+Choose **one**: **static** (manifest) or **dynamic** (service worker).
+
+### Static (manifest)
 
 ```json
 {
@@ -126,7 +144,7 @@ Static (manifest):
 }
 ```
 
-Dynamic (service worker):
+### Dynamic (service worker)
 
 ```ts
 // background (service_worker)
@@ -163,11 +181,11 @@ chrome.scripting.getRegisteredContentScripts((scripts) => {
 });
 ```
 
-(Remember: Dynamic registration requires "scripting" permission.)
+> Dynamic registration requires `"scripting"` permission.
 
 ---
 
-## Initialize background (once)
+## Common step (both approaches): Initialize Background
 
 ```js
 // background entry (service_worker)
@@ -178,127 +196,204 @@ reclaimExtensionSDK.initializeBackground(); // idempotent
 
 ---
 
-## Create a proof request (panel/popup/web)
+## Approach 1: Use the SDK **inside your own extension** (popup/panel)
 
-- When calling from a web page, pass your extensionID.
-- When calling from extension UI (popup/panel), omit extensionID (the SDK detects extension context).
+**Minimal popup markup**
 
-Example: panel/popup.tsx
+```html
+<!-- popup.html -->
+<div>
+  <input id="appId" placeholder="Application ID" />
+  <input id="appSecret" placeholder="Application Secret" />
+  <input id="providerId" placeholder="Provider ID" />
+  <button id="start">Start Verification</button>
+  <pre id="out"></pre>
+
+  <script src="popup.js" type="module"></script>
+</div>
+```
+
+```js
+// popup.js
+import { reclaimExtensionSDK } from "@reclaimprotocol/browser-extension-sdk";
+
+document.getElementById("start").onclick = async () => {
+  const appId = document.getElementById("appId").value.trim();
+  const appSecret = document.getElementById("appSecret").value.trim();
+  const providerId = document.getElementById("providerId").value.trim();
+
+  const out = document.getElementById("out");
+  out.textContent = "";
+
+  try {
+    const req = await reclaimExtensionSDK.init(appId, appSecret, providerId);
+
+    request.on("started", ({ sessionId }) => console.log("started", sessionId));
+    req.on("completed", (p) => (out.textContent = JSON.stringify(p, null, 2)));
+    req.on("error", (e) => (out.textContent = `Error: ${e?.message || e}`));
+  } catch (e) {
+    out.textContent = `Error: ${e?.message || String(e)}`;
+  }
+};
+```
+
+---
+
+## Approach 2: Basic setup in your extension + **start from a web app**
+
+When you trigger from a webpage, **pass your Extension ID**.
 
 ```tsx
-// @ts-nocheck
+// Example React component (Vite)
 import React, { useState } from "react";
 import { reclaimExtensionSDK } from "@reclaimprotocol/browser-extension-sdk";
 
-export default function Panel() {
-  const [appId, setAppId] = useState("YOUR_APPLICATION_ID_HERE");
-  const [appSecret, setAppSecret] = useState("YOUR_APPLICATION_SECRET_HERE");
-  const [providerId, setProviderId] = useState("YOUR_PROVIDER_ID_HERE");
+const APP_ID = import.meta.env.VITE_RECLAIM_APP_ID;
+const APP_SECRET = import.meta.env.VITE_RECLAIM_APP_SECRET;
+const EXTENSION_ID = import.meta.env.VITE_RECLAIM_EXTENSION_ID;
 
+export default function ReclaimButton({ providerId }: { providerId: string }) {
+  const [loading, setLoading] = useState(false);
   const [proofs, setProofs] = useState(null);
   const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [statusUrl, setStatusUrl] = useState("");
+  const [req, setReq] = useState(null);
 
-  const startVerification = async () => {
-    setError("");
-    setIsLoading(true);
-    setProofs(null);
-
+  const start = async () => {
     try {
-      const request = await reclaimExtensionSDK.createProofRequest(appId, appSecret, providerId, {
-        // extensionID: "abcdefghijklmnopabcdefghijklmnop", // only if calling from web page
+      setLoading(true);
+      setError("");
+      setProofs(null);
+
+      // Optional - You can also check if the extension is installed before starting:
+
+      // const installed = await reclaimExtensionSDK.isExtensionInstalled({
+      //   extensionID: EXTENSION_ID,
+      // });
+
+      // if (!installed) {
+      //   alert("Please install the extension first.");
+      //   return;
+      // }
+
+      const request = await reclaimExtensionSDK.init(APP_ID, APP_SECRET, providerId, {
+        extensionID: EXTENSION_ID,
       });
 
-      request.on("started", ({ sessionId }) => {
-        console.log("Verification started", sessionId);
-      });
-
-      request.on("progress", (step) => {
-        console.log("Progress", step);
-      });
+      setReq(request);
+      setStatusUrl(request.getStatusUrl());
 
       request.on("completed", (p) => {
-        console.log("Proofs (event)", p);
         setProofs(p);
-        setIsLoading(false);
+        setLoading(false);
       });
 
-      request.on("error", (err) => {
-        console.error("Verification error", err);
-        setError(err?.message || String(err));
-        setIsLoading(false);
+      request.on("error", (e) => {
+        setError(e?.message || String(e));
+        setLoading(false);
       });
+
+      const p = await request.startVerification();
+      setProofs(p);
     } catch (e) {
-      console.error(e);
       setError(e?.message || String(e));
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
   return (
-    <div className="flex flex-col items-center justify-center gap-4 p-4 bg-white h-screen">
-      <h1 className="text-2xl font-bold text-black">T-Rext for zkTLS demo...</h1>
-
-      <label className="w-full text-sm text-black flex flex-col gap-1">
-        <span>App ID</span>
-        <input
-          id="appId"
-          className="border border-gray-300 p-2 rounded-md text-black w-full"
-          type="text"
-          value={appId}
-          onChange={(e) => setAppId(e.target.value)}
-        />
-      </label>
-
-      <label className="w-full text-sm text-black flex flex-col gap-1">
-        <span>App Secret</span>
-        <input
-          id="appSecret"
-          className="border border-gray-300 p-2 rounded-md text-black w-full"
-          type="text"
-          value={appSecret}
-          onChange={(e) => setAppSecret(e.target.value)}
-        />
-      </label>
-
-      <label className="w-full text-sm text-black flex flex-col gap-1">
-        <span>Provider ID</span>
-        <input
-          id="providerId"
-          className="border border-gray-300 p-2 rounded-md text-black w-full"
-          type="text"
-          value={providerId}
-          onChange={(e) => setProviderId(e.target.value)}
-        />
-      </label>
-
-      <button
-        disabled={isLoading}
-        className="bg-blue-500 text-white p-2 rounded-md cursor-pointer"
-        onClick={startVerification}
-      >
-        {isLoading ? "Generating proofs..." : "Start Verification"}
+    <div>
+      <button onClick={start} disabled={loading}>
+        {loading ? "Starting…" : "Start Verification"}
       </button>
 
-      {!!error && <div className="text-red-600 text-sm w-full break-words">Error: {error}</div>}
-
-      {!!proofs && (
-        <pre className="w-full max-h-64 overflow-auto bg-gray-100 text-black p-2 rounded-md text-xs">
-          {JSON.stringify(proofs, null, 2)}
-        </pre>
+      {statusUrl && (
+        <p>
+          Track status:{" "}
+          <a href={statusUrl} target="_blank">
+            status
+          </a>
+        </p>
       )}
+      {error && <pre style={{ color: "crimson" }}>{error}</pre>}
+      {proofs && <pre>{JSON.stringify(proofs, null, 2)}</pre>}
     </div>
   );
 }
 ```
 
+> **Important:** From a **web page**, the SDK cannot call `chrome.runtime.sendMessage` unless you provide `extensionID`.
+
 ---
 
-## Vite/CRX (trex example) specifics
+## Optional: Don’t expose keys client-side — generate a request config on your server
 
-- Ensure SDK assets are copied 1:1 to your dist without hashing:
-  - Use the provided script npm run reclaim:setup, or
-  - Use vite-plugin-static-copy:
+Use **`@reclaimprotocol/js-sdk`** to generate a signed request config on the server.
+
+**Server (Node/Express)**
+
+```js
+const express = require("express");
+const { ReclaimProofRequest } = require("@reclaimprotocol/js-sdk");
+
+const app = express();
+const port = 3000;
+
+app.use(express.json());
+app.use(express.text({ type: "*/*", limit: "50mb" }));
+
+const BASE_URL = "https://your-domain.com";
+
+app.get("/generate-config", async (_req, res) => {
+  const APP_ID = "YOUR_APPLICATION_ID";
+  const APP_SECRET = "YOUR_APPLICATION_SECRET";
+  const PROVIDER_ID = "YOUR_PROVIDER_ID";
+
+  try {
+    const reclaimProofRequest = await ReclaimProofRequest.init(APP_ID, APP_SECRET, PROVIDER_ID);
+    reclaimProofRequest.setAppCallbackUrl(`${BASE_URL}/receive-proofs`);
+    const reclaimProofRequestConfig = reclaimProofRequest.toJsonString();
+    res.json({ reclaimProofRequestConfig });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to generate request config" });
+  }
+});
+
+app.listen(port, () => {
+  console.log(`Server running at http://localhost:${port}`);
+});
+```
+
+**Client (web or popup)**
+
+```ts
+import { reclaimExtensionSDK } from "@reclaimprotocol/browser-extension-sdk";
+
+const EXTENSION_ID = "<your_extension_id>";
+
+async function startFromServerConfig() {
+  const r = await fetch("/generate-config").then((x) => x.json());
+  const { reclaimProofRequestConfig } = r;
+
+  const request = await reclaimExtensionSDK.fromJsonString(reclaimProofRequestConfig, {
+    extensionID: EXTENSION_ID,
+  });
+
+  request.on("started", ({ sessionId }) => console.log("started", sessionId));
+  request.on("completed", (p) => console.log("completed", p));
+  request.on("error", console.error);
+}
+```
+
+Docs: https://docs.reclaimprotocol.org/web/backend/usage
+
+---
+
+## Vite/CRX specifics
+
+- Ensure SDK assets are copied **1:1** to your `dist` without hashing.
+- Always load `content.bundle.js` (classic), not an ESM bundle.
+- Use `vite-plugin-static-copy` if needed.
 
 ```ts
 import { viteStaticCopy } from "vite-plugin-static-copy";
@@ -313,51 +408,29 @@ viteStaticCopy({
 });
 ```
 
-- Register the SDK content script dynamically.
-- Initialize background once with reclaimExtensionSDK.initializeBackground().
-
-Why this matters for Vite + CRA:
-Some setups output ESM content bundles by default. Chrome expects classic scripts. Loading the prebuilt classic content.bundle.js avoids “Unexpected token 'export'”.
-
 ---
 
 ## Troubleshooting
 
-- “Unexpected token 'export'”  
-  You are loading a Vite-bundled ESM file. Load reclaim-browser-extension-sdk/content/content.bundle.js directly.
-
-- “chrome.runtime.sendMessage called from a web page must specify Extension ID”  
-  Pass options.extensionID to createProofRequest when calling from a web page.
-
-- Provider tab doesn’t open / flow doesn’t progress  
-  Check assets are present, manifest has resources, background initialized, content script registered, and “scripting” permission added if dynamic.
+- **“Unexpected token 'export'”** → Load classic `content.bundle.js` instead of an ESM file.
+- **“chrome.runtime.sendMessage called from a web page must specify Extension ID”** → Pass `{ extensionID }`.
+- **Provider tab doesn’t open** → Check assets, permissions, background init, and content script registration.
 
 ---
 
 ## Checklist
 
-- Ran npm run reclaim:setup
-- Manifest includes:
-  - content_security_policy.extension_pages
-  - host_permissions: ["<all_urls>"]
-  - permissions: ["offscreen", "cookies"] (+ "scripting" if dynamic)
-  - web_accessible_resources
-- Content bundle loaded (static or dynamic)
-- Background calls initializeBackground()
-- Web usage passes extensionID to createProofRequest
+- [x] Ran `npm run reclaim-extension-setup`
+- [x] Manifest includes CSP, host_permissions, and permissions (`offscreen`, `cookies`, `scripting` if dynamic)
+- [x] Added `web_accessible_resources`
+- [x] Content bundle loaded (static/dynamic)
+- [x] Background initialized once
+- [x] Passed `extensionID` from web usage (if applicable)
 
 ---
 
-Notes:
-
-- Provider tab closes automatically on success/failure.
-- Do not re-bundle SDK assets. Load from public/reclaim-browser-extension-sdk/\*\*
-- Types included:
+## Types
 
 ```ts
-import type { ReclaimExtensionProofRequest } from "@reclaimprotocol/browser-extension-sdk";
-```
-
-```
-
+import type { reclaimExtensionSDK } from "@reclaimprotocol/browser-extension-sdk";
 ```
