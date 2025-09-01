@@ -14,6 +14,7 @@ export async function startVerification(ctx, templateData) {
     ctx.filteredRequests = new Map();
     ctx.initPopupMessage = new Map();
     ctx.providerDataMessage = new Map();
+    ctx.providerRequestsByHash = new Map();
     ctx.aborted = false;
 
     // Reset timers and timer state variables
@@ -242,10 +243,8 @@ export async function failSession(ctx, errorMessage, requestHash) {
   ctx.activeSessionId = null;
 }
 
-export async function submitProofs(ctx) {
+export async function submitProofs2(ctx) {
   try {
-    ctx.sessionTimerManager.clearAllTimers();
-
     if (ctx.generatedProofs.size === 0) {
       return;
     }
@@ -253,6 +252,12 @@ export async function submitProofs(ctx) {
     if (ctx.generatedProofs.size !== ctx.providerData.requestData.length) {
       return;
     }
+
+    if (ctx.expectManyClaims) {
+      return;
+    }
+
+    ctx.sessionTimerManager.clearAllTimers();
 
     let formattedProofs = [];
     for (const requestData of ctx.providerData.requestData) {
@@ -275,6 +280,209 @@ export async function submitProofs(ctx) {
       try {
         await ctx.submitProofOnCallback(
           formattedProofs,
+          ctx.callbackUrl,
+          ctx.sessionId,
+          ctx.httpProviderId,
+          ctx.appId,
+        );
+        submitted = true;
+      } catch (error) {
+        // Notify original tab
+        try {
+          await chrome.tabs.sendMessage(ctx.originalTabId, {
+            action: ctx.MESSAGE_ACTIONS.PROOF_SUBMISSION_FAILED,
+            source: ctx.MESSAGE_SOURCES.BACKGROUND,
+            target: ctx.MESSAGE_SOURCES.CONTENT_SCRIPT,
+            data: { error: error.message, sessionId: ctx.sessionId },
+          });
+        } catch (e) {
+          /* ignore */
+        }
+        // Notify active tab
+        chrome.tabs.sendMessage(ctx.activeTabId, {
+          action: ctx.MESSAGE_ACTIONS.PROOF_SUBMISSION_FAILED,
+          source: ctx.MESSAGE_SOURCES.BACKGROUND,
+          target: ctx.MESSAGE_SOURCES.CONTENT_SCRIPT,
+          data: { error: error.message, sessionId: ctx.sessionId },
+        });
+        // Broadcast to runtime
+        try {
+          await chrome.runtime.sendMessage({
+            action: ctx.MESSAGE_ACTIONS.PROOF_SUBMISSION_FAILED,
+            data: { error: error.message, sessionId: ctx.sessionId },
+          });
+        } catch (e) {}
+
+        ctx.debugLogger.error(
+          ctx.DebugLogType.BACKGROUND,
+          "[BACKGROUND] Error submitting my poor proofs:",
+          error,
+        );
+        throw error;
+      }
+    } else {
+      // No callback: set status to generation success
+      if (ctx.sessionId) {
+        try {
+          await ctx.updateSessionStatus(
+            ctx.sessionId,
+            ctx.RECLAIM_SESSION_STATUS.PROOF_GENERATION_SUCCESS,
+            ctx.httpProviderId,
+            ctx.appId,
+          );
+        } catch (e) {
+          ctx.debugLogger.error(
+            ctx.DebugLogType.BACKGROUND,
+            "[BACKGROUND] Error updating status to PROOF_GENERATION_SUCCESS:",
+            e,
+          );
+        }
+      }
+    }
+
+    // Notify content script with proofs in both cases
+    if (ctx.activeTabId) {
+      try {
+        await chrome.tabs.sendMessage(ctx.activeTabId, {
+          action: ctx.MESSAGE_ACTIONS.PROOF_SUBMITTED,
+          source: ctx.MESSAGE_SOURCES.BACKGROUND,
+          target: ctx.MESSAGE_SOURCES.CONTENT_SCRIPT,
+          data: { formattedProofs, submitted, sessionId: ctx.sessionId },
+        });
+      } catch (error) {
+        ctx.debugLogger.error(
+          ctx.DebugLogType.BACKGROUND,
+          "[BACKGROUND] Error notifying content script:",
+          error,
+        );
+      }
+    }
+
+    if (ctx.originalTabId) {
+      try {
+        await chrome.tabs.sendMessage(ctx.originalTabId, {
+          action: ctx.MESSAGE_ACTIONS.PROOF_SUBMITTED,
+          source: ctx.MESSAGE_SOURCES.BACKGROUND,
+          target: ctx.MESSAGE_SOURCES.CONTENT_SCRIPT,
+          data: { formattedProofs, submitted, sessionId: ctx.sessionId },
+        });
+      } catch (e) {
+        ctx.debugLogger.error(
+          ctx.DebugLogType.BACKGROUND,
+          "[BACKGROUND] Error notifying original tab:",
+          e,
+        );
+      }
+    }
+
+    // Broadcast to runtime (popup/options)
+    try {
+      await chrome.runtime.sendMessage({
+        action: ctx.MESSAGE_ACTIONS.PROOF_SUBMITTED,
+        data: { formattedProofs, submitted, sessionId: ctx.sessionId },
+      });
+    } catch (e) {}
+
+    if (ctx.originalTabId) {
+      try {
+        setTimeout(async () => {
+          await chrome.tabs.update(ctx.originalTabId, { active: true });
+          if (ctx.activeTabId) {
+            await chrome.tabs.remove(ctx.activeTabId);
+            ctx.activeTabId = null;
+          }
+          ctx.originalTabId = null;
+        }, 3000);
+      } catch (error) {
+        ctx.debugLogger.error(
+          ctx.DebugLogType.BACKGROUND,
+          "[BACKGROUND] Error navigating back or closing tab:",
+          error,
+        );
+      }
+    } else if (ctx.activeTabId) {
+      // Fallback: started from panel/popup, no original tab to return to
+      try {
+        setTimeout(async () => {
+          await chrome.tabs.remove(ctx.activeTabId);
+          ctx.activeTabId = null;
+        }, 3000);
+      } catch (e) {
+        /* ignore */
+      }
+    }
+    // Release concurrency guard on success
+    ctx.activeSessionId = null;
+    return { success: true };
+  } catch (error) {
+    ctx.debugLogger.error(
+      ctx.DebugLogType.BACKGROUND,
+      "[BACKGROUND] Error submitting proof:",
+      error,
+    );
+    // Release concurrency guard on failure
+    ctx.activeSessionId = null;
+    throw error;
+  }
+}
+
+export async function submitProofs(ctx) {
+  try {
+    // Hold if user set canExpectManyClaims(true)
+    if (ctx.expectManyClaims) return;
+
+    ctx.sessionTimerManager.clearAllTimers();
+
+    if (ctx.generatedProofs.size === 0) return;
+
+    const hasTemplateList =
+      Array.isArray(ctx.providerData?.requestData) && ctx.providerData.requestData.length > 0;
+
+    if (hasTemplateList) {
+      const completedTemplate = ctx.providerData.requestData.filter((rd) =>
+        ctx.generatedProofs.has(rd.requestHash),
+      ).length;
+      if (completedTemplate !== ctx.providerData.requestData.length) return;
+    }
+
+    const formattedProofs = [];
+    const templateHashes = new Set();
+
+    if (hasTemplateList) {
+      for (const rd of ctx.providerData.requestData) {
+        if (ctx.generatedProofs.has(rd.requestHash)) {
+          const proof = ctx.generatedProofs.get(rd.requestHash);
+          formattedProofs.push(ctx.formatProof(proof, rd));
+          templateHashes.add(rd.requestHash);
+        }
+      }
+    }
+
+    for (const [hash, proof] of ctx.generatedProofs.entries()) {
+      if (templateHashes.has(hash)) continue;
+      const providerRequest = ctx.providerRequestsByHash.get(hash) || {
+        url: "",
+        expectedPageUrl: "",
+        urlType: "EXACT",
+        method: "GET",
+        responseMatches: [],
+        responseRedactions: [],
+        requestHash: hash,
+      };
+      formattedProofs.push(ctx.formatProof(proof, providerRequest));
+    }
+
+    const finalProofs = formattedProofs.map((fp) => ({
+      ...fp,
+      publicData: ctx.publicData ?? null,
+    }));
+
+    let submitted = false;
+    // If callbackUrl provided, submit; otherwise just signal completion
+    if (ctx.callbackUrl && typeof ctx.callbackUrl === "string" && ctx.callbackUrl.length > 0) {
+      try {
+        await ctx.submitProofOnCallback(
+          finalProofs,
           ctx.callbackUrl,
           ctx.sessionId,
           ctx.httpProviderId,
@@ -526,6 +734,7 @@ export async function cancelSession(ctx, sessionId) {
     ctx.appId = null;
     ctx.sessionId = null;
     ctx.callbackUrl = null;
+    ctx.providerRequestsByHash = new Map();
     ctx.managedTabs.clear();
 
     // Release guard

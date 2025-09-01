@@ -102,7 +102,6 @@ const getPrivateKeyFromOffscreen = () => {
 
 export const createClaimObject = async (request, providerData, sessionId, loginUrl) => {
   debugLogger.info(DebugLogType.CLAIM, "[CLAIM-CREATOR] Creating claim object from request data");
-
   // Ensure offscreen document is ready
   try {
     debugLogger.info(DebugLogType.CLAIM, "[CLAIM-CREATOR] Ensuring offscreen document is ready...");
@@ -119,7 +118,10 @@ export const createClaimObject = async (request, providerData, sessionId, loginU
   }
 
   // Generate appropriate user agent for the platform
-  const userAgent = await generateChromeAndroidUserAgent();
+  // const userAgent = await generateChromeAndroidUserAgent();
+
+  const userAgent =
+    (typeof navigator !== "undefined" && navigator.userAgent) || generateChromeAndroidUserAgent();
 
   // Define public headers that should be in params
   const PUBLIC_HEADERS = [
@@ -153,7 +155,7 @@ export const createClaimObject = async (request, providerData, sessionId, loginU
       "User-Agent": userAgent,
     };
     const secretHeaders = {
-      Referer: loginUrl ?? "",
+      Referer: (request.referer && String(request.referer)) || loginUrl || origin || "",
     };
 
     Object.entries(request.headers).forEach(([key, value]) => {
@@ -165,6 +167,10 @@ export const createClaimObject = async (request, providerData, sessionId, loginU
       }
     });
 
+    if (origin && !publicHeaders.Origin && !request.headers?.Origin) {
+      publicHeaders.Origin = origin;
+    }
+
     if (Object.keys(publicHeaders).length > 0) {
       params.headers = publicHeaders;
     }
@@ -175,8 +181,16 @@ export const createClaimObject = async (request, providerData, sessionId, loginU
   }
 
   // Process body if available
-  if (providerData?.bodySniff?.enabled && request.body) {
-    params.body = providerData?.bodySniff?.template;
+  // if (providerData?.bodySniff?.enabled && request.body) {
+  //   params.body = providerData?.bodySniff?.template;
+  // }
+
+  if (request.body) {
+    if (providerData?.bodySniff?.enabled) {
+      params.body = providerData.bodySniff.template;
+    } else {
+      params.body = request.body; // pass-through raw body
+    }
   }
 
   // Process cookie string if available in request
@@ -186,6 +200,10 @@ export const createClaimObject = async (request, providerData, sessionId, loginU
 
   // Extract dynamic parameters from various sources
   let allParamValues = {};
+
+  if (request?.extractedParams && typeof request.extractedParams === "object") {
+    allParamValues = { ...allParamValues, ...request.extractedParams };
+  }
 
   // 1. Extract params from URL if provider has URL template
   if (providerData.urlType === "TEMPLATE" && request.url) {
@@ -315,8 +333,6 @@ export const createClaimObject = async (request, providerData, sessionId, loginU
       url: "wss://attestor.reclaimprotocol.org/ws",
     },
   };
-
-  console.log("claimObject", claimObject);
 
   debugLogger.info(DebugLogType.CLAIM, "[CLAIM-CREATOR] Claim object created successfully");
 

@@ -203,7 +203,7 @@ try {
       // ignore
     }
     // Notify background script that content script is loaded
-    console.log("content.js script loaded!!!");
+
     chrome.runtime.sendMessage({
       action: MESSAGE_ACTIONS.CONTENT_SCRIPT_LOADED,
       source: MESSAGE_SOURCES.CONTENT_SCRIPT,
@@ -301,7 +301,6 @@ class ReclaimContentScript {
     // window.addEventListener("message", this.handleWindowMessage.bind(this));
 
     if (!shouldInitialize) {
-      console.log("shouldInitialize", shouldInitialize);
       return;
     }
 
@@ -340,6 +339,18 @@ class ReclaimContentScript {
               this.sessionId = response.data.sessionId;
               this.httpProviderId = response.data.httpProviderId || "unknown";
               this.appId = response.data.appId || "unknown";
+
+              localStorage.setItem(
+                "reclaimBrowserExtensionParameters",
+                JSON.stringify(this.parameters || {}),
+              );
+              window.postMessage(
+                {
+                  action: RECLAIM_SDK_ACTIONS.PARAMETERS_UPDATE,
+                  data: { parameters: this.parameters || {} },
+                },
+                "*",
+              );
 
               // Store provider ID in website's localStorage for injection script access
               this.setProviderIdInLocalStorage(this.httpProviderId);
@@ -380,6 +391,18 @@ class ReclaimContentScript {
         this.sessionId = data.sessionId;
         this.httpProviderId = data.httpProviderId || "unknown";
         this.appId = data.appId || "unknown";
+
+        localStorage.setItem(
+          "reclaimBrowserExtensionParameters",
+          JSON.stringify(this.parameters || {}),
+        );
+        window.postMessage(
+          {
+            action: RECLAIM_SDK_ACTIONS.PARAMETERS_UPDATE,
+            data: { parameters: this.parameters || {} },
+          },
+          "*",
+        );
 
         // Store provider ID in website's localStorage for injection script access
         this.setProviderIdInLocalStorage(this.httpProviderId);
@@ -586,14 +609,6 @@ class ReclaimContentScript {
     return true;
   }
 
-  // checkExtensionId(extensionID) {
-  //   console.log("checkExtensionId", { extensionID, process: process.env.EXTENSION_ID });
-  //   if (!extensionID || extensionID !== process.env.EXTENSION_ID) {
-  //     return false;
-  //   }
-  //   return true;
-  // }
-
   checkExtensionId(extensionID) {
     try {
       const runtimeId =
@@ -692,7 +707,19 @@ class ReclaimContentScript {
           // Store parameters and session ID for later use
           if (data.parameters) {
             this.parameters = data.parameters;
+            localStorage.setItem(
+              "reclaimBrowserExtensionParameters",
+              JSON.stringify(this.parameters || {}),
+            );
+            window.postMessage(
+              {
+                action: RECLAIM_SDK_ACTIONS.PARAMETERS_UPDATE,
+                data: { parameters: this.parameters || {} },
+              },
+              "*",
+            );
           }
+
           if (data.sessionId) {
             this.sessionId = data.sessionId;
           }
@@ -780,6 +807,10 @@ class ReclaimContentScript {
         (resp) => {
           const params = resp?.success ? resp.parameters || {} : this.parameters || {};
           this.parameters = params;
+          localStorage.setItem(
+            "reclaimBrowserExtensionParameters",
+            JSON.stringify(this.parameters || {}),
+          );
           window.postMessage(
             { action: RECLAIM_SDK_ACTIONS.PARAMETERS_UPDATE, data: { parameters: params } },
             "*",
@@ -792,6 +823,10 @@ class ReclaimContentScript {
     // Whenever you set this.parameters (e.g., after REQUEST_PROVIDER_DATA, PROVIDER_DATA_READY, or SET_PARAMETERS), also:
     if (action === RECLAIM_SDK_ACTIONS.SET_PARAMETERS) {
       this.parameters = data?.parameters || {};
+      localStorage.setItem(
+        "reclaimBrowserExtensionParameters",
+        JSON.stringify(this.parameters || {}),
+      );
       window.postMessage(
         {
           action: RECLAIM_SDK_ACTIONS.PARAMETERS_UPDATE,
@@ -808,6 +843,57 @@ class ReclaimContentScript {
           source: MESSAGE_SOURCES.CONTENT_SCRIPT,
           target: MESSAGE_SOURCES.BACKGROUND,
           data: { message: String(data.message) },
+        },
+        // eslint-disable-next-line @typescript-eslint/no-empty-function
+        () => {},
+      );
+      return;
+    }
+
+    if (action === RECLAIM_SDK_ACTIONS.REQUEST_CLAIM && data?.rdObject) {
+      if (!this.sessionId) {
+        // Either buffer or just fail-fast; simplest: log and return
+        return;
+      }
+      const rdObject = data.rdObject || {};
+      // Basic hash for status linkage
+      const requestHash = `rc-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+      // Request format expected by createClaimObject path
+      const request = {
+        url: String(rdObject?.url || ""),
+        method: String(rdObject?.method || "GET"),
+        headers: rdObject?.headers || {},
+        body: rdObject?.requestBody != null ? String(rdObject?.requestBody) : "",
+        extractedParams: rdObject?.extractedParams || {},
+      };
+
+      // Minimal providerData-like criteria for createClaimObject
+      const criteria = {
+        url: String(rdObject?.url || ""),
+        expectedPageUrl: "",
+        urlType: "TEMPLATE",
+        method: String(rdObject?.method || "GET"),
+        responseMatches: Array.isArray(rdObject?.responseMatches) ? rdObject?.responseMatches : [],
+        responseRedactions: Array.isArray(rdObject?.responseRedactions)
+          ? rdObject?.responseRedactions
+          : [],
+        bodySniff: { enabled: false, template: "" },
+        additionalClientOptions: {},
+        requestHash,
+      };
+
+      chrome.runtime.sendMessage(
+        {
+          action: MESSAGE_ACTIONS.REQUEST_CLAIM,
+          source: MESSAGE_SOURCES.CONTENT_SCRIPT,
+          target: MESSAGE_SOURCES.BACKGROUND,
+          data: {
+            request,
+            criteria,
+            sessionId: this.sessionId,
+            loginUrl: this.providerData?.loginUrl || "",
+          },
         },
         // eslint-disable-next-line @typescript-eslint/no-empty-function
         () => {},
@@ -1097,7 +1183,9 @@ class ReclaimContentScript {
   // Helper method to store provider ID in website's localStorage
   setProviderIdInLocalStorage(providerId) {
     // Don't store null, undefined, or 'unknown' values
+    const key = "reclaimBrowserExtensionProviderId";
     if (!providerId || providerId === "unknown") {
+      localStorage.removeItem(key);
       loggerService.log({
         message: `Skipping localStorage storage for invalid provider ID: ${providerId}`,
         type: LOG_TYPES.CONTENT,
@@ -1109,8 +1197,7 @@ class ReclaimContentScript {
     }
 
     try {
-      console.log("Storing provider ID in localStorage:", providerId);
-      localStorage.setItem("reclaimBrowserExtensionProviderId", providerId);
+      localStorage.setItem(key, providerId);
       loggerService.log({
         message: `Provider ID ${providerId} stored in localStorage.`,
         type: LOG_TYPES.CONTENT,
@@ -1119,6 +1206,7 @@ class ReclaimContentScript {
         appId: this.appId,
       });
     } catch (e) {
+      localStorage.removeItem(key);
       loggerService.log({
         message: `Failed to store provider ID ${providerId} in localStorage: ${e.message}`,
         type: LOG_TYPES.ERROR,
@@ -1131,8 +1219,9 @@ class ReclaimContentScript {
 
   // Helper method to store provider injection script in website's localStorage
   setProviderInjectionScriptInLocalStorage(providerId, injectionScript) {
-    // Don't store null, undefined, or 'unknown' values
+    const key = `reclaimBrowserExtensionInjectionScript:${providerId}`;
     if (!providerId || providerId === "unknown") {
+      localStorage.removeItem(key);
       loggerService.log({
         message: `Skipping localStorage storage for injection script for invalid provider ID: ${providerId}`,
         type: LOG_TYPES.CONTENT,
@@ -1144,6 +1233,7 @@ class ReclaimContentScript {
     }
 
     if (!injectionScript?.length) {
+      localStorage.removeItem(key);
       loggerService.log({
         message: `Skipping localStorage storage for injection script`,
         type: LOG_TYPES.CONTENT,
@@ -1155,8 +1245,7 @@ class ReclaimContentScript {
     }
 
     try {
-      console.log("Storing provider ID in localStorage:", providerId);
-      localStorage.setItem(`reclaimBrowserExtensionInjectionScript:${providerId}`, injectionScript);
+      localStorage.setItem(key, injectionScript);
       loggerService.log({
         message: `Injection script stored in localStorage.`,
         type: LOG_TYPES.CONTENT,
@@ -1165,6 +1254,7 @@ class ReclaimContentScript {
         appId: this.appId,
       });
     } catch (e) {
+      localStorage.removeItem(key);
       loggerService.log({
         message: `Failed to store injection script in localStorage: ${e.message}`,
         type: LOG_TYPES.ERROR,

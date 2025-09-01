@@ -1,9 +1,21 @@
 window.Reclaim = window.Reclaim || {};
 let __reclaimParams = {};
 
+try {
+  const ls = localStorage.getItem("reclaimBrowserExtensionParameters");
+  if (ls) __reclaimParams = JSON.parse(ls) || {};
+} catch {}
+
 Object.defineProperty(window.Reclaim, "parameters", {
-  get: () => ({ ...__reclaimParams }), // read-only copy
-  // eslint-disable-next-line @typescript-eslint/no-empty-function
+  get: () => {
+    if (Object.keys(__reclaimParams).length > 0) return { ...__reclaimParams };
+    try {
+      const ls = localStorage.getItem("reclaimBrowserExtensionParameters");
+      return ls ? JSON.parse(ls) : {};
+    } catch {
+      return {};
+    }
+  },
   set: () => {},
   enumerable: true,
   configurable: false,
@@ -47,15 +59,36 @@ window.Reclaim.reportProviderError = function (msg) {
   }
 };
 
+window.Reclaim.requestClaim = function (rdObject) {
+  try {
+    window.postMessage({ action: "RECLAIM_REQUEST_CLAIM", data: { rdObject } }, "*");
+  } catch (e) {
+    console.error("Reclaim.requestClaim error:", e);
+  }
+};
+
+window.Reclaim.getParametersSync = function () {
+  try {
+    const ls = localStorage.getItem("reclaimBrowserExtensionParameters");
+    return ls ? JSON.parse(ls) : {};
+  } catch {
+    return {};
+  }
+};
+
 window.addEventListener("message", (e) => {
   if (e.source !== window) return;
   const { action, data } = e.data || {};
   if (action === "RECLAIM_PARAMETERS_UPDATE" && data?.parameters) {
-    __reclaimParams = data.parameters || {};
+    const p = data.parameters || {};
+    if (Object.keys(p).length === 0 && Object.keys(__reclaimParams).length > 0) return;
+    __reclaimParams = p;
+    try {
+      localStorage.setItem("reclaimBrowserExtensionParameters", JSON.stringify(__reclaimParams));
+    } catch {}
   }
 });
 
-// Ask content for the current snapshot (which pulls from background ctx)
 try {
   window.postMessage({ action: "RECLAIM_PARAMETERS_GET" }, "*");
 } catch {}
@@ -68,8 +101,6 @@ try {
 
 (function () {
   "use strict";
-
-  console.log("INJECTION SCRIPTS!!! LOADED!!!!");
 
   // Backend API configuration
   const BACKEND_URL = "https://api.reclaimprotocol.org";

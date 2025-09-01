@@ -140,7 +140,6 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
           source === ctx.MESSAGE_SOURCES.CONTENT_SCRIPT &&
           target === ctx.MESSAGE_SOURCES.BACKGROUND
         ) {
-          console.log("START VERIFICATION FROM BACKGROUND", { data });
           ctx.loggerService.log({
             message: "Starting a new verification with data: " + JSON.stringify(data),
             type: ctx.LOG_TYPES.BACKGROUND,
@@ -152,8 +151,13 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
 
           // Concurrency guard
           if (ctx.activeSessionId && ctx.activeSessionId !== data.sessionId) {
-            sendResponse({ success: false, error: "Another verification is in progress" });
-            break;
+            // If no managed tabs remain, clear stale guard and continue
+            if (ctx.managedTabs.size === 0) {
+              ctx.activeSessionId = null;
+            } else {
+              sendResponse({ success: false, error: "Another verification is in progress" });
+              break;
+            }
           }
           ctx.activeSessionId = data.sessionId || ctx.activeSessionId;
 
@@ -286,8 +290,37 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
       case ctx.MESSAGE_ACTIONS.REPORT_PROVIDER_ERROR: {
         if (sender.tab?.id && ctx.managedTabs.has(sender.tab.id)) {
           ctx.aborted = true;
-          await ctx.failSession(ctx, data?.message || "Provider error");
+          await ctx.failSession(data?.message || "Provider error");
           sendResponse({ success: true });
+        } else {
+          sendResponse({ success: false, error: "Tab is not managed by extension" });
+        }
+        break;
+      }
+      case ctx.MESSAGE_ACTIONS.REQUEST_CLAIM: {
+        if (
+          source === ctx.MESSAGE_SOURCES.CONTENT_SCRIPT &&
+          target === ctx.MESSAGE_SOURCES.BACKGROUND &&
+          sender.tab?.id &&
+          ctx.managedTabs.has(sender.tab.id)
+        ) {
+          try {
+            const sessId = ctx.sessionId || data.sessionId;
+            if (!sessId) {
+              sendResponse({ success: false, error: "Session not initialized" });
+              break;
+            }
+            const result = await ctx.processFilteredRequest(
+              data.request, // carries url/method/headers/body/extractedParams
+              data.criteria, // responseMatches/redactions, requestHash
+              data.sessionId, // current session
+              data.loginUrl || "", // referer/login
+            );
+
+            sendResponse({ success: true, result });
+          } catch (e) {
+            sendResponse({ success: false, error: e?.message || String(e) });
+          }
         } else {
           sendResponse({ success: false, error: "Tab is not managed by extension" });
         }

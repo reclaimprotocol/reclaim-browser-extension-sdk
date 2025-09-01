@@ -4,6 +4,11 @@ import './ReclaimDemo.css';
 
 const PROVIDERS = [
   { id: '7519ad78-208a-425d-9fac-97c13b0f0d4d', name: 'Kaggle' },
+  { id: '6b6d447f-caa7-461c-bd13-5c4738d7b4f9', name: 'Kaggle Injections' },
+  { id: 'c9656893-ab80-4f17-9e88-0bcc33da123b', name: 'Kaggle Cascading' },
+  { id: '31e222ba-be21-4bec-b767-af30f52836d9', name: 'Steam Trade' },
+  { id: '31e222ba-be21-4bec-b767-af30f52837ea', name: 'Steam Inventory' },
+  { id: '214861a3-191b-427b-9862-75e301f1e63b', name: 'Tiktok' },
   { id: 'fbf83028-fbed-4414-b593-fa5d3e3fa131', name: 'Trex - Binance' },
 ];
 
@@ -27,7 +32,7 @@ export default function ReclaimDemo() {
     setInstalled(ok);
   }
 
-  async function start() {
+  async function start2() {
     try {
       setLoading(true);
       setError('');
@@ -38,20 +43,24 @@ export default function ReclaimDemo() {
         // callbackUrl: 'https://your.server/receive-proofs' // optional
       });
 
+
       setReq(request);
       setStatusUrl(request.getStatusUrl());
 
       request.on('completed', (p) => {
+        console.log(p, "completed");
         setProofs(p);
         setLoading(false);
       });
 
       request.on('error', (e) => {
+        console.log(e, "Error");
         setError(e?.message || String(e));
         setLoading(false);
       });
 
       const p = await request.startVerification();
+      console.log(p, "p startVerification");
       setProofs(p);
     } catch (e) {
       setError(e?.message || String(e));
@@ -59,8 +68,65 @@ export default function ReclaimDemo() {
     }
   }
 
+
+  async function start() {
+    try {
+      setLoading(true);
+      setError('');
+      setProofs(null);
+
+      const BASE_URL = "http://localhost:8000";
+      const res = await fetch(`${BASE_URL}/generate-config`);
+      const { reclaimProofRequestConfig } = await res.json();
+      console.log(reclaimProofRequestConfig, "reclaimProofRequestConfig");
+
+      const request = reclaimProofRequestConfig.fromJsonString(reclaimProofRequestConfig, {
+        extensionID: EXTENSION_ID,
+      });
+      
+
+      // request.setParams({
+      //   // srivatsan
+      //   username: "76561198886166562",
+      //   // mushaheed
+      //   // username: "white_shadow_x7"
+      // });
+
+    //   request.setParams({
+    //     "theirTradeLink": "https://steamcommunity.com/tradeoffer/new/?partner=482038931&token=7d8YweiW",
+    //     "tradeOfferMessage": "Hello, my first one....",
+    //     "myTradeAssets": "{\"assets\":[],\"currency\":[],\"ready\":false}",
+    //     "theirTradeAssets": "{\"assets\":[{\"appid\":753,\"contextid\":\"6\",\"amount\":\"1\",\"assetid\":\"16773845215\"}],\"currency\":[],\"ready\":false}"
+    // });
+
+      setReq(request);
+      setStatusUrl(request.getStatusUrl());
+
+      request.on('completed', (p) => {
+        console.log(p, "completed");
+        setProofs(p);
+        setLoading(false);
+      });
+
+      request.on('error', (e) => {
+        console.log(e, "Error");
+        setError(e?.message || String(e));
+        setLoading(false);
+      });
+
+      const p = await request.startVerification();
+      console.log(p, "p startVerification");
+      setProofs(p);
+    } catch (e) {
+      setError(e?.message || String(e));
+      setLoading(false);
+    }
+  }
+
+
   async function cancel() {
-    try { await req?.cancel(); } catch {}
+    // eslint-disable-next-line no-empty
+    try { await req?.cancel(); } catch { }
   }
 
   return (
