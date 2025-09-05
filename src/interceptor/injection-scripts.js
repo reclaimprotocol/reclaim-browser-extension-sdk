@@ -384,7 +384,8 @@ try {
       };
 
       // Execute the fetched script
-      executeInjectionScript(injectionScript, providerData);
+      // executeInjectionScript(injectionScript, providerData);
+      executeInjectionScriptNoEval(injectionScript, providerData);
     } catch (error) {
       debug.error("Error in loadAndExecuteInjectionScript:", error);
     }
@@ -409,7 +410,7 @@ try {
     getProviderIdFromStorage,
     getProviderIdFromExtension,
     fetchProviderInjectionScript,
-    executeInjectionScript,
+    executeInjectionScriptNoEval,
   };
 
   // Initialize the loader
