@@ -252,9 +252,7 @@ class ReclaimContentScript {
     this.dataRequired = "Membership Status / Tier";
 
     // Storage for intercepted requests and responses
-    this.interceptedRequests = new Map();
-    this.interceptedResponses = new Map();
-    this.linkedRequestResponses = new Map();
+    this.interceptedRequestResponses = new Map();
 
     // Filtering state
     this.providerData = null;
@@ -662,22 +660,16 @@ class ReclaimContentScript {
       return;
     }
 
-    // Handle intercepted network request
-    if (action === MESSAGE_ACTIONS.INTERCEPTED_REQUEST && data) {
-      // Store the intercepted request
-      this.storeInterceptedRequest(data);
-      if (this.isFiltering) {
-        this.startNetworkFiltering();
-      }
-    }
-
-    // Handle intercepted network responses
-    if (action === MESSAGE_ACTIONS.INTERCEPTED_RESPONSE && data) {
+    if (action === MESSAGE_ACTIONS.INTERCEPTED_REQUEST_AND_RESPONSE && data) {
       // Store the intercepted response
-      this.storeInterceptedResponse(data);
 
-      // Try to link with the corresponding request
-      this.linkRequestAndResponse(data.url, data);
+      const key = `${data.request.method}_${data.request.url}_${data.timestamp || Date.now()}`;
+      this.interceptedRequestResponses.set(key, data);
+
+      if (data?.response?.body?.includes("follower_count")) {
+        console.log("data from INTERCEPTED_REQUEST_AND_RESPONSE", { data, key });
+      }
+
       if (this.isFiltering) {
         this.startNetworkFiltering();
       }
@@ -902,109 +894,15 @@ class ReclaimContentScript {
     }
   }
 
-  // Store intercepted request
-  storeInterceptedRequest(requestData) {
-    // Return immediately if we've found all filtered requests
-    if (this.stopStoringInterceptions) {
-      return;
-    }
-
-    // Generate a unique key for the request
-    const key = `${requestData.method}_${requestData.url}_${Date.now()}`;
-    requestData.timestamp = Date.now();
-
-    // Store the request
-    this.interceptedRequests.set(key, requestData);
-    if (this.appId && this.httpProviderId && this.sessionId) {
-      loggerService.log({
-        message: `Intercepted request stored: ${requestData.method} ${requestData.url}`,
-        type: LOG_TYPES.CONTENT,
-        sessionId: this.sessionId,
-        providerId: this.httpProviderId,
-        appId: this.appId,
-      });
-    }
-
-    // Clean up old requests only if we're still collecting
-    if (!this.stopStoringInterceptions) {
-      this.cleanupInterceptedData();
-    }
-  }
-
-  // Store intercepted response
-  storeInterceptedResponse(responseData) {
-    // Return immediately if we've found all filtered requests
-    if (this.stopStoringInterceptions) {
-      return;
-    }
-
-    responseData.timestamp = Date.now();
-
-    // Store the response using URL as key
-    this.interceptedResponses.set(responseData.url, responseData);
-    if (this.appId && this.httpProviderId && this.sessionId) {
-      loggerService.log({
-        message: `Intercepted response stored: ${responseData.url}`,
-        type: LOG_TYPES.CONTENT,
-        sessionId: this.sessionId,
-        providerId: this.httpProviderId,
-        appId: this.appId,
-      });
-    }
-
-    // Clean up old responses only if we're still collecting
-    if (!this.stopStoringInterceptions) {
-      this.cleanupInterceptedData();
-    }
-  }
-
-  // Link request and response
-  linkRequestAndResponse(url, responseData) {
-    // Return immediately if we've found all filtered requests
-    if (this.stopStoringInterceptions) {
-      return;
-    }
-
-    // Find matching request for this response
-    for (const [key, requestData] of this.interceptedRequests.entries()) {
-      if (requestData.url === url) {
-        // Create a linked object with both request and response
-        const linkedData = {
-          request: requestData,
-          response: responseData,
-          timestamp: Date.now(),
-        };
-
-        // Store the linked data
-        this.linkedRequestResponses.set(key, linkedData);
-        break;
-      }
-    }
-  }
-
   // Clean up old intercepted data
   cleanupInterceptedData() {
     const now = Date.now();
     const timeout = 2 * 60 * 1000; // 2 minutes
 
-    // Clean up requests
-    for (const [key, data] of this.interceptedRequests.entries()) {
-      if (now - data.timestamp > timeout) {
-        this.interceptedRequests.delete(key);
-      }
-    }
-
-    // Clean up responses
-    for (const [key, data] of this.interceptedResponses.entries()) {
-      if (now - data.timestamp > timeout) {
-        this.interceptedResponses.delete(key);
-      }
-    }
-
     // Clean up linked data
-    for (const [key, data] of this.linkedRequestResponses.entries()) {
+    for (const [key, data] of this.interceptedRequestResponses.entries()) {
       if (now - data.timestamp > timeout) {
-        this.linkedRequestResponses.delete(key);
+        this.interceptedRequestResponses.delete(key);
       }
     }
   }
@@ -1065,9 +963,7 @@ class ReclaimContentScript {
       this.stopStoringInterceptions = true;
 
       // Clear stored data to free memory
-      this.interceptedRequests.clear();
-      this.interceptedResponses.clear();
-      this.linkedRequestResponses.clear();
+      this.interceptedRequestResponses.clear();
     }
   }
 
@@ -1078,14 +974,14 @@ class ReclaimContentScript {
     }
 
     // For each linked request/response pair
-    for (const [key, linkedData] of this.linkedRequestResponses.entries()) {
+    for (const [key, combinedData] of this.interceptedRequestResponses.entries()) {
       // Skip already filtered requests
       if (this.filteredRequests.includes(key)) {
         continue;
       }
 
-      const requestValue = linkedData.request;
-      const responseBody = linkedData.response.body;
+      const requestValue = combinedData.request;
+      const responseBody = combinedData.response.body;
 
       // Format request for filtering
       const formattedRequest = {
@@ -1107,6 +1003,7 @@ class ReclaimContentScript {
             providerId: this.httpProviderId,
             appId: this.appId,
           });
+
           this.filteredRequests.push(key);
 
           // Send to background script for cookie fetching and claim creation
@@ -1146,9 +1043,7 @@ class ReclaimContentScript {
       }
 
       // Clear all stored requests and responses
-      this.interceptedRequests.clear();
-      this.interceptedResponses.clear();
-      this.linkedRequestResponses.clear();
+      this.interceptedRequestResponses.clear();
     }
   }
 

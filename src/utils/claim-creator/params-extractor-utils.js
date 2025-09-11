@@ -59,8 +59,13 @@ export const getValueFromJsonPath = (jsonData, jsonPath) => {
     // Navigate through the object using the parsed segments
     let value = jsonData;
     for (const segment of segments) {
-      if (value === undefined || value === null) {
-        return null;
+      // fixed because if for ex: subscription: null, then it will return null and it will fail
+      // if (value === undefined || value === null) {
+      //   return null;
+      // }
+      if (!(segment in value)) {
+        // Path doesn’t exist
+        return undefined;
       }
       value = value[segment];
     }
@@ -72,7 +77,7 @@ export const getValueFromJsonPath = (jsonData, jsonPath) => {
       `[PARAMS-EXTRACTOR-UTILS] Error extracting JSON value with path ${jsonPath}:`,
       error,
     );
-    return null;
+    return undefined;
   }
 };
 
@@ -80,7 +85,7 @@ export const getValueFromJsonPath = (jsonData, jsonPath) => {
  * Extract values from HTML response using XPath (simplified)
  * @param {string} htmlString - HTML string
  * @param {string} xPath - XPath expression
- * @returns {string|null} Extracted value or null if not found
+ * @returns {string|null|undefined} Extracted value or null if not found
  */
 export const getValueFromXPath = (htmlString, xPath) => {
   // This is a simplified implementation
@@ -96,14 +101,14 @@ export const getValueFromXPath = (htmlString, xPath) => {
     const regex = new RegExp(`<${element}[^>]*>(.*?)<\/${element}>`, "i");
     const match = htmlString.match(regex);
 
-    return match ? match[1] : null;
+    return match ? match[1] : undefined;
   } catch (error) {
     debugLogger.error(
       DebugLogType.CLAIM,
       `[PARAMS-EXTRACTOR-UTILS] Error extracting HTML value with XPath ${xPath}:`,
       error,
     );
-    return null;
+    return undefined;
   }
 };
 

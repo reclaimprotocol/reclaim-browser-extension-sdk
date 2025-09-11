@@ -18,8 +18,14 @@ export class ReclaimExtensionProofRequest {
   timestamp: string;
   getStatusUrl(): string;
 
-  static fromJsonString(json: string | Record<string, unknown>, options?: InitOptions): ReclaimExtensionProofRequest;
-  static fromConfig(config: Record<string, unknown>, options?: InitOptions): ReclaimExtensionProofRequest;
+  static fromJsonString(
+    json: string | Record<string, unknown>,
+    options?: InitOptions,
+  ): ReclaimExtensionProofRequest;
+  static fromConfig(
+    config: Record<string, unknown>,
+    options?: InitOptions,
+  ): ReclaimExtensionProofRequest;
 
   setAppCallbackUrl(url: string, jsonProofResponse?: boolean): void;
   setRedirectUrl(url: string): void;
@@ -45,7 +51,10 @@ export class ReclaimExtensionSDK {
   ): Promise<ReclaimExtensionProofRequest>;
 
   // Convenience wrapper that forwards to ReclaimExtensionProofRequest.fromJsonString
-  fromJsonString(json: string | Record<string, unknown>, options?: InitOptions): ReclaimExtensionProofRequest;
+  fromJsonString(
+    json: string | Record<string, unknown>,
+    options?: InitOptions,
+  ): ReclaimExtensionProofRequest;
 }
 
 export const reclaimExtensionSDK: ReclaimExtensionSDK;
