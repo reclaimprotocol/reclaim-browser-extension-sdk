@@ -120,7 +120,7 @@ graph TD
 - `PROVIDER_DATA_READY` - Provider data available
 - `SHOW_PROVIDER_VERIFICATION_POPUP` - Display verification UI
 - `FILTERED_REQUEST_FOUND` - Matching network request found
-- `INTERCEPTED_REQUEST/RESPONSE` - Network data captured
+- `INTERCEPTED_REQUEST_AND_RESPONSE` - Network data captured
 
 ### Status Actions (Background Script → Content Script)
 

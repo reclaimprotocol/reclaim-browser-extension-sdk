@@ -150,9 +150,8 @@ function matchesResponseFields(responseText, responseRedactions) {
     if (redaction.jsonPath && jsonData) {
       try {
         const value = getValueFromJsonPath(jsonData, redaction.jsonPath);
-
         // If we get here but value is undefined, the path doesn't exist
-        if (value === undefined || value === null) return false;
+        if (value === undefined) return false;
       } catch (error) {
         debugLogger.error(
           DebugLogType.CLAIM,

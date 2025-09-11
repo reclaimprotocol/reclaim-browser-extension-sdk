@@ -43,7 +43,6 @@ export const extractParamsFromUrl = (urlTemplate, actualUrl, paramValues = {}) =
       }
     }
   }
-
   return paramValues;
 };
 
@@ -60,7 +59,8 @@ export const extractParamsFromBody = (bodyTemplate, actualBody, paramValues = {}
   // Extract param names from template
   const paramNames = extractDynamicParamNames(bodyTemplate);
 
-  const regex = convertTemplateToRegex(bodyTemplate, paramNames).pattern;
+  const { pattern } = convertTemplateToRegex(bodyTemplate, {});
+  const regex = new RegExp(pattern);
 
   // Match actual body against the pattern
   const match = actualBody.match(regex);
@@ -117,7 +117,6 @@ export const extractParamsFromResponse = (
 
         // Extract param names from match value expect one parameter per responseMatch
         const paramNames = extractDynamicParamNames(match.value);
-
         if (paramNames.length === 0) return;
 
         // Find corresponding redaction for this parameter
@@ -144,10 +143,12 @@ export const extractParamsFromResponse = (
           }
 
           // Store the extracted value as string
-          if (extractedValue !== null) {
+          if (extractedValue !== undefined) {
             // Convert objects and arrays to JSON string, primitives to regular string
             if (typeof extractedValue === "object" && extractedValue !== null) {
               paramValues[paramNames[0]] = JSON.stringify(extractedValue);
+            } else if (extractedValue === null) {
+              paramValues[paramNames[0]] = null;
             } else {
               paramValues[paramNames[0]] = String(extractedValue);
             }

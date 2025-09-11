@@ -114,6 +114,7 @@ export default function initBackground() {
       let claimData = null;
       try {
         claimData = await ctx.createClaimObject(request, criteria, sessionId, loginUrl);
+        console.log(JSON.stringify(claimData, null, 2));
       } catch (error) {
         debugLogger.error(DebugLogType.BACKGROUND, "Error creating claim object:", error);
         chrome.tabs.sendMessage(ctx.activeTabId, {

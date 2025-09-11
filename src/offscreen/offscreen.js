@@ -143,7 +143,11 @@ class OffscreenProofGenerator {
 
       const attestorPromise = createClaimOnAttestor(claimData);
 
+      console.log("attestorPromise", attestorPromise);
+
       const result = await Promise.race([attestorPromise, timeoutPromise]);
+
+      console.log("attestorPromise result", result);
 
       result.publicData = typeof claimData.publicData === "string" ? claimData.publicData : null;
 
