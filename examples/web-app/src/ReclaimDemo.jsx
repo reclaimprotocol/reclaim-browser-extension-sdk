@@ -2,7 +2,9 @@ import React, { useMemo, useState } from 'react';
 import { reclaimExtensionSDK } from '@reclaimprotocol/browser-extension-sdk';
 import './ReclaimDemo.css';
 
-const PROVIDERS = [];
+const PROVIDERS = [
+  { id: '7519ad78-208a-425d-9fac-97c13b0f0d4d', name: 'Kaggle' },
+];
 
 const APP_ID = import.meta.env.VITE_RECLAIM_APP_ID;
 const APP_SECRET = import.meta.env.VITE_RECLAIM_APP_SECRET;
