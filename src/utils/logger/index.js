@@ -1,4 +1,4 @@
-import { loggerService } from "./LoggerService";
+import { loggerService, createContextLogger } from "./LoggerService";
 import { debugLogger } from "./debugLogger";
 
 // Enable debugLogger in development, disable in production
@@ -24,13 +24,15 @@ export { LOGGING_ENDPOINTS, LOG_TYPES } from "./constants";
  * @param {string} appId - The application ID
  */
 export function log(message, type, sessionId, providerId, appId) {
-  return loggerService.log({
-    message,
-    type,
-    sessionId,
-    providerId,
-    appId,
+  const logger = createContextLogger({
+    sessionId: sessionId || "unknown",
+    providerId: providerId || "unknown",
+    appId: appId || "unknown",
+    source: "reclaim-extension-sdk",
+    type: type,
   });
+
+  return logger.info(message);
 }
 
 /**
@@ -44,12 +46,12 @@ export function log(message, type, sessionId, providerId, appId) {
  * @param {string} [message] - Optional message to include with the error
  */
 export function logError(error, type, sessionId, providerId, appId, message) {
-  return loggerService.logError({
-    error,
-    type,
-    sessionId,
-    providerId,
-    appId,
-    message,
+  const logger = createContextLogger({
+    sessionId: sessionId || "unknown",
+    providerId: providerId || "unknown",
+    appId: appId || "unknown",
+    source: "reclaim-extension-sdk",
+    type: type,
   });
+  return logger.error(message, { error });
 }

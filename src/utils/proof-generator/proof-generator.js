@@ -4,16 +4,42 @@ import "../polyfills";
 import { MESSAGE_ACTIONS, MESSAGE_SOURCES } from "../constants/index";
 import { ensureOffscreenDocument } from "../offscreen-manager";
 import { debugLogger, DebugLogType } from "../logger";
+import { loggerService, createContextLogger } from "../logger/LoggerService";
+import { LOG_TYPES, LOG_LEVEL } from "../logger/constants";
+
+loggerService.setConfig({
+  consoleEnabled: true,
+  backendEnabled: true,
+  consoleLevel: LOG_LEVEL.INFO,
+  backendLevel: LOG_LEVEL.INFO,
+  includeSensitiveToBackend: false,
+  debugMode: false, // set true to see all logs in console
+});
+
+const proofLogger = createContextLogger({
+  sessionId: "unknown",
+  providerId: "unknown",
+  appId: "unknown",
+  source: "reclaim-extension-sdk",
+  type: LOG_TYPES.PROOF,
+});
 
 // Main function to generate proof using offscreen document
 export const generateProof = async (claimData) => {
+  proofLogger.setContext({
+    sessionId: claimData.sessionId || "unknown",
+    providerId: claimData.providerId || "unknown",
+    appId: claimData.applicationId || "unknown",
+    type: LOG_TYPES.PROOF,
+  });
+
   try {
-    debugLogger.info(
-      DebugLogType.PROOF,
-      "[PROOF-GENERATOR] Starting proof generation with data:",
-      claimData,
+    proofLogger.info(
+      `[PROOF-GENERATOR] Starting proof generation with data: ${JSON.stringify(claimData)}`,
     );
+
     if (!claimData) {
+      proofLogger.error("[PROOF-GENERATOR] No claim data provided for proof generation");
       throw new Error("No claim data provided for proof generation");
     }
     // Ensure the offscreen document exists and is ready
@@ -22,8 +48,7 @@ export const generateProof = async (claimData) => {
     // Generate the proof using the offscreen document
     return new Promise((resolve, reject) => {
       const messageTimeout = setTimeout(() => {
-        debugLogger.error(
-          DebugLogType.PROOF,
+        proofLogger.error(
           "[PROOF-GENERATOR] Timeout waiting for offscreen document to generate proof",
         );
         reject({
@@ -45,20 +70,17 @@ export const generateProof = async (claimData) => {
 
           // Check if the proof generation was successful
           if (!response.success) {
-            debugLogger.error(
-              DebugLogType.PROOF,
-              "[PROOF-GENERATOR] Proof generation failed:",
-              response.error,
-            );
+            proofLogger.error("[PROOF-GENERATOR] Proof generation failed:", response.error);
             resolve({
               success: false,
               error: response.error || "Unknown error in proof generation",
             });
             return;
           }
-
+          console.log("response", response);
+          console.log("proofLogger", proofLogger);
           // Return the successful response
-          debugLogger.info(DebugLogType.PROOF, "[PROOF-GENERATOR] Proof generation successful");
+          proofLogger.info("[PROOF-GENERATOR] Proof generation successful");
           resolve(response);
         }
       };
@@ -78,10 +100,8 @@ export const generateProof = async (claimData) => {
           if (chrome.runtime.lastError) {
             clearTimeout(messageTimeout);
             chrome.runtime.onMessage.removeListener(messageListener);
-            debugLogger.error(
-              DebugLogType.PROOF,
-              "[PROOF-GENERATOR] Error sending message to offscreen document:",
-              chrome.runtime.lastError,
+            proofLogger.error(
+              `[PROOF-GENERATOR] Error sending message to offscreen document: ${chrome.runtime.lastError.message}`,
             );
             reject({
               success: false,
@@ -93,11 +113,7 @@ export const generateProof = async (claimData) => {
       );
     });
   } catch (error) {
-    debugLogger.error(
-      DebugLogType.PROOF,
-      "[PROOF-GENERATOR] Error in proof generation process:",
-      error,
-    );
+    proofLogger.error(`[PROOF-GENERATOR] Error in proof generation process: ${error.message}`);
     return {
       success: false,
       error: error.message || "Unknown error in proof generation process",

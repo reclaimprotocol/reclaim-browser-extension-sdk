@@ -2,9 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { reclaimExtensionSDK } from '@reclaimprotocol/browser-extension-sdk';
 import './ReclaimDemo.css';
 
-const PROVIDERS = [
-  { id: '7519ad78-208a-425d-9fac-97c13b0f0d4d', name: 'Kaggle' },
-];
+const PROVIDERS = [];
 
 const APP_ID = import.meta.env.VITE_RECLAIM_APP_ID;
 const APP_SECRET = import.meta.env.VITE_RECLAIM_APP_SECRET;
@@ -39,6 +37,7 @@ export default function ReclaimDemo() {
 
       // request.setAppCallbackUrl("https://ca4d0a506d63.ngrok-free.app/receive-proofs");
 
+      request.setParams({ demo: "1" });
 
       setReq(request);
       setStatusUrl(request.getStatusUrl());
@@ -194,3 +193,6 @@ export default function ReclaimDemo() {
     </div>
   );
 }
+
+
+

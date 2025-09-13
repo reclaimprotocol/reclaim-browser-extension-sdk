@@ -1,6 +1,24 @@
 // src/utils/offscreen-manager.js
 import { MESSAGE_ACTIONS, MESSAGE_SOURCES } from "./constants";
-import { debugLogger, DebugLogType } from "./logger";
+import { loggerService, createContextLogger } from "./logger/LoggerService";
+import { LOG_TYPES, LOG_LEVEL } from "./logger/constants";
+
+loggerService.setConfig({
+  consoleEnabled: true,
+  backendEnabled: true,
+  consoleLevel: LOG_LEVEL.INFO,
+  backendLevel: LOG_LEVEL.INFO,
+  includeSensitiveToBackend: false,
+  debugMode: false,
+});
+
+const offscreenLogger = createContextLogger({
+  sessionId: "unknown",
+  providerId: "unknown",
+  appId: "unknown",
+  source: "reclaim-extension-sdk",
+  type: LOG_TYPES.OFFSCREEN,
+});
 
 // Track the offscreen document status
 let offscreenReady = false;
@@ -14,7 +32,7 @@ const offscreenGlobalListener = (message) => {
     message?.source === MESSAGE_SOURCES.OFFSCREEN &&
     message?.target === MESSAGE_SOURCES.BACKGROUND
   ) {
-    debugLogger.info(DebugLogType.OFFSCREEN, "Received offscreen ready signal (global listener).");
+    offscreenLogger.info("[OFFSCREEN-MANAGER] Received offscreen ready signal (global listener).");
     offscreenReady = true;
     if (offscreenDocTimeout) {
       clearTimeout(offscreenDocTimeout);
@@ -35,7 +53,7 @@ export const installOffscreenReadyListener = () => {
     return;
   }
   if (chrome.runtime.onMessage.hasListener(offscreenGlobalListener)) {
-    debugLogger.info(DebugLogType.OFFSCREEN, "Global listener already attached.");
+    offscreenLogger.info("[OFFSCREEN-MANAGER] Global listener already attached.");
     return;
   }
   chrome.runtime.onMessage.addListener(offscreenGlobalListener);
@@ -55,7 +73,7 @@ const setupOffscreenReadyListener = () => {
     return;
   }
   if (chrome.runtime.onMessage.hasListener(offscreenGlobalListener)) {
-    debugLogger.info(DebugLogType.OFFSCREEN, "Global listener already attached.");
+    offscreenLogger.info("[OFFSCREEN-MANAGER] Global listener already attached.");
     return;
   }
   chrome.runtime.onMessage.addListener(offscreenGlobalListener);
@@ -72,9 +90,8 @@ async function createOffscreenDocumentInternal() {
   const offscreenUrl = chrome.runtime.getURL(
     "reclaim-browser-extension-sdk/offscreen/offscreen.html",
   );
-  debugLogger.info(
-    DebugLogType.OFFSCREEN,
-    "Attempting to create offscreen document with URL:",
+  offscreenLogger.info(
+    "[OFFSCREEN-MANAGER] Attempting to create offscreen document with URL:",
     offscreenUrl,
   );
   try {
@@ -84,21 +101,20 @@ async function createOffscreenDocumentInternal() {
       justification:
         "Manages DOM-dependent operations like crypto and ZK proof generation for the extension.",
     });
-    debugLogger.info(DebugLogType.OFFSCREEN, "Offscreen document creation initiated.");
+    offscreenLogger.info("[OFFSCREEN-MANAGER] Offscreen document creation initiated.");
     // The 'OFFSCREEN_DOCUMENT_READY' message will set offscreenReady to true.
   } catch (error) {
     if (
       error.message &&
       error.message.includes("Only a single offscreen document may be created.")
     ) {
-      debugLogger.warn(
-        DebugLogType.OFFSCREEN,
-        "Offscreen document already exists or creation was attempted by another part.",
+      offscreenLogger.warn(
+        "[OFFSCREEN-MANAGER] Offscreen document already exists or creation was attempted by another part.",
       );
       // It exists, so we just need to wait for it to be ready if it's not already.
       // The ensureOffscreenDocument logic will handle waiting for readiness.
     } else {
-      debugLogger.error(DebugLogType.OFFSCREEN, "Error creating offscreen document:", error);
+      offscreenLogger.error("[OFFSCREEN-MANAGER] Error creating offscreen document:", error);
       throw error; // Re-throw other errors
     }
   }
@@ -106,16 +122,12 @@ async function createOffscreenDocumentInternal() {
 
 async function waitForOffscreenReadyInternal(timeoutMs = 15000) {
   if (offscreenReady) {
-    debugLogger.info(
-      DebugLogType.OFFSCREEN,
-      " Already ready (waitForOffscreenReadyInternal check)",
-    );
+    offscreenLogger.info("[OFFSCREEN-MANAGER] Already ready (waitForOffscreenReadyInternal check)");
     return true;
   }
 
-  debugLogger.info(
-    DebugLogType.OFFSCREEN,
-    ` Waiting for offscreen document to be ready (timeout:- ${timeoutMs}ms)...`,
+  offscreenLogger.info(
+    "[OFFSCREEN-MANAGER] Waiting for offscreen document to be ready (timeout:- ${timeoutMs}ms)...",
   );
 
   // Proactively ping the offscreen document.
@@ -127,13 +139,13 @@ async function waitForOffscreenReadyInternal(timeoutMs = 15000) {
       target: MESSAGE_SOURCES.OFFSCREEN,
     });
   } catch (e) {
-    debugLogger.warn(DebugLogType.OFFSCREEN, " Synchronous error sending ping:", e);
+    offscreenLogger.warn("[OFFSCREEN-MANAGER] Synchronous error sending ping:" + e?.message);
   }
 
   return new Promise((resolve) => {
     if (offscreenReady) {
       // Double check after setup
-      debugLogger.info(DebugLogType.OFFSCREEN, "Became ready while setting up promise.");
+      offscreenLogger.info("[OFFSCREEN-MANAGER] Became ready while setting up promise.");
       resolve(true);
       return;
     }
@@ -163,9 +175,8 @@ async function waitForOffscreenReadyInternal(timeoutMs = 15000) {
     }
     const localTimeoutId = setTimeout(() => {
       chrome.runtime.onMessage.removeListener(listener);
-      debugLogger.error(
-        DebugLogType.OFFSCREEN,
-        ` Timed out waiting for offscreen document after ${timeoutMs}ms.`,
+      offscreenLogger.error(
+        "[OFFSCREEN-MANAGER] Timed out waiting for offscreen document after " + timeoutMs + " ms.",
       );
       if (offscreenDocTimeout === localTimeoutId) {
         offscreenDocTimeout = null;
@@ -178,13 +189,13 @@ async function waitForOffscreenReadyInternal(timeoutMs = 15000) {
 
 export async function ensureOffscreenDocument() {
   if (offscreenReady) {
-    debugLogger.info(DebugLogType.OFFSCREEN, "Document already confirmed ready.");
+    offscreenLogger.info("[OFFSCREEN-MANAGER] Document already confirmed ready.");
     return true;
   }
 
   // If a creation process is already underway, await its completion.
   if (offscreenCreationPromise) {
-    debugLogger.info(DebugLogType.OFFSCREEN, " Creation already in progress, awaiting...");
+    offscreenLogger.info("[OFFSCREEN-MANAGER] Creation already in progress, awaiting...");
     await offscreenCreationPromise;
     // After creation promise resolves, it might still not be "ready" (message might be pending)
     // Fall through to waitForOffscreenReadyInternal
@@ -195,12 +206,11 @@ export async function ensureOffscreenDocument() {
   if (chrome.runtime.getContexts) {
     const contexts = await chrome.runtime.getContexts({ contextTypes: ["OFFSCREEN_DOCUMENT"] });
     if (contexts.length > 0) {
-      debugLogger.info(DebugLogType.OFFSCREEN, "Offscreen document context found.");
+      offscreenLogger.info("[OFFSCREEN-MANAGER] Offscreen document context found.");
       if (offscreenReady) return true; // Already marked ready by global listener
       // If context exists but not marked ready, wait for the signal
-      debugLogger.info(
-        DebugLogType.OFFSCREEN,
-        "Context exists, but not marked ready. Waiting for signal...",
+      offscreenLogger.info(
+        "[OFFSCREEN-MANAGER] Context exists, but not marked ready. Waiting for signal...",
       );
       return await waitForOffscreenReadyInternal(5000); // Shorter timeout if context found
     }
@@ -208,7 +218,7 @@ export async function ensureOffscreenDocument() {
 
   // If no context found and not ready, and no creation in progress, attempt to create.
   if (!offscreenCreationPromise) {
-    debugLogger.info(DebugLogType.OFFSCREEN, "No existing context/promise, initiating creation.");
+    offscreenLogger.info("[OFFSCREEN-MANAGER] No existing context/promise, initiating creation.");
     offscreenCreationPromise = createOffscreenDocumentInternal().finally(() => {
       offscreenCreationPromise = null; // Clear promise once operation (success or fail) is done
     });
@@ -220,6 +230,6 @@ export async function ensureOffscreenDocument() {
   if (!isReady) {
     throw new Error("Failed to initialize or confirm offscreen document readiness.");
   }
-  debugLogger.info(DebugLogType.OFFSCREEN, "Offscreen document ensured to be ready.");
+  offscreenLogger.info("[OFFSCREEN-MANAGER] Offscreen document ensured to be ready.");
   return true;
 }

@@ -7,6 +7,7 @@ import {
 import { MESSAGE_ACTIONS, MESSAGE_SOURCES } from "../constants";
 import { ensureOffscreenDocument } from "../offscreen-manager";
 import { debugLogger, DebugLogType } from "../logger";
+import { getUserLocationBasedOnIp } from "./get-dynamic-geo";
 
 // Generate Chrome Android user agent (adapted from reference code)
 const generateChromeAndroidUserAgent = (chromeMajorVersion = 135, isMobile = true) => {
@@ -322,9 +323,17 @@ export const createClaimObject = async (request, providerData, sessionId, loginU
     throw new Error(`Could not obtain owner private key: ${error.message}`);
   }
 
+  let geoLocation = providerData?.geoLocation ?? "";
+  console.log(geoLocation, "geoLocation", providerData);
+
+  if (geoLocation === "{{DYNAMIC_GEO}}") {
+    geoLocation = await getUserLocationBasedOnIp();
+  }
+
   // Create the final claim object
   const claimObject = {
     name: "http",
+    geoLocation: geoLocation,
     sessionId: sessionId,
     params,
     secretParams,
@@ -333,6 +342,8 @@ export const createClaimObject = async (request, providerData, sessionId, loginU
       url: "wss://attestor.reclaimprotocol.org/ws",
     },
   };
+
+  console.log(JSON.stringify(claimObject, null, 2));
 
   debugLogger.info(DebugLogType.CLAIM, "[CLAIM-CREATOR] Claim object created successfully");
 

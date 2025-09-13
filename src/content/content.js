@@ -4,7 +4,25 @@ import "../utils/polyfills";
 import { RECLAIM_SDK_ACTIONS, MESSAGE_ACTIONS, MESSAGE_SOURCES } from "../utils/constants";
 import { createProviderVerificationPopup } from "./components/reclaim-provider-verification-popup";
 import { filterRequest } from "../utils/claim-creator";
-import { loggerService, LOG_TYPES } from "../utils/logger";
+import { loggerService, createContextLogger } from "../utils/logger/LoggerService";
+import { LOG_TYPES, LOG_LEVEL } from "../utils/logger/constants";
+
+// Default: INFO+ to console and backend
+loggerService.setConfig({
+  consoleEnabled: true,
+  backendEnabled: true,
+  consoleLevel: LOG_LEVEL.INFO,
+  backendLevel: LOG_LEVEL.INFO,
+  includeSensitiveToBackend: false,
+  debugMode: false, // set true to print every log to console
+});
+
+const logger = createContextLogger({
+  sessionId: "unknown",
+  providerId: "unknown",
+  appId: "unknown",
+  source: "reclaim-extension-sdk",
+});
 
 // Create a flag to track if we should initialize
 let shouldInitialize = false;
@@ -247,9 +265,9 @@ class ReclaimContentScript {
     // Only initialize popup-related properties if this is likely a managed tab
     // These will be properly set later during initialization
     this.verificationPopup = null;
-    this.providerName = "Emirates";
-    this.credentialType = "Skywards";
-    this.dataRequired = "Membership Status / Tier";
+    this.providerName = null;
+    this.credentialType = null;
+    this.dataRequired = null;
 
     // Storage for intercepted requests and responses
     this.interceptedRequestResponses = new Map();
@@ -258,7 +276,7 @@ class ReclaimContentScript {
     this.providerData = null;
     this.parameters = {};
     this.sessionId = null;
-    this.httpProviderId = null;
+    this.providerId = null;
     this.appId = null;
     this.filteringInterval = null;
     this.filteringStartTime = null;
@@ -335,8 +353,19 @@ class ReclaimContentScript {
               this.providerData = response.data.providerData;
               this.parameters = response.data.parameters;
               this.sessionId = response.data.sessionId;
-              this.httpProviderId = response.data.httpProviderId || "unknown";
+              this.providerId = response.data.providerId || "unknown";
               this.appId = response.data.appId || "unknown";
+
+              logger.setContext({
+                sessionId: this.sessionId,
+                providerId: this.providerId,
+                appId: this.appId,
+                type: LOG_TYPES.CONTENT,
+              });
+
+              logger.info(
+                "[Content] Provider data received from background script and will proceed with network filtering.",
+              );
 
               localStorage.setItem(
                 "reclaimBrowserExtensionParameters",
@@ -351,11 +380,11 @@ class ReclaimContentScript {
               );
 
               // Store provider ID in website's localStorage for injection script access
-              this.setProviderIdInLocalStorage(this.httpProviderId);
+              this.setProviderIdInLocalStorage(this.providerId);
 
               // Store injection script in website's localStorage for injection script access
               this.setProviderInjectionScriptInLocalStorage(
-                this.httpProviderId,
+                this.providerId,
                 this.providerData?.customInjection,
               );
 
@@ -387,7 +416,7 @@ class ReclaimContentScript {
         this.providerData = data.providerData;
         this.parameters = data.parameters;
         this.sessionId = data.sessionId;
-        this.httpProviderId = data.httpProviderId || "unknown";
+        this.providerId = data.providerId || "unknown";
         this.appId = data.appId || "unknown";
 
         localStorage.setItem(
@@ -403,23 +432,19 @@ class ReclaimContentScript {
         );
 
         // Store provider ID in website's localStorage for injection script access
-        this.setProviderIdInLocalStorage(this.httpProviderId);
+        this.setProviderIdInLocalStorage(this.providerId);
 
         // Store injection script in website's localStorage for injection script access
-        this.setProviderInjectionScriptInLocalStorage(this.httpProviderId, data?.customInjection);
+        this.setProviderInjectionScriptInLocalStorage(this.providerId, data?.customInjection);
 
         if (!this.isFiltering) {
           this.startNetworkFiltering();
         }
 
-        loggerService.log({
-          message:
-            "Provider data received from background script and will proceed with network filtering.",
-          type: LOG_TYPES.CONTENT,
-          sessionId: data.sessionId,
-          providerId: data.httpProviderId,
-          appId: data.appId,
-        });
+        logger.info(
+          "[Content] Provider data received from background script and will proceed with network filtering.",
+        );
+
         sendResponse({ success: true });
         break;
 
@@ -488,14 +513,10 @@ class ReclaimContentScript {
               appendPopupLogic();
             }
 
-            if (this.appId && this.httpProviderId && this.sessionId) {
-              loggerService.log({
-                message: "Popup display process initiated and will proceed on DOM readiness.",
-                type: LOG_TYPES.CONTENT,
-                sessionId: this.sessionId,
-                providerId: this.httpProviderId,
-                appId: this.appId,
-              });
+            if (this.appId && this.providerId && this.sessionId) {
+              logger.info(
+                "[Content] Popup display process initiated and will proceed on DOM readiness.",
+              );
             }
             sendResponse({
               success: true,
@@ -652,7 +673,7 @@ class ReclaimContentScript {
       window.postMessage(
         {
           action: "RECLAIM_PROVIDER_ID_RESPONSE",
-          providerId: this.httpProviderId || null,
+          providerId: this.providerId || null,
           source: "content-script",
         },
         "*",
@@ -681,13 +702,8 @@ class ReclaimContentScript {
       if (!this.checkExtensionId(extensionID)) {
         return;
       }
-      loggerService.log({
-        message: "Starting verification with data from SDK: " + JSON.stringify(data),
-        type: LOG_TYPES.CONTENT,
-        sessionId: data.sessionId,
-        providerId: data.httpProviderId,
-        appId: data.applicationId,
-      });
+      logger.info("[Content] Starting verification with data from SDK: " + JSON.stringify(data));
+
       chrome.runtime.sendMessage(
         {
           action: MESSAGE_ACTIONS.START_VERIFICATION,
@@ -996,13 +1012,12 @@ class ReclaimContentScript {
       for (const criteria of this.providerData.requestData) {
         if (filterRequest(formattedRequest, criteria, this.parameters)) {
           // Mark this request as filtered
-          loggerService.log({
-            message: `Matching request found: ${formattedRequest.method} ${formattedRequest.url}`,
-            type: LOG_TYPES.CONTENT,
-            sessionId: this.sessionId,
-            providerId: this.httpProviderId,
-            appId: this.appId,
-          });
+          logger.info(
+            "[Content] Matching request found: " +
+              formattedRequest.method +
+              " " +
+              formattedRequest.url,
+          );
 
           this.filteredRequests.push(key);
 
@@ -1018,13 +1033,9 @@ class ReclaimContentScript {
 
     // If we've found all possible matching requests, stop filtering
     if (this.filteredRequests.length >= this.providerData.requestData.length) {
-      loggerService.log({
-        message: "Found all matching requests, stopping filtering and cleaning up resources",
-        type: LOG_TYPES.CONTENT,
-        sessionId: this.sessionId,
-        providerId: this.httpProviderId,
-        appId: this.appId,
-      });
+      logger.info(
+        "[Content] Found all matching requests, stopping filtering and cleaning up resources",
+      );
 
       // Stop filtering and prevent further storage
       this.stopStoringInterceptions = true;
@@ -1049,14 +1060,11 @@ class ReclaimContentScript {
 
   // Send filtered request to background script
   sendFilteredRequestToBackground(formattedRequest, matchingCriteria, loginUrl) {
-    loggerService.log({
-      message:
-        "Sending filtered request to background script: " + JSON.stringify(formattedRequest.url),
-      type: LOG_TYPES.CONTENT,
-      sessionId: this.sessionId,
-      providerId: this.httpProviderId,
-      appId: this.appId,
-    });
+    logger.info(
+      "[Content] Sending filtered request to background script: " +
+        JSON.stringify(formattedRequest.url),
+    );
+
     chrome.runtime.sendMessage(
       {
         action: MESSAGE_ACTIONS.FILTERED_REQUEST_FOUND,
@@ -1081,34 +1089,18 @@ class ReclaimContentScript {
     const key = "reclaimBrowserExtensionProviderId";
     if (!providerId || providerId === "unknown") {
       localStorage.removeItem(key);
-      loggerService.log({
-        message: `Skipping localStorage storage for invalid provider ID: ${providerId}`,
-        type: LOG_TYPES.CONTENT,
-        sessionId: this.sessionId,
-        providerId: this.httpProviderId,
-        appId: this.appId,
-      });
+      logger.info("[Content] Skipping localStorage storage for invalid provider ID: " + providerId);
       return;
     }
 
     try {
       localStorage.setItem(key, providerId);
-      loggerService.log({
-        message: `Provider ID ${providerId} stored in localStorage.`,
-        type: LOG_TYPES.CONTENT,
-        sessionId: this.sessionId,
-        providerId: this.httpProviderId,
-        appId: this.appId,
-      });
+      logger.info("[Content] Provider ID " + providerId + " stored in localStorage.");
     } catch (e) {
       localStorage.removeItem(key);
-      loggerService.log({
-        message: `Failed to store provider ID ${providerId} in localStorage: ${e.message}`,
-        type: LOG_TYPES.ERROR,
-        sessionId: this.sessionId,
-        providerId: this.httpProviderId,
-        appId: this.appId,
-      });
+      logger.error(
+        "[Content] Failed to store provider ID " + providerId + " in localStorage: " + e.message,
+      );
     }
   }
 
@@ -1117,46 +1109,24 @@ class ReclaimContentScript {
     const key = `reclaimBrowserExtensionInjectionScript:${providerId}`;
     if (!providerId || providerId === "unknown") {
       localStorage.removeItem(key);
-      loggerService.log({
-        message: `Skipping localStorage storage for injection script for invalid provider ID: ${providerId}`,
-        type: LOG_TYPES.CONTENT,
-        sessionId: this.sessionId,
-        providerId: this.httpProviderId,
-        appId: this.appId,
-      });
+      logger.error("[Content] Failed to store provider ID " + providerId + " in localStorage: ");
+
       return;
     }
 
     if (!injectionScript?.length) {
       localStorage.removeItem(key);
-      loggerService.log({
-        message: `Skipping localStorage storage for injection script`,
-        type: LOG_TYPES.CONTENT,
-        sessionId: this.sessionId,
-        providerId: this.httpProviderId,
-        appId: this.appId,
-      });
+      logger.error("[Content] Skipping localStorage storage for injection script");
+
       return;
     }
 
     try {
       localStorage.setItem(key, injectionScript);
-      loggerService.log({
-        message: `Injection script stored in localStorage.`,
-        type: LOG_TYPES.CONTENT,
-        sessionId: this.sessionId,
-        providerId: this.httpProviderId,
-        appId: this.appId,
-      });
+      logger.info("[Content] Injection script stored in localStorage.");
     } catch (e) {
       localStorage.removeItem(key);
-      loggerService.log({
-        message: `Failed to store injection script in localStorage: ${e.message}`,
-        type: LOG_TYPES.ERROR,
-        sessionId: this.sessionId,
-        providerId: this.httpProviderId,
-        appId: this.appId,
-      });
+      logger.error("[Content] Failed to store injection script in localStorage: " + e.message);
     }
   }
 }

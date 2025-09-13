@@ -6,6 +6,24 @@ import { createClaimOnAttestor } from "@reclaimprotocol/attestor-core";
 import { WebSocket } from "../utils/offscreen-websocket";
 import { updateSessionStatus } from "../utils/fetch-calls";
 import { debugLogger, DebugLogType } from "../utils/logger";
+import { loggerService, createContextLogger } from "../utils/logger/LoggerService";
+import { LOG_LEVEL, LOG_TYPES } from "../utils/logger/constants";
+
+loggerService.setConfig({
+  consoleEnabled: true,
+  backendEnabled: true,
+  consoleLevel: LOG_LEVEL.INFO,
+  backendLevel: LOG_LEVEL.INFO,
+  includeSensitiveToBackend: false,
+  debugMode: false,
+});
+
+const offscreenLogger = createContextLogger({
+  sessionId: "unknown",
+  providerId: "unknown",
+  appId: "unknown",
+  source: "reclaim-extension-sdk",
+});
 
 // Ensure WebAssembly is available
 if (typeof WebAssembly === "undefined") {
@@ -37,6 +55,7 @@ class OffscreenProofGenerator {
   }
 
   init() {
+    offscreenLogger.info("Offscreen ready", { type: LOG_TYPES.OFFSCREEN });
     chrome.runtime.onMessage.addListener(this.handleMessage.bind(this));
     this.sendReadySignal();
   }
@@ -63,6 +82,13 @@ class OffscreenProofGenerator {
       case MESSAGE_ACTIONS.GENERATE_PROOF:
         (async () => {
           try {
+            offscreenLogger.setContext({
+              sessionId: data.sessionId || "unknown",
+              providerId: data.providerId || "unknown",
+              appId: data.applicationId || "unknown",
+              type: LOG_TYPES.OFFSCREEN,
+            });
+            offscreenLogger.info("[OFFSCREEN] Generating proof");
             const proof = await this.generateProof(data);
             chrome.runtime.sendMessage({
               action: MESSAGE_ACTIONS.GENERATE_PROOF_RESPONSE,
@@ -72,6 +98,7 @@ class OffscreenProofGenerator {
               proof: proof,
             });
           } catch (error) {
+            offscreenLogger.error("[OFFSCREEN] Error generating proof: " + error.message);
             chrome.runtime.sendMessage({
               action: MESSAGE_ACTIONS.GENERATE_PROOF_RESPONSE,
               source: MESSAGE_SOURCES.OFFSCREEN,
@@ -82,6 +109,7 @@ class OffscreenProofGenerator {
           }
         })();
 
+        offscreenLogger.info("[OFFSCREEN] Proof generation received");
         sendResponse({ received: true });
         break;
 
@@ -126,10 +154,19 @@ class OffscreenProofGenerator {
       throw new Error("No claim data provided for proof generation");
     }
 
+    offscreenLogger.setContext({
+      sessionId: claimData.sessionId || "unknown",
+      providerId: claimData.providerId || "unknown",
+      appId: claimData.applicationId || "unknown",
+      type: LOG_TYPES.OFFSCREEN,
+    });
+
     const sessionId = claimData.sessionId;
     delete claimData.sessionId;
 
     try {
+      offscreenLogger.info("[OFFSCREEN] Updating session status to PROOF_GENERATION_STARTED");
+
       await updateSessionStatus(sessionId, RECLAIM_SESSION_STATUS.PROOF_GENERATION_STARTED);
 
       let timeoutOccurred = false;
@@ -143,11 +180,11 @@ class OffscreenProofGenerator {
 
       const attestorPromise = createClaimOnAttestor(claimData);
 
-      console.log("attestorPromise", attestorPromise);
+      offscreenLogger.info("[OFFSCREEN] Attestor promise created");
 
       const result = await Promise.race([attestorPromise, timeoutPromise]);
 
-      console.log("attestorPromise result", result);
+      offscreenLogger.info("[OFFSCREEN] Attestor promise result: " + JSON.stringify(result));
 
       result.publicData = typeof claimData.publicData === "string" ? claimData.publicData : null;
 
