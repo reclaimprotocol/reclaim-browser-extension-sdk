@@ -1,5 +1,4 @@
 import { API_ENDPOINTS, RECLAIM_SESSION_STATUS } from "./constants";
-import { debugLogger, DebugLogType } from "./logger";
 import { loggerService, createContextLogger } from "./logger/LoggerService";
 import { LOG_TYPES, LOG_LEVEL } from "./logger/constants";
 
@@ -32,9 +31,7 @@ export const fetchProviderData = async (providerId, sessionId, appId) => {
     const data = await response.json();
     return data?.providers;
   } catch (error) {
-    logger.error("Error fetching provider data: " + error.toString());
-
-    debugLogger.error(DebugLogType.FETCH, "Error fetching provider data:", error);
+    logger.error("[FETCH-CALLS] Error fetching provider data: " + error.toString());
     throw error;
   }
 };
@@ -97,8 +94,7 @@ export const submitProofOnCallback = async (proofs, submitUrl, sessionId, provid
     await updateSessionStatus(sessionId, RECLAIM_SESSION_STATUS.PROOF_SUBMITTED);
     return res;
   } catch (error) {
-    logger.error("Error submitting proof to Callback: " + error.toString());
-    debugLogger.error(DebugLogType.FETCH, "Error submitting proof to Callback:", error);
+    logger.error("[FETCH-CALLS] Error submitting proof to Callback: " + error.toString());
     throw error;
   }
 };

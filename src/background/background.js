@@ -48,7 +48,7 @@ export default function initBackground() {
     activeTabId: null,
     providerData: null,
     parameters: {},
-    httpProviderId: null,
+    providerId: null,
     appId: null,
     sessionId: null,
     callbackUrl: null,
@@ -90,7 +90,7 @@ export default function initBackground() {
 
   bgLogger.setContext({
     sessionId: ctx.sessionId || "unknown",
-    providerId: ctx.httpProviderId || "unknown",
+    providerId: ctx.providerId || "unknown",
     appId: ctx.appId || "unknown",
     type: LOG_TYPES.BACKGROUND,
   });
@@ -116,7 +116,7 @@ export default function initBackground() {
 
       bgLogger.setContext({
         sessionId: ctx.sessionId || "unknown",
-        providerId: ctx.httpProviderId || "unknown",
+        providerId: ctx.providerId || "unknown",
         appId: ctx.appId || "unknown",
         type: LOG_TYPES.BACKGROUND,
       });

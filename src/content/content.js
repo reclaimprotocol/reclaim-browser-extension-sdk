@@ -276,7 +276,7 @@ class ReclaimContentScript {
     this.providerData = null;
     this.parameters = {};
     this.sessionId = null;
-    this.httpProviderId = null;
+    this.providerId = null;
     this.appId = null;
     this.filteringInterval = null;
     this.filteringStartTime = null;
@@ -353,12 +353,12 @@ class ReclaimContentScript {
               this.providerData = response.data.providerData;
               this.parameters = response.data.parameters;
               this.sessionId = response.data.sessionId;
-              this.httpProviderId = response.data.httpProviderId || "unknown";
+              this.providerId = response.data.providerId || "unknown";
               this.appId = response.data.appId || "unknown";
 
               logger.setContext({
                 sessionId: this.sessionId,
-                providerId: this.httpProviderId,
+                providerId: this.providerId,
                 appId: this.appId,
                 type: LOG_TYPES.CONTENT,
               });
@@ -380,11 +380,11 @@ class ReclaimContentScript {
               );
 
               // Store provider ID in website's localStorage for injection script access
-              this.setProviderIdInLocalStorage(this.httpProviderId);
+              this.setProviderIdInLocalStorage(this.providerId);
 
               // Store injection script in website's localStorage for injection script access
               this.setProviderInjectionScriptInLocalStorage(
-                this.httpProviderId,
+                this.providerId,
                 this.providerData?.customInjection,
               );
 
@@ -416,7 +416,7 @@ class ReclaimContentScript {
         this.providerData = data.providerData;
         this.parameters = data.parameters;
         this.sessionId = data.sessionId;
-        this.httpProviderId = data.httpProviderId || "unknown";
+        this.providerId = data.providerId || "unknown";
         this.appId = data.appId || "unknown";
 
         localStorage.setItem(
@@ -432,10 +432,10 @@ class ReclaimContentScript {
         );
 
         // Store provider ID in website's localStorage for injection script access
-        this.setProviderIdInLocalStorage(this.httpProviderId);
+        this.setProviderIdInLocalStorage(this.providerId);
 
         // Store injection script in website's localStorage for injection script access
-        this.setProviderInjectionScriptInLocalStorage(this.httpProviderId, data?.customInjection);
+        this.setProviderInjectionScriptInLocalStorage(this.providerId, data?.customInjection);
 
         if (!this.isFiltering) {
           this.startNetworkFiltering();
@@ -513,7 +513,7 @@ class ReclaimContentScript {
               appendPopupLogic();
             }
 
-            if (this.appId && this.httpProviderId && this.sessionId) {
+            if (this.appId && this.providerId && this.sessionId) {
               logger.info(
                 "[Content] Popup display process initiated and will proceed on DOM readiness.",
               );
@@ -673,7 +673,7 @@ class ReclaimContentScript {
       window.postMessage(
         {
           action: "RECLAIM_PROVIDER_ID_RESPONSE",
-          providerId: this.httpProviderId || null,
+          providerId: this.providerId || null,
           source: "content-script",
         },
         "*",

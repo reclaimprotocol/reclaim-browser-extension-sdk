@@ -100,7 +100,7 @@ export const MESSAGE_ACTIONS = {
 
 /**
  * @typedef {Object} ProviderData
- * @property {string} httpProviderId - Provider ID
+ * @property {string} providerId - Provider ID
  * @property {string} name - Provider name
  * @property {string} description - Provider description
  * @property {string} logoUrl - URL to provider logo

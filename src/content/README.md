@@ -162,7 +162,7 @@ Provider data structure expected by the content script:
 
 ```javascript
 {
-  httpProviderId: "string",
+  providerId: "string",
   name: "Provider Name",
   description: "Provider Description",
   loginUrl: "https://provider.com/login",

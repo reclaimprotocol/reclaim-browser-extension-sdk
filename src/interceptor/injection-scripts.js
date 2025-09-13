@@ -219,7 +219,7 @@ try {
       return {
         script: scriptContent,
         providerData: {
-          httpProviderId: providerId,
+          providerId: providerId,
           name: "Unknown Provider",
         },
       };
@@ -307,7 +307,7 @@ try {
       }
 
       const providerData = {
-        httpProviderId: providerId,
+        providerId: providerId,
         name: "Unknown Provider",
       };
 
