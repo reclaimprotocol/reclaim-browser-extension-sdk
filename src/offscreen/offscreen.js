@@ -6,6 +6,24 @@ import { createClaimOnAttestor } from "@reclaimprotocol/attestor-core";
 import { WebSocket } from "../utils/offscreen-websocket";
 import { updateSessionStatus } from "../utils/fetch-calls";
 import { debugLogger, DebugLogType } from "../utils/logger";
+import { loggerService, createContextLogger } from "../utils/logger/LoggerService";
+import { LOG_LEVEL, LOG_TYPES } from "../utils/logger/constants";
+
+loggerService.setConfig({
+  consoleEnabled: true,
+  backendEnabled: true,
+  consoleLevel: LOG_LEVEL.INFO,
+  backendLevel: LOG_LEVEL.INFO,
+  includeSensitiveToBackend: false,
+  debugMode: false,
+});
+
+const offscreenLogger = createContextLogger({
+  sessionId: "unknown",
+  providerId: "unknown",
+  appId: "unknown",
+  source: "reclaim-extension-sdk",
+});
 
 // Ensure WebAssembly is available
 if (typeof WebAssembly === "undefined") {
@@ -37,6 +55,7 @@ class OffscreenProofGenerator {
   }
 
   init() {
+    offscreenLogger.info("Offscreen ready", { type: LOG_TYPES.OFFSCREEN });
     chrome.runtime.onMessage.addListener(this.handleMessage.bind(this));
     this.sendReadySignal();
   }
@@ -63,6 +82,14 @@ class OffscreenProofGenerator {
       case MESSAGE_ACTIONS.GENERATE_PROOF:
         (async () => {
           try {
+            offscreenLogger.setContext({
+              sessionId: data.sessionId || "unknown",
+              providerId: data.providerId || "unknown",
+              appId: data.applicationId || "unknown",
+            });
+            offscreenLogger.info("[OFFSCREEN] Generating proof", {
+              type: LOG_TYPES.OFFSCREEN,
+            });
             const proof = await this.generateProof(data);
             chrome.runtime.sendMessage({
               action: MESSAGE_ACTIONS.GENERATE_PROOF_RESPONSE,

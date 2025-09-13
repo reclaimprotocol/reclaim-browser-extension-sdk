@@ -1,6 +1,8 @@
 // Session management for background script
 // Handles session start, fail, submit, and timer logic
 
+import { LOG_TYPES } from "../utils/logger";
+
 export async function startVerification(ctx, templateData) {
   try {
     // clear all the member variables
@@ -26,13 +28,16 @@ export async function startVerification(ctx, templateData) {
       throw new Error("Provider ID not found");
     }
     // fetch provider data from the backend
-    ctx.loggerService.log({
-      message: "Fetching provider data from the backend for provider Id " + templateData.providerId,
-      type: ctx.LOG_TYPES.BACKGROUND,
-      sessionId: templateData.sessionId || "unknown",
-      providerId: templateData.providerId || "unknown",
-      appId: templateData.applicationId || "unknown",
-    });
+    ctx.bgLogger.info(
+      "[BACKGROUND] Fetching provider data from the backend for provider Id " +
+        templateData.providerId,
+      {
+        type: LOG_TYPES.BACKGROUND,
+        sessionId: templateData.sessionId || "unknown",
+        providerId: templateData.providerId || "unknown",
+        appId: templateData.applicationId || "unknown",
+      },
+    );
 
     const providerData = await ctx.fetchProviderData(
       templateData.providerId,
@@ -69,9 +74,8 @@ export async function startVerification(ctx, templateData) {
     // Use chrome.tabs.create directly and handle the promise explicitly
     chrome.tabs.create({ url: providerUrl }, (tab) => {
       ctx.activeTabId = tab.id;
-      ctx.loggerService.log({
-        message: "New tab created",
-        type: ctx.LOG_TYPES.BACKGROUND,
+      ctx.bgLogger.info("[BACKGROUND] New tab created", {
+        type: LOG_TYPES.BACKGROUND,
         sessionId: templateData.sessionId || "unknown",
         providerId: templateData.providerId || "unknown",
         appId: templateData.applicationId || "unknown",
@@ -163,9 +167,8 @@ export async function startVerification(ctx, templateData) {
 
 export async function failSession(ctx, errorMessage, requestHash) {
   ctx.debugLogger.error(ctx.DebugLogType.BACKGROUND, "[BACKGROUND] Failing session:", errorMessage);
-  ctx.loggerService.logError({
-    error: `Session failed: ${errorMessage}`,
-    type: ctx.LOG_TYPES.BACKGROUND,
+  ctx.bgLogger.error("[BACKGROUND] Failing session: " + errorMessage, {
+    type: LOG_TYPES.BACKGROUND,
     sessionId: ctx.sessionId || "unknown",
     providerId: ctx.httpProviderId || "unknown",
     appId: ctx.appId || "unknown",

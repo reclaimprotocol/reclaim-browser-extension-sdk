@@ -1,6 +1,7 @@
 // Message router for background script
 // Handles chrome.runtime.onMessage and routes actions to modules
 
+import { LOG_TYPES } from "../utils/logger";
 import * as sessionManager from "./sessionManager";
 
 export async function handleMessage(ctx, message, sender, sendResponse) {
@@ -82,9 +83,13 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
           source === ctx.MESSAGE_SOURCES.CONTENT_SCRIPT &&
           target === ctx.MESSAGE_SOURCES.BACKGROUND
         ) {
-          ctx.loggerService.log({
-            message: "Content script requested provider data",
-            type: ctx.LOG_TYPES.BACKGROUND,
+          ctx.bgLogger.setContext({
+            sessionId: ctx.sessionId || "unknown",
+            providerId: ctx.httpProviderId || "unknown",
+            appId: ctx.appId || "unknown",
+          });
+          ctx.bgLogger.info("[BACKGROUND] Content script requested provider data", {
+            type: LOG_TYPES.BACKGROUND,
             sessionId: ctx.sessionId || "unknown",
             providerId: ctx.httpProviderId || "unknown",
             appId: ctx.appId || "unknown",
@@ -98,15 +103,17 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
             ctx.sessionId &&
             ctx.callbackUrl !== undefined // allow empty string as optional
           ) {
-            ctx.loggerService.log({
-              message:
-                "Sending the following provider data to content script: " +
+            ctx.bgLogger.info(
+              "[BACKGROUND] Sending the following provider data to content script: " +
                 JSON.stringify(ctx.providerData),
-              type: ctx.LOG_TYPES.BACKGROUND,
-              sessionId: ctx.sessionId || "unknown",
-              providerId: ctx.httpProviderId || "unknown",
-              appId: ctx.appId || "unknown",
-            });
+              {
+                type: LOG_TYPES.BACKGROUND,
+                sessionId: ctx.sessionId || "unknown",
+                providerId: ctx.httpProviderId || "unknown",
+                appId: ctx.appId || "unknown",
+              },
+            );
+
             sendResponse({
               success: true,
               data: {
@@ -140,13 +147,21 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
           source === ctx.MESSAGE_SOURCES.CONTENT_SCRIPT &&
           target === ctx.MESSAGE_SOURCES.BACKGROUND
         ) {
-          ctx.loggerService.log({
-            message: "Starting a new verification with data: " + JSON.stringify(data),
-            type: ctx.LOG_TYPES.BACKGROUND,
+          ctx.bgLogger.setContext({
             sessionId: data.sessionId || "unknown",
             providerId: data.providerId || "unknown",
             appId: data.applicationId || "unknown",
           });
+          ctx.bgLogger.info(
+            "[BACKGROUND] Starting a new verification with data: " + JSON.stringify(data),
+            {
+              type: LOG_TYPES.BACKGROUND,
+              sessionId: data.sessionId || "unknown",
+              providerId: data.providerId || "unknown",
+              appId: data.applicationId || "unknown",
+            },
+          );
+
           ctx.loggerService.startFlushInterval();
 
           // Concurrency guard
@@ -286,7 +301,6 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
           sendResponse({ success: false, error: "Tab is not managed by extension" });
         }
         break;
-      // src/background/messageRouter.js
       case ctx.MESSAGE_ACTIONS.REPORT_PROVIDER_ERROR: {
         if (sender.tab?.id && ctx.managedTabs.has(sender.tab.id)) {
           ctx.aborted = true;

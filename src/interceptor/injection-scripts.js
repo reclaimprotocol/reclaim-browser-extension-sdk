@@ -230,121 +230,49 @@ try {
   }
 
   /**
-   * Execute the fetched injection script safely
-   */
-  function executeInjectionScript(scriptContent, providerData) {
-    try {
-      debug.info(`Executing injection script for provider: ${providerData.name || "Unknown"}`);
-
-      // Create a new function context to execute the script
-      // This allows the script to access the page's globals while providing isolation
-      const scriptFunction = new Function(
-        "window",
-        "document",
-        "console",
-        "localStorage",
-        "sessionStorage",
-        "providerData",
-        scriptContent,
-      );
-
-      // Execute the script with current window context
-      scriptFunction(window, document, console, localStorage, sessionStorage, providerData);
-
-      debug.info(
-        `Successfully executed injection script for provider: ${providerData.name || "Unknown"}`,
-      );
-
-      // Dispatch a custom event to notify that injection script has been executed
-      window.dispatchEvent(
-        new CustomEvent("reclaimInjectionScriptExecuted", {
-          detail: {
-            providerId: providerData.httpProviderId,
-            providerName: providerData.name,
-            timestamp: Date.now(),
-          },
-        }),
-      );
-    } catch (error) {
-      debug.error(`Error executing injection script:`, error);
-
-      // Dispatch error event
-      window.dispatchEvent(
-        new CustomEvent("reclaimInjectionScriptError", {
-          detail: {
-            providerId: providerData.httpProviderId,
-            providerName: providerData.name,
-            error: error.message,
-            timestamp: Date.now(),
-          },
-        }),
-      );
-    }
-  }
-
-  /**
    * Execute the fetched injection script without eval
    */
   function executeInjectionScriptNoEval(scriptContent, providerData) {
     const finish = (ok) => {
-      if (!ok) return;
-      debug.info(
-        `Successfully executed injection script for provider: ${providerData.name || "Unknown"}`,
-      );
-      window.dispatchEvent(
-        new CustomEvent("reclaimInjectionScriptExecuted", {
-          detail: {
-            providerId: providerData.httpProviderId,
-            providerName: providerData.name,
-            timestamp: Date.now(),
-          },
-        }),
-      );
+      if (!ok) return; /* dispatch success event */
     };
 
+    // 1) Inline without nonce (Steam allows 'unsafe-inline')
     try {
-      // 1) Blob URL approach
-      const blob = new Blob(
-        [String(scriptContent) + "\n//# sourceURL=reclaim-browser-extension-custom-injection.js"],
-        {
-          type: "text/javascript",
-        },
-      );
-      const url = URL.createObjectURL(blob);
-      const s = document.createElement("script");
-      s.src = url;
-      s.async = false;
-      s.defer = false;
-      s.onload = () => {
-        URL.revokeObjectURL(url);
-        finish(true);
-      };
-      s.onerror = () => {
-        URL.revokeObjectURL(url);
-        // 2) Inline with nonce fallback
-        try {
-          const nonceEl = document.querySelector("script[nonce]");
-          const pageNonce = nonceEl?.nonce || nonceEl?.getAttribute?.("nonce") || "";
-          if (!pageNonce) throw new Error("No page nonce found");
-          const inl = document.createElement("script");
-          inl.nonce = pageNonce;
-          inl.textContent = String(scriptContent);
-          (document.documentElement || document.head || document).insertBefore(
-            inl,
-            (document.documentElement || document.head).firstChild,
-          );
-          finish(true);
-        } catch (e2) {
-          debug.error("All non-eval injection methods failed:", e2);
-          finish(false);
-        }
-      };
+      const inl = document.createElement("script");
+      inl.textContent = String(scriptContent);
       (document.documentElement || document.head || document).insertBefore(
-        s,
+        inl,
         (document.documentElement || document.head).firstChild,
       );
+      finish(true);
+      return;
+    } catch {}
+
+    // 2) Inline with page nonce
+    try {
+      const nonceEl = document.querySelector("script[nonce]");
+      const pageNonce = nonceEl?.nonce || nonceEl?.getAttribute?.("nonce") || "";
+      if (!pageNonce) throw new Error("No page nonce found");
+      const inl = document.createElement("script");
+      inl.nonce = pageNonce;
+      inl.textContent = String(scriptContent);
+      (document.documentElement || document.head || document).insertBefore(
+        inl,
+        (document.documentElement || document.head).firstChild,
+      );
+      finish(true);
+      return;
+    } catch {}
+
+    // 3) unsafe-eval fallback (Steam allows it)
+    try {
+      (0, eval)(String(scriptContent));
+      finish(true);
+      return;
     } catch (e) {
-      debug.error("Failed to inject script without eval:", e);
+      debug.error("Injection failed:", e);
+      finish(false);
     }
   }
 

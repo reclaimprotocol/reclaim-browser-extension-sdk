@@ -1,7 +1,26 @@
 import { API_ENDPOINTS, RECLAIM_SESSION_STATUS } from "./constants";
-import { loggerService, LOG_TYPES, debugLogger, DebugLogType } from "./logger";
+import { debugLogger, DebugLogType } from "./logger";
+import { loggerService, createContextLogger } from "./logger/LoggerService";
+import { LOG_TYPES, LOG_LEVEL } from "./logger/constants";
+
+// Default: INFO+ to console and backend
+loggerService.setConfig({
+  consoleEnabled: true,
+  backendEnabled: true,
+  consoleLevel: LOG_LEVEL.INFO,
+  backendLevel: LOG_LEVEL.INFO,
+  includeSensitiveToBackend: false,
+  debugMode: false, // set true to print every log to console
+});
 
 export const fetchProviderData = async (providerId, sessionId, appId) => {
+  const logger = createContextLogger({
+    sessionId: sessionId || "unknown",
+    providerId: providerId || "unknown",
+    appId: appId || "unknown",
+    source: "reclaim-extension-sdk",
+    type: LOG_TYPES.FETCH_DATA,
+  });
   try {
     // PROVIDER_URL
     const response = await fetch(`${API_ENDPOINTS.PROVIDER_URL(providerId)}`);
@@ -9,29 +28,25 @@ export const fetchProviderData = async (providerId, sessionId, appId) => {
     if (!response.ok) {
       throw new Error("Failed to fetch provider data");
     }
-    loggerService.log({
-      message: "Successfully fetched provider data from the backend: " + JSON.stringify(response),
-      type: LOG_TYPES.FETCH_DATA,
-      sessionId,
-      providerId,
-      appId,
-    });
+    logger.info("Successfully fetched provider data from the backend: " + JSON.stringify(response));
     const data = await response.json();
     return data?.providers;
   } catch (error) {
-    loggerService.logError({
-      error: "Error fetching provider data: " + error.toString(),
-      type: LOG_TYPES.FETCH_DATA,
-      sessionId,
-      providerId,
-      appId,
-    });
+    logger.error("Error fetching provider data: " + error.toString());
+
     debugLogger.error(DebugLogType.FETCH, "Error fetching provider data:", error);
     throw error;
   }
 };
 
 export const updateSessionStatus = async (sessionId, status, providerId, appId) => {
+  const logger = createContextLogger({
+    sessionId: sessionId || "unknown",
+    providerId: providerId || "unknown",
+    appId: appId || "unknown",
+    source: "reclaim-extension-sdk",
+    type: LOG_TYPES.FETCH_DATA,
+  });
   try {
     const response = await fetch(`${API_ENDPOINTS.UPDATE_SESSION_STATUS()}`, {
       method: "POST",
@@ -42,29 +57,24 @@ export const updateSessionStatus = async (sessionId, status, providerId, appId) 
     if (!response.ok) {
       throw new Error("Failed to update session status");
     }
-    loggerService.log({
-      message: "Successfully updated session status: " + status,
-      type: LOG_TYPES.FETCH_DATA,
-      sessionId,
-      providerId,
-      appId,
-    });
+    logger.info("Successfully updated session status: " + status);
 
     const res = await response.json();
     return res;
   } catch (error) {
-    loggerService.logError({
-      error: "Error updating session status: " + error.toString(),
-      type: LOG_TYPES.FETCH_DATA,
-      sessionId,
-      providerId,
-      appId,
-    });
+    logger.error("Error updating session status: " + error.toString());
     throw error;
   }
 };
 
 export const submitProofOnCallback = async (proofs, submitUrl, sessionId, providerId, appId) => {
+  const logger = createContextLogger({
+    sessionId: sessionId || "unknown",
+    providerId: providerId || "unknown",
+    appId: appId || "unknown",
+    source: "reclaim-extension-sdk",
+    type: LOG_TYPES.FETCH_DATA,
+  });
   try {
     // 1. Convert the proofs array to a JSON string
     const jsonStringOfProofs = JSON.stringify(proofs);
@@ -82,23 +92,12 @@ export const submitProofOnCallback = async (proofs, submitUrl, sessionId, provid
       await updateSessionStatus(sessionId, RECLAIM_SESSION_STATUS.PROOF_SUBMISSION_FAILED);
       throw new Error("Failed to submit proof to Callback and update session status");
     }
-    loggerService.log({
-      message: "Successfully submitted proof to Callback and updated session status",
-      type: LOG_TYPES.FETCH_DATA,
-      sessionId,
-      providerId,
-      appId,
-    });
+    logger.info("Successfully submitted proof to Callback and updated session status");
+
     await updateSessionStatus(sessionId, RECLAIM_SESSION_STATUS.PROOF_SUBMITTED);
     return res;
   } catch (error) {
-    loggerService.logError({
-      error: "Error submitting proof to Callback: " + error.toString(),
-      type: LOG_TYPES.FETCH_DATA,
-      sessionId,
-      providerId,
-      appId,
-    });
+    logger.error("Error submitting proof to Callback: " + error.toString());
     debugLogger.error(DebugLogType.FETCH, "Error submitting proof to Callback:", error);
     throw error;
   }

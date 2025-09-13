@@ -24,3 +24,29 @@ export const LOG_SOURCES = {
   POPUP: "popup",
   INJECTION: "injection",
 };
+
+// Numeric levels for easy threshold checks
+export const LOG_LEVEL = {
+  DEBUG: 10,
+  INFO: 20,
+  WARN: 30,
+  ERROR: 40,
+};
+
+export const DEFAULT_LOG_CONFIG = {
+  // Console
+  consoleEnabled: true,
+  consoleLevel: LOG_LEVEL.INFO, // print INFO+ by default
+  includeSensitiveToConsole: true,
+
+  // Backend
+  backendEnabled: true,
+  backendLevel: LOG_LEVEL.INFO, // send INFO+ by default
+  includeSensitiveToBackend: false, // never send sensitive unless enabled
+
+  // Debug mode = print ALL to console; backend still obeys backendLevel
+  debugMode: false,
+
+  // Metadata
+  source: "reclaim-extension-sdk",
+};

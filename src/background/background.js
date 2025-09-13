@@ -10,7 +10,8 @@ import {
 import { RECLAIM_SESSION_STATUS, MESSAGE_ACTIONS, MESSAGE_SOURCES } from "../utils/constants";
 import { generateProof, formatProof } from "../utils/proof-generator";
 import { createClaimObject } from "../utils/claim-creator";
-import { loggerService, LOG_TYPES } from "../utils/logger";
+import { loggerService, createContextLogger } from "../utils/logger/LoggerService";
+import { LOG_LEVEL, LOG_TYPES } from "../utils/logger/constants";
 import { SessionTimerManager } from "../utils/session-timer";
 import { debugLogger, DebugLogType } from "../utils/logger";
 import { installOffscreenReadyListener } from "../utils/offscreen-manager";
@@ -20,6 +21,23 @@ import * as sessionManager from "./sessionManager";
 import * as tabManager from "./tabManager";
 import * as proofQueue from "./proofQueue";
 import * as cookieUtils from "./cookieUtils";
+
+// configure once
+loggerService.setConfig({
+  consoleEnabled: true,
+  backendEnabled: true,
+  consoleLevel: LOG_LEVEL.INFO,
+  backendLevel: LOG_LEVEL.INFO,
+  includeSensitiveToBackend: false,
+  debugMode: false, // set true to see all logs in console
+});
+
+const bgLogger = createContextLogger({
+  sessionId: "unknown",
+  providerId: "unknown",
+  appId: "unknown",
+  source: "reclaim-extension-sdk",
+});
 
 export default function initBackground() {
   installOffscreenReadyListener();
@@ -61,7 +79,7 @@ export default function initBackground() {
     formatProof,
     createClaimObject,
     loggerService,
-    LOG_TYPES,
+    bgLogger,
     debugLogger,
     DebugLogType,
     // Methods to be set below
@@ -69,6 +87,15 @@ export default function initBackground() {
     failSession: null,
     submitProofs: null,
   };
+
+  bgLogger.setContext({
+    sessionId: ctx.sessionId || "unknown",
+    providerId: ctx.httpProviderId || "unknown",
+    appId: ctx.appId || "unknown",
+    type: LOG_TYPES.BACKGROUND,
+  });
+
+  bgLogger.info("Background initialized", { type: "BACKGROUND" });
 
   // Bind sessionManager methods to context
   ctx.failSession = (...args) => sessionManager.failSession(ctx, ...args);
@@ -87,13 +114,15 @@ export default function initBackground() {
         ctx.sessionTimerManager.startSessionTimer();
       }
 
-      ctx.loggerService.log({
-        message: `Received filtered request ${request.url} from content script for request hash: ${criteria.requestHash}`,
-        type: ctx.LOG_TYPES.BACKGROUND,
+      bgLogger.setContext({
         sessionId: ctx.sessionId || "unknown",
         providerId: ctx.httpProviderId || "unknown",
         appId: ctx.appId || "unknown",
+        type: LOG_TYPES.BACKGROUND,
       });
+      ctx.bgLogger.info(
+        `[BACKGROUND] Received filtered request ${request.url} from content script for request hash: ${criteria.requestHash}`,
+      );
 
       const cookies = await cookieUtils.getCookiesForUrl(
         request.url,
@@ -113,10 +142,13 @@ export default function initBackground() {
 
       let claimData = null;
       try {
-        claimData = await ctx.createClaimObject(request, criteria, sessionId, loginUrl);
-        console.log(JSON.stringify(claimData, null, 2));
+        const criteriaWithGeo = { ...criteria, geoLocation: ctx.providerData?.geoLocation ?? "" };
+        claimData = await ctx.createClaimObject(request, criteriaWithGeo, sessionId, loginUrl);
+        bgLogger.info(
+          "[BACKGROUND] Claim Object creation successful for request hash: " + criteria.requestHash,
+        );
       } catch (error) {
-        debugLogger.error(DebugLogType.BACKGROUND, "Error creating claim object:", error);
+        bgLogger.error(`[BACKGROUND] Error creating claim object: ${error.message}`);
         chrome.tabs.sendMessage(ctx.activeTabId, {
           action: ctx.MESSAGE_ACTIONS.CLAIM_CREATION_FAILED,
           source: ctx.MESSAGE_SOURCES.BACKGROUND,
@@ -134,13 +166,9 @@ export default function initBackground() {
           target: ctx.MESSAGE_SOURCES.CONTENT_SCRIPT,
           data: { requestHash: criteria.requestHash },
         });
-        ctx.loggerService.log({
-          message: `Claim Object creation successful for request hash: ${criteria.requestHash}`,
-          type: ctx.LOG_TYPES.BACKGROUND,
-          sessionId: ctx.sessionId || "unknown",
-          providerId: ctx.httpProviderId || "unknown",
-          appId: ctx.appId || "unknown",
-        });
+        ctx.bgLogger.info(
+          `[BACKGROUND] Claim Object creation successful for request hash: ${criteria.requestHash}`,
+        );
       }
       const providerRequest = {
         url: criteria?.url || request?.url || "",
@@ -157,9 +185,12 @@ export default function initBackground() {
         ctx.providerRequestsByHash.set(providerRequest.requestHash, providerRequest);
       }
       proofQueue.addToProofGenerationQueue(ctx, claimData, criteria.requestHash);
+      bgLogger.info(
+        "[BACKGROUND] Proof generation queued for request hash: " + criteria.requestHash,
+      );
       return { success: true, message: "Proof generation queued" };
     } catch (error) {
-      debugLogger.error(DebugLogType.BACKGROUND, "Error processing filtered request:", error);
+      bgLogger.error("[BACKGROUND] Error processing filtered request: " + error.message);
       ctx.failSession("Error processing request: " + error.message, criteria.requestHash);
       return { success: false, error: error.message };
     }
@@ -186,6 +217,7 @@ export default function initBackground() {
     if (ctx.activeSessionId && (lostActive || noManagedLeft) && !ctx.aborted) {
       ctx.aborted = true;
       try {
+        bgLogger.error("[BACKGROUND] Verification tab closed by user");
         await ctx.failSession("Verification tab closed by user");
       } catch {}
     }
@@ -196,6 +228,6 @@ export default function initBackground() {
       ctx.activeSessionId = null; // clear stale guard
     }
   });
-  console.log("🚀 BACKGROUND INITIALIZATION COMPLETE");
+  bgLogger.info("[BACKGROUND] 🚀 Background initialization complete");
   return ctx;
 }

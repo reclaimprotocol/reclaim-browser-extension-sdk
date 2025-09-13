@@ -1,38 +1,29 @@
-import { LOGGING_ENDPOINTS } from "./constants";
+import { LOGGING_ENDPOINTS, DEFAULT_LOG_CONFIG, LOG_LEVEL } from "./constants";
 import { LogEntry } from "./LogEntry";
 
-/**
- * Logger service for sending diagnostic logs to the server.
- */
 export class LoggerService {
   constructor() {
     this.logs = [];
     this.isSending = false;
     this.maxBatchSize = 20;
-    this.flushInterval = 5000; // 5 seconds
+    this.flushInterval = 5000;
     this.flushIntervalId = null;
+
+    this.config = { ...DEFAULT_LOG_CONFIG };
     this.deviceId = null;
 
-    // Start the flush interval
     this.startFlushInterval();
   }
 
-  /**
-   * Start the interval timer to periodically flush logs.
-   */
-  startFlushInterval() {
-    if (this.flushIntervalId) {
-      clearInterval(this.flushIntervalId);
-    }
-
-    this.flushIntervalId = setInterval(() => {
-      this.flush();
-    }, this.flushInterval);
+  setConfig(partial) {
+    this.config = { ...this.config, ...partial };
   }
 
-  /**
-   * Stop the interval timer.
-   */
+  startFlushInterval() {
+    if (this.flushIntervalId) clearInterval(this.flushIntervalId);
+    this.flushIntervalId = setInterval(() => this.flush(), this.flushInterval);
+  }
+
   stopFlushInterval() {
     if (this.flushIntervalId) {
       clearInterval(this.flushIntervalId);
@@ -40,91 +31,9 @@ export class LoggerService {
     }
   }
 
-  /**
-   * Add a log entry to the queue.
-   *
-   * @param {LogEntry} logEntry - The log entry to add.
-   */
-  addLog(logEntry) {
-    this.logs.push(logEntry);
-
-    // If we've reached the max batch size, flush immediately
-    if (this.logs.length >= this.maxBatchSize) {
-      this.flush();
-    }
-  }
-
-  /**
-   * Log a message.
-   *
-   * @param {Object} options - The log options.
-   * @param {string} options.sessionId - The session ID.
-   * @param {string} options.providerId - The provider ID.
-   * @param {string} options.appId - The application ID.
-   * @param {string} options.message - The message to log.
-   * @param {string} options.type - The type/category of the log.
-   */
-  log({ sessionId, providerId, appId, message, type, source, tabId, url }) {
-    const logEntry = new LogEntry({
-      sessionId,
-      providerId,
-      appId,
-      logLine: message,
-      type,
-      source,
-      tabId,
-      url,
-      time: new Date(),
-    });
-
-    this.addLog(logEntry);
-  }
-
-  /**
-   * Log an error.
-   *
-   * @param {Object} options - The error log options.
-   * @param {string} options.sessionId - The session ID.
-   * @param {string} options.providerId - The provider ID.
-   * @param {string} options.appId - The application ID.
-   * @param {Error} options.error - The error object.
-   * @param {string} options.type - The type/category of the log.
-   * @param {string} [options.message] - Optional message to include with the error.
-   */
-  logError({ sessionId, providerId, appId, error, type, message, source, tabId, url }) {
-    const stackTrace = error.stack || "";
-    const errorMessage = error.message || error.toString();
-
-    const logLine = message
-      ? `${message}: ${errorMessage}\n${stackTrace}`
-      : `${errorMessage}\n${stackTrace}`;
-
-    const logEntry = new LogEntry({
-      sessionId,
-      providerId,
-      appId,
-      logLine,
-      type,
-      source,
-      tabId,
-      url,
-      time: new Date(),
-    });
-
-    this.addLog(logEntry);
-  }
-
-  /**
-   * Get the device ID for logging (persistent).
-   *
-   * @returns {Promise<string>} The device ID.
-   */
+  // Ensure stable deviceId across batches
   async getDeviceLoggingId() {
-    if (this.deviceId) {
-      return this.deviceId;
-    }
-
-    // Try to get from storage first
+    if (this.deviceId) return this.deviceId;
     try {
       if (typeof chrome !== "undefined" && chrome.storage) {
         const result = await chrome.storage.local.get(["reclaim_device_id"]);
@@ -133,33 +42,96 @@ export class LoggerService {
           return this.deviceId;
         }
       }
-    } catch (error) {
-      console.warn("Failed to get device ID from storage:", error);
-    }
-
-    // Generate new device ID
-    this.deviceId = crypto.randomUUID();
-
-    // Store for future use
+    } catch {}
+    this.deviceId =
+      typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : String(Date.now());
     try {
       if (typeof chrome !== "undefined" && chrome.storage) {
         await chrome.storage.local.set({ reclaim_device_id: this.deviceId });
       }
-    } catch (error) {
-      console.warn("Failed to store device ID:", error);
-    }
+    } catch {}
     return this.deviceId;
   }
 
-  /**
-   * Flush the log queue and send logs to the server.
-   *
-   * @returns {Promise<void>}
-   */
-  async flush() {
-    if (this.logs.length === 0 || this.isSending) {
-      return;
+  addLog(logEntry) {
+    this.logs.push(logEntry);
+    if (this.logs.length >= this.maxBatchSize) this.flush();
+  }
+
+  shouldLogToConsole(level, sensitive) {
+    if (!this.config.consoleEnabled) return false;
+    if (this.config.debugMode) return true; // print everything in debug mode
+    if (sensitive && !this.config.includeSensitiveToConsole) return false;
+    return level >= this.config.consoleLevel;
+  }
+
+  shouldSendToBackend(level, sensitive) {
+    if (!this.config.backendEnabled) return false;
+    if (sensitive && !this.config.includeSensitiveToBackend) return false;
+    return level >= this.config.backendLevel;
+  }
+
+  emitToConsole(level, message, meta) {
+    const line = meta ? `${message} ${JSON.stringify(meta)}` : message;
+    switch (level) {
+      case LOG_LEVEL.ERROR:
+        console.error(line);
+        break;
+      case LOG_LEVEL.WARN:
+        console.warn(line);
+        break;
+      case LOG_LEVEL.INFO:
+        console.info(line);
+        break;
+      default:
+        console.log(line);
     }
+  }
+
+  logWithLevel(
+    level,
+    { sessionId, providerId, appId, message, type, sensitive = false, meta, source, tabId, url },
+  ) {
+    const src = source || this.config.source;
+
+    if (this.shouldLogToConsole(level, sensitive)) {
+      this.emitToConsole(level, message, meta);
+    }
+
+    if (this.shouldSendToBackend(level, sensitive)) {
+      const entry = new LogEntry({
+        sessionId,
+        providerId,
+        appId,
+        logLine: message,
+        type,
+        level,
+        sensitive,
+        source: src,
+        tabId,
+        url,
+        meta,
+        time: new Date(),
+      });
+      this.addLog(entry);
+    }
+  }
+
+  debug(opts) {
+    this.logWithLevel(LOG_LEVEL.DEBUG, opts);
+  }
+  info(opts) {
+    this.logWithLevel(LOG_LEVEL.INFO, opts);
+  }
+  warn(opts) {
+    this.logWithLevel(LOG_LEVEL.WARN, opts);
+  }
+  error(opts) {
+    this.logWithLevel(LOG_LEVEL.ERROR, opts);
+  }
+
+  async flush() {
+    if (this.logs.length === 0 || this.isSending) return;
 
     const logsToSend = [...this.logs];
     this.logs = [];
@@ -169,65 +141,75 @@ export class LoggerService {
       await this.sendLogs(logsToSend);
     } catch (error) {
       console.error("Error flushing logs:", error);
-
-      // Put logs back in queue if sending failed
       this.logs = [...this.logs, ...logsToSend];
     } finally {
       this.isSending = false;
     }
   }
 
-  /**
-   * Get the device ID for logging.
-   *
-   * @returns {Promise<string>} The device ID.
-   */
-  async getDeviceLoggingId() {
-    // generate a random unique id
-    const deviceId = crypto.randomUUID();
-
-    return deviceId;
-  }
-
-  /**
-   * Send logs to the server.
-   *
-   * @param {LogEntry[]} entries - The log entries to send.
-   * @returns {Promise<void>}
-   */
   async sendLogs(entries) {
-    try {
-      if (!entries || entries.length === 0) {
-        return;
-      }
+    if (!entries?.length) return;
 
-      const formattedLogs = entries.map((entry) => entry.toJson());
+    const deviceId = await this.getDeviceLoggingId();
+    const formattedLogs = entries.map((e) => {
+      const obj = e.toJson();
+      obj.deviceId = obj.deviceId || deviceId; // ensure present for server grouping
+      return obj;
+    });
 
-      const body = JSON.stringify({
-        logs: formattedLogs,
-        source: "reclaim-extension",
-        deviceId: await this.getDeviceLoggingId(),
-      });
+    const body = JSON.stringify({
+      logs: formattedLogs,
+      source: this.config.source,
+      deviceId,
+    });
 
-      const response = await fetch(LOGGING_ENDPOINTS.DIAGNOSTIC_LOGGING, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body,
-      });
+    const res = await fetch(LOGGING_ENDPOINTS.DIAGNOSTIC_LOGGING, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+    });
 
-      if (!response.ok) {
-        console.error(
-          `Failed to send ${entries.length} logs [${new Blob([body]).size} B] (batch ${entries.length})`,
-          await response.text(),
-        );
-      }
-    } catch (error) {
-      console.error(`Failed to send logs (batch ${entries.length})`, error);
+    if (!res.ok) {
+      console.error(`Failed to send ${entries.length} logs`, await res.text());
     }
   }
 }
 
-// Create a singleton instance of the logger service
 export const loggerService = new LoggerService();
+
+// Create a scoped logger to avoid repeating context
+export const createContextLogger = (initial = {}) => {
+  const ctx = {
+    sessionId: "unknown",
+    providerId: "unknown",
+    appId: "unknown",
+    source: loggerService.config?.source || "reclaim-extension-sdk",
+    ...initial,
+  };
+
+  return {
+    // Read-only snapshot if you need it
+    get context() {
+      return { ...ctx };
+    },
+
+    // Update context anytime (partial updates supported)
+    setContext(partial = {}) {
+      Object.assign(ctx, partial);
+    },
+
+    // Level helpers
+    debug(msg, opts = {}) {
+      loggerService.debug({ ...ctx, message: msg, ...opts });
+    },
+    info(msg, opts = {}) {
+      loggerService.info({ ...ctx, message: msg, ...opts });
+    },
+    warn(msg, opts = {}) {
+      loggerService.warn({ ...ctx, message: msg, ...opts });
+    },
+    error(msg, opts = {}) {
+      loggerService.error({ ...ctx, message: msg, ...opts });
+    },
+  };
+};
