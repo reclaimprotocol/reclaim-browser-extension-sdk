@@ -168,9 +168,9 @@ export const createClaimObject = async (request, providerData, sessionId, loginU
       }
     });
 
-    if (origin && !publicHeaders.Origin && !request.headers?.Origin) {
-      publicHeaders.Origin = origin;
-    }
+    // if (origin && !publicHeaders.Origin && !request.headers?.Origin) {
+    //   publicHeaders.Origin = origin;
+    // }
 
     if (Object.keys(publicHeaders).length > 0) {
       params.headers = publicHeaders;
@@ -193,6 +193,8 @@ export const createClaimObject = async (request, providerData, sessionId, loginU
       params.body = request.body; // pass-through raw body
     }
   }
+
+  console.log(request.cookieStr, "request.cookieStr");
 
   // Process cookie string if available in request
   if (request.cookieStr) {
@@ -330,10 +332,11 @@ export const createClaimObject = async (request, providerData, sessionId, loginU
     geoLocation = await getUserLocationBasedOnIp();
   }
 
+  params.geoLocation = geoLocation;
+
   // Create the final claim object
   const claimObject = {
     name: "http",
-    geoLocation: geoLocation,
     sessionId: sessionId,
     params,
     secretParams,
