@@ -53,7 +53,6 @@ export const installOffscreenReadyListener = () => {
     return;
   }
   if (chrome.runtime.onMessage.hasListener(offscreenGlobalListener)) {
-    offscreenLogger.info("[OFFSCREEN-MANAGER] Global listener already attached.");
     return;
   }
   chrome.runtime.onMessage.addListener(offscreenGlobalListener);
@@ -73,7 +72,6 @@ const setupOffscreenReadyListener = () => {
     return;
   }
   if (chrome.runtime.onMessage.hasListener(offscreenGlobalListener)) {
-    offscreenLogger.info("[OFFSCREEN-MANAGER] Global listener already attached.");
     return;
   }
   chrome.runtime.onMessage.addListener(offscreenGlobalListener);

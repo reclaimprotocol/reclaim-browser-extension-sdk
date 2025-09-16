@@ -3,12 +3,195 @@ import { reclaimExtensionSDK } from '@reclaimprotocol/browser-extension-sdk';
 import './ReclaimDemo.css';
 
 const PROVIDERS = [
+  {id: '50a2286d-8c89-4de0-817b-e577447c531d', name: 'Trex: Grok' },
+  {id: '25a97f94-4c73-4c02-826d-d11504997fec', name: 'Trex: Perplexity' },
+  {id: '3fa453f7-dc93-4150-a51f-c1b88bbcacb8', name: 'Trex: KuCoin' },
+  {id: 'ea308ecf-f59d-4632-990a-ff0e8a6b73e9', name: 'Trex:Twitch' },
+  {id: '32dc2faa-77fa-4af1-a8ed-5df70fdca8dd', name: 'Trex: Claude' },
+  { id: '7a956c12-486a-4d18-a81f-833c62b8b055', name: 'Gamerpay' },
+  { id: '1be4821a-55cb-42b1-a208-6158910c79a0', name: 'Steam Trade History' },
   { id: '7519ad78-208a-425d-9fac-97c13b0f0d4d', name: 'Kaggle' },
 ];
 
 const APP_ID = import.meta.env.VITE_RECLAIM_APP_ID;
 const APP_SECRET = import.meta.env.VITE_RECLAIM_APP_SECRET;
 const EXTENSION_ID = import.meta.env.VITE_RECLAIM_EXTENSION_ID;
+
+// Helper component to parse and display extracted parameters
+const ExtractedParams = ({ context }) => {
+  try {
+    const contextData = JSON.parse(context);
+    const extractedParams = contextData.extractedParameters || {};
+    
+    if (Object.keys(extractedParams).length === 0) {
+      return <div className="no-data">No extracted parameters</div>;
+    }
+
+    return (
+      <div className="params-grid">
+        {Object.entries(extractedParams).map(([key, value]) => (
+          <div key={key} className="param-item">
+            <span className="param-key">{key}:</span>
+            <span className="param-value">{String(value).substring(0, 100)}{String(value).length > 100 ? '...' : ''}</span>
+          </div>
+        ))}
+      </div>
+    );
+  } catch (e) {
+    return <div className="error-text">Error parsing context: {e.message}</div>;
+  }
+};
+
+// Helper component to display public data
+const PublicData = ({ publicData }) => {
+  if (!publicData) {
+    return <div className="no-data">No public data available</div>;
+  }
+  
+  return (
+    <div className="public-data">
+      <pre>{JSON.stringify(publicData, null, 2)}</pre>
+    </div>
+  );
+};
+
+// Main proof card component
+const ProofCard = ({ proof, index }) => {
+  const [activeTab, setActiveTab] = useState('summary');
+  
+  const copyToClipboard = (data, type) => {
+    navigator.clipboard.writeText(typeof data === 'string' ? data : JSON.stringify(data, null, 2));
+    // Visual feedback
+    const btn = event.target;
+    const originalText = btn.textContent;
+    btn.textContent = '✓ Copied!';
+    setTimeout(() => btn.textContent = originalText, 1500);
+  };
+
+  return (
+    <div className="proof-card">
+      <div className="proof-card-header">
+        <h4>Proof #{index + 1}</h4>
+        <div className="proof-id">
+          ID: {proof.identifier?.substring(0, 16)}...
+          <button 
+            className="copy-button-small"
+            onClick={() => copyToClipboard(proof.identifier, 'ID')}
+          >
+            📋
+          </button>
+        </div>
+      </div>
+
+      <div className="tab-navigation">
+        <button 
+          className={`tab-button ${activeTab === 'summary' ? 'active' : ''}`}
+          onClick={() => setActiveTab('summary')}
+        >
+          Summary
+        </button>
+        <button 
+          className={`tab-button ${activeTab === 'params' ? 'active' : ''}`}
+          onClick={() => setActiveTab('params')}
+        >
+          Extracted Params
+        </button>
+        <button 
+          className={`tab-button ${activeTab === 'public' ? 'active' : ''}`}
+          onClick={() => setActiveTab('public')}
+        >
+          Public Data
+        </button>
+        <button 
+          className={`tab-button ${activeTab === 'raw' ? 'active' : ''}`}
+          onClick={() => setActiveTab('raw')}
+        >
+          Full JSON
+        </button>
+      </div>
+
+      <div className="tab-content">
+        {activeTab === 'summary' && (
+          <div className="summary-content">
+            <div className="summary-grid">
+              <div className="summary-item">
+                <label>Provider:</label>
+                <span>{proof.claimData?.provider || 'Unknown'}</span>
+              </div>
+              <div className="summary-item">
+                <label>Owner:</label>
+                <span>{proof.claimData?.owner?.substring(0, 20)}...</span>
+              </div>
+              <div className="summary-item">
+                <label>Timestamp:</label>
+                <span>{new Date(proof.claimData?.timestampS * 1000).toLocaleString()}</span>
+              </div>
+              <div className="summary-item">
+                <label>Epoch:</label>
+                <span>{proof.claimData?.epoch}</span>
+              </div>
+              <div className="summary-item">
+                <label>Witnesses:</label>
+                <span>{proof.witnesses?.length || 0}</span>
+              </div>
+              <div className="summary-item">
+                <label>Signatures:</label>
+                <span>{proof.signatures?.length || 0}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'params' && (
+          <div className="params-content">
+            <div className="content-header">
+              <h5>Extracted Parameters</h5>
+              <button 
+                className="copy-button-small"
+                onClick={(e) => copyToClipboard(proof.claimData?.context, 'params')}
+              >
+                📋 Copy
+              </button>
+            </div>
+            <ExtractedParams context={proof.claimData?.context} />
+          </div>
+        )}
+
+        {activeTab === 'public' && (
+          <div className="public-content">
+            <div className="content-header">
+              <h5>Public Data</h5>
+              <button 
+                className="copy-button-small"
+                onClick={(e) => copyToClipboard(proof.publicData, 'public data')}
+              >
+                📋 Copy
+              </button>
+            </div>
+            <PublicData publicData={proof.publicData} />
+          </div>
+        )}
+
+        {activeTab === 'raw' && (
+          <div className="raw-content">
+            <div className="content-header">
+              <h5>Complete Proof Object</h5>
+              <button 
+                className="copy-button-small"
+                onClick={(e) => copyToClipboard(proof, 'proof')}
+              >
+                📋 Copy
+              </button>
+            </div>
+            <div className="code-viewer">
+              <pre>{JSON.stringify(proof, null, 2)}</pre>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 export default function ReclaimDemo() {
   const [providerId, setProviderId] = useState(PROVIDERS[0].id);
@@ -37,9 +220,8 @@ export default function ReclaimDemo() {
         // callbackUrl: 'https://your.server/receive-proofs' // optional
       });
 
-      // request.setAppCallbackUrl("https://ca4d0a506d63.ngrok-free.app/receive-proofs");
-
-      request.setParams({ demo: "1" });
+      // request.setAppCallbackUrl("https://6cf90f1e87f7.ngrok-free.app/receive-proofs");
+      // request.setParams({ userProfileLink: "https://steamcommunity.com/id/Sa2199/" });
 
       setReq(request);
       setStatusUrl(request.getStatusUrl());
@@ -64,7 +246,6 @@ export default function ReclaimDemo() {
       setLoading(false);
     }
   }
-
 
   async function start2() {
     try {
@@ -81,7 +262,6 @@ export default function ReclaimDemo() {
         extensionID: EXTENSION_ID,
       });
 
-
       setReq(request);
       setStatusUrl(request.getStatusUrl());
 
@@ -105,7 +285,6 @@ export default function ReclaimDemo() {
       setLoading(false);
     }
   }
-
 
   async function cancel() {
     // eslint-disable-next-line no-empty
@@ -186,15 +365,33 @@ export default function ReclaimDemo() {
 
         {!!proofs && (
           <section className="section">
-            <div className="code-block">
-              <pre>{JSON.stringify(proofs, null, 2)}</pre>
+            <div className="proof-container">
+              <div className="proof-header">
+                <h3>Verification Results</h3>
+                <button 
+                  className="copy-button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(JSON.stringify(proofs, null, 2));
+                    // Add a visual feedback
+                    const btn = document.querySelector('.copy-button');
+                    const originalText = btn.textContent;
+                    btn.textContent = '✓ Copied!';
+                    setTimeout(() => btn.textContent = originalText, 2000);
+                  }}
+                  title="Copy full proof data to clipboard"
+                >
+                  📋 Copy All
+                </button>
+              </div>
+
+              {proofs.map((proof, index) => (
+                <ProofCard key={proof.identifier || index} proof={proof} index={index} />
+              ))}
             </div>
           </section>
         )}
+        
       </div>
     </div>
   );
 }
-
-
-
