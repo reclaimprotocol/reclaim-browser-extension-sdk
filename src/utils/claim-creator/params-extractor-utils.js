@@ -4,6 +4,7 @@
  */
 
 import { debugLogger, DebugLogType } from "../logger";
+import { JSONPath } from "jsonpath-plus";
 
 /**
  * Extract values from JSON response using jsonPath
@@ -13,64 +14,8 @@ import { debugLogger, DebugLogType } from "../logger";
  */
 export const getValueFromJsonPath = (jsonData, jsonPath) => {
   try {
-    // Simple JSONPath implementation with array support
-    if (!jsonPath.startsWith("$")) return null;
-
-    // Remove the leading $. if present
-    let path = jsonPath.startsWith("$.") ? jsonPath.substring(2) : jsonPath.substring(1);
-
-    // Split the path into segments, handling array indices
-    const segments = [];
-    let currentSegment = "";
-    let inBrackets = false;
-
-    for (let i = 0; i < path.length; i++) {
-      const char = path[i];
-
-      if (char === "[") {
-        if (currentSegment) {
-          segments.push(currentSegment);
-          currentSegment = "";
-        }
-        inBrackets = true;
-      } else if (char === "]") {
-        if (inBrackets && currentSegment) {
-          // Parse array index (remove quotes if present)
-          const index = currentSegment.replace(/['"]/g, "");
-          segments.push(parseInt(index, 10));
-          currentSegment = "";
-        }
-        inBrackets = false;
-      } else if (char === "." && !inBrackets) {
-        if (currentSegment) {
-          segments.push(currentSegment);
-          currentSegment = "";
-        }
-      } else {
-        currentSegment += char;
-      }
-    }
-
-    // Add the last segment if any
-    if (currentSegment) {
-      segments.push(currentSegment);
-    }
-
-    // Navigate through the object using the parsed segments
-    let value = jsonData;
-    for (const segment of segments) {
-      // fixed because if for ex: subscription: null, then it will return null and it will fail
-      // if (value === undefined || value === null) {
-      //   return null;
-      // }
-      if (!(segment in value)) {
-        // Path doesn’t exist
-        return undefined;
-      }
-      value = value[segment];
-    }
-
-    return value;
+    const results = JSONPath({ path: jsonPath, json: jsonData });
+    return results?.[0] ?? undefined;
   } catch (error) {
     debugLogger.error(
       DebugLogType.CLAIM,
