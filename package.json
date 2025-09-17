@@ -1,6 +1,6 @@
 {
   "name": "@reclaimprotocol/browser-extension-sdk",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "module": "build/ReclaimExtensionSDK.bundle.js",
   "exports": {
     ".": {
