@@ -367,6 +367,16 @@ class ReclaimContentScript {
                 "[Content] Provider data received from background script and will proceed with network filtering.",
               );
 
+              // Trigger one-time page fetch if replay is allowed
+              if (!this.providerData?.disableRequestReplay) {
+                chrome.runtime.sendMessage({
+                  action: MESSAGE_ACTIONS.INJECT_VIA_SCRIPTING,
+                  source: MESSAGE_SOURCES.CONTENT_SCRIPT,
+                  target: MESSAGE_SOURCES.BACKGROUND,
+                  data: { op: "REPLAY_PAGE_FETCH", showAlert: false },
+                });
+              }
+
               localStorage.setItem(
                 "reclaimBrowserExtensionParameters",
                 JSON.stringify(this.parameters || {}),
@@ -383,6 +393,17 @@ class ReclaimContentScript {
               this.setProviderIdInLocalStorage(this.providerId);
 
               // Store injection script in website's localStorage for injection script access
+              if (
+                this.providerData?.customInjection?.length &&
+                this.providerData?.extensionConfig?.allowInjectionsViaChromeScritpting
+              ) {
+                chrome.runtime.sendMessage({
+                  action: MESSAGE_ACTIONS.INJECT_VIA_SCRIPTING,
+                  source: MESSAGE_SOURCES.CONTENT_SCRIPT,
+                  target: MESSAGE_SOURCES.BACKGROUND,
+                  data: { op: "RUN_CUSTOM_INJECTION", code: this.providerData.customInjection },
+                });
+              }
               this.setProviderInjectionScriptInLocalStorage(
                 this.providerId,
                 this.providerData?.customInjection,

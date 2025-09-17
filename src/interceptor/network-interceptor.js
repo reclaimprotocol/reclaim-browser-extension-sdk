@@ -78,24 +78,84 @@
        * @param {Response} response - The response object to parse
        * @returns {Object} - Parsed response with standardized format
        */
-      async parseResponse(response) {
-        const clone = response.clone();
+      async parseResponse2(response) {
         let responseBody;
+        let contentType = response.headers.get("content-type") || "";
+
+        if (response?.url?.includes("operationName=getProfileOracle")) {
+          const copy = response.clone(); // tee the stream
+          const contentType = copy.headers.get("content-type") || "";
+
+          console.log("contentType", contentType);
+          console.log("copyresponse", copy);
+
+          try {
+            const data = await copy.json(); // read the clone, not the original
+            console.log("responseBody", data);
+          } catch (e) {
+            console.log("json read error", e);
+          }
+        }
 
         try {
-          responseBody = await clone.text();
+          // Check if the response body is already consumed
+          if (response.bodyUsed) {
+            responseBody = "[Response body already consumed]";
+          } else {
+            // Try to parse based on content type using the provided response directly
+            if (contentType.includes("text/") || contentType.includes("application/json")) {
+              try {
+                responseBody = await response.text();
+              } catch (textError) {
+                // If response body parsing fails, the body is consumed, we can't read it again
+                responseBody = "[Invalid response format]";
+              }
+            } else {
+              // For binary data, get as text but mark it as binary
+              const text = await response.text();
+              responseBody = text === "" ? "[Binary Data]" : text;
+            }
+          }
         } catch (error) {
           debug.error("Error parsing response:", error);
-          responseBody = "Could not read response body";
+          responseBody = `[Error reading response: ${error.message}]`;
         }
 
         return {
+          id: response.id || null,
           url: response.url,
           status: response.status,
           statusText: response.statusText,
           headers: Object.fromEntries(response.headers.entries()),
           body: responseBody,
           originalResponse: response,
+          timestamp: Date.now(),
+        };
+      }
+
+      async parseResponse(response) {
+        let responseBody;
+        const url = response.url || "";
+        const headersObj = Object.fromEntries(response.headers.entries());
+
+        try {
+          // Read ONCE from the audit copy we got.
+          const raw = await response.text(); // don't do copy.json(); avoid double read
+          responseBody = raw;
+        } catch (e) {
+          // Rescue path (below)
+          responseBody = `[Error reading response: ${e?.name || e}]`;
+        }
+
+        return {
+          id: response.id || null,
+          url,
+          status: response.status,
+          statusText: response.statusText,
+          headers: headersObj,
+          body: responseBody,
+          originalResponse: response,
+          timestamp: Date.now(),
         };
       }
 
@@ -149,28 +209,52 @@
               requestData.options,
             ]);
 
-            // FIX: Don't create a prototype-chained response, use the original
-            // Just mark it non-destructively
-            if (!response._rc) {
-              // Only mark it if not already marked
-              try {
-                Object.defineProperty(response, "_rc", {
-                  value: true,
-                  enumerable: false,
-                  configurable: false,
-                  writable: false,
-                });
-              } catch (e) {
-                // In case the response is immutable, don't break the app
-                debug.error("Could not mark response:", e);
-              }
+            const { status, statusText } = response;
+            const headers = new Headers(response.headers);
+
+            // If there's no body (204, etc.), just pass-through
+            if (!response.body) {
+              self.processResponseMiddlewares(response.clone(), requestData).catch(debug.error);
+              return response;
             }
 
-            // Process response middlewares without blocking
-            self.processResponseMiddlewares(response.clone(), requestData).catch((error) => {
-              debug.error("Error in response middleware:", error);
-            });
-            return response; // Return the original response object
+            const [forAppStream, forAuditStream] = response.body.tee();
+            const forApp = new Response(forAppStream, { status, statusText, headers });
+            const forAudit = new Response(forAuditStream, { status, statusText, headers });
+
+            if (url.includes("operationName=getProfileOracle")) {
+              console.log("forAudit", forAudit);
+              console.log("forApp", forApp);
+            }
+
+            // Start parsing ASAP; don't clone forAudit again
+            self.processResponseMiddlewares(forAudit, requestData).catch(debug.error);
+
+            // Return the app's branch
+            return forApp;
+
+            // FIX: Don't create a prototype-chained response, use the original
+            // Just mark it non-destructively
+            // if (!response._rc) {
+            //   // Only mark it if not already marked
+            //   try {
+            //     Object.defineProperty(response, "_rc", {
+            //       value: true,
+            //       enumerable: false,
+            //       configurable: false,
+            //       writable: false,
+            //     });
+            //   } catch (e) {
+            //     // In case the response is immutable, don't break the app
+            //     debug.error("Could not mark response:", e);
+            //   }
+            // }
+
+            // // Process response middlewares without blocking
+            // self.processResponseMiddlewares(response.clone(), requestData).catch((error) => {
+            //   debug.error("Error in response middleware:", error);
+            // });
+            // return response; // Return the original response object
           },
         });
 

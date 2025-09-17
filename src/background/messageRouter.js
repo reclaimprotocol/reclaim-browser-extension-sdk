@@ -352,6 +352,162 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
         }
         break;
       }
+      // Add/extend this case in the switch
+      case ctx.MESSAGE_ACTIONS.INJECT_VIA_SCRIPTING: {
+        if (
+          source === ctx.MESSAGE_SOURCES.CONTENT_SCRIPT &&
+          target === ctx.MESSAGE_SOURCES.BACKGROUND &&
+          sender.tab?.id
+        ) {
+          const tabId = sender.tab.id;
+          const op = data?.op;
+
+          try {
+            if (op === "REPLAY_PAGE_FETCH") {
+              await chrome.scripting.executeScript({
+                target: { tabId },
+                world: "MAIN",
+                func: (opts) => {
+                  try {
+                    if (window.__reclaimInitialPageFetch__) return;
+                    window.__reclaimInitialPageFetch__ = true;
+
+                    if (opts?.showAlert) {
+                      // Use non-blocking console too in case alerts are suppressed
+                      console.log("Fetching initial page…");
+                      alert("Fetching initial page…");
+                    }
+                    fetch(window.location.href, {
+                      method: "GET",
+                      headers: {
+                        accept:
+                          "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+                        "accept-language": "en-GB,en;q=0.5",
+                      },
+                      credentials: "include",
+                      cache: "no-store",
+                    }).catch(() => {});
+                  } catch (e) {
+                    console.error("REPLAY_PAGE_FETCH failed", e);
+                  }
+                },
+                args: [{ showAlert: !!data?.showAlert }],
+              });
+
+              ctx.bgLogger?.info("INJECT_VIA_SCRIPTING: REPLAY_PAGE_FETCH executed in MAIN world");
+              sendResponse({ success: true });
+              break;
+            }
+
+            // In src/background/messageRouter.js, inside INJECT_VIA_SCRIPTING case
+            // inside INJECT_VIA_SCRIPTING case
+            // src/background/messageRouter.js (inside INJECT_VIA_SCRIPTING case)
+            if (op === "RUN_CUSTOM_INJECTION") {
+              const code = String(data?.code || "");
+              const results = await chrome.scripting.executeScript({
+                target: { tabId: sender.tab.id },
+                world: "MAIN",
+                func: (opts) => {
+                  try {
+                    const code = String(opts?.code || "");
+                    if (!code) return { status: "skipped", reason: "no_code" };
+                    if (window.__reclaimCustomInjectionDone__) {
+                      return { status: "skipped", reason: "already_injected" };
+                    }
+
+                    // 1) Use page nonce if available (CSP-compliant)
+                    const tryWithNonce = () => {
+                      try {
+                        const nonce = (document.querySelector("script[nonce]") || {}).nonce;
+                        if (!nonce) return false;
+                        const s = document.createElement("script");
+                        s.setAttribute("nonce", nonce);
+                        s.textContent = code;
+                        (document.documentElement || document.head || document).appendChild(s);
+                        s.remove();
+                        return true;
+                      } catch {
+                        return false;
+                      }
+                    };
+
+                    // 2) Trusted Types + nonce (still needs nonce on TT-enforced sites)
+                    const tryWithTT = () => {
+                      try {
+                        if (!window.trustedTypes) return false;
+                        const nonce = (document.querySelector("script[nonce]") || {}).nonce || "";
+                        const names = [
+                          "reclaim-extension-sdk",
+                          "reclaim",
+                          "default",
+                          "policy",
+                          "app",
+                        ];
+                        for (const name of names) {
+                          try {
+                            const policy = trustedTypes.createPolicy(name, {
+                              createScript: (s) => s,
+                            });
+                            const s = document.createElement("script");
+                            if (nonce) s.setAttribute("nonce", nonce);
+                            s.text = policy.createScript(code);
+                            (document.documentElement || document.head || document).appendChild(s);
+                            s.remove();
+                            return true;
+                          } catch {}
+                        }
+                        return false;
+                      } catch {
+                        return false;
+                      }
+                    };
+
+                    // 3) Plain inline (last resort; typically blocked)
+                    const tryPlain = () => {
+                      try {
+                        const s = document.createElement("script");
+                        s.textContent = code;
+                        (document.documentElement || document.head || document).appendChild(s);
+                        s.remove();
+                        return true;
+                      } catch {
+                        return false;
+                      }
+                    };
+
+                    const ok =
+                      tryWithNonce() || // best chance
+                      tryWithTT() || // TT with nonce when possible
+                      tryPlain(); // may be blocked
+
+                    if (ok) {
+                      window.__reclaimCustomInjectionDone__ = true;
+                      return { status: "executed" };
+                    }
+                    return { status: "error", reason: "all_strategies_failed" };
+                  } catch (e) {
+                    return { status: "error", reason: String(e?.message || e) };
+                  }
+                },
+                args: [{ code }],
+              });
+
+              const result = results?.[0]?.result;
+              ctx.bgLogger?.info(
+                `INJECT_VIA_SCRIPTING: RUN_CUSTOM_INJECTION result: ${JSON.stringify(result)}`,
+              );
+              sendResponse({ success: true, result });
+              break;
+            }
+          } catch (e) {
+            ctx.bgLogger?.error(`INJECT_VIA_SCRIPTING failed: ${e?.message}`);
+            sendResponse({ success: false, error: e?.message || String(e) });
+          }
+        } else {
+          sendResponse({ success: false, error: "Action not supported" });
+        }
+        break;
+      }
       default: {
         ctx.bgLogger.error(`[BACKGROUND] DEFAULT: Action not supported`);
         sendResponse({ success: false, error: "Action not supported" });

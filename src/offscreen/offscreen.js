@@ -90,6 +90,22 @@ class OffscreenProofGenerator {
             });
             offscreenLogger.info("[OFFSCREEN] Generating proof");
             const proof = await this.generateProof(data);
+
+            // Edge case: proof object contains an error
+            const embeddedErr =
+              proof?.error?.message || (typeof proof?.error === "string" ? proof.error : null);
+            if (embeddedErr) {
+              offscreenLogger.error("[OFFSCREEN] Proof contains embedded error:", embeddedErr);
+              chrome.runtime.sendMessage({
+                action: MESSAGE_ACTIONS.GENERATE_PROOF_RESPONSE,
+                source: MESSAGE_SOURCES.OFFSCREEN,
+                target: MESSAGE_SOURCES.BACKGROUND,
+                success: false,
+                error: embeddedErr,
+              });
+              return;
+            }
+
             chrome.runtime.sendMessage({
               action: MESSAGE_ACTIONS.GENERATE_PROOF_RESPONSE,
               source: MESSAGE_SOURCES.OFFSCREEN,
@@ -174,11 +190,13 @@ class OffscreenProofGenerator {
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(() => {
           timeoutOccurred = true;
-          reject(new Error("Proof generation timed out after 1 minute"));
-        }, 60000);
+          reject(new Error("Proof generation timed out after 2 minutes"));
+        }, 60000 * 2);
       });
 
-      const attestorPromise = createClaimOnAttestor(claimData);
+      const attestorPromise = await createClaimOnAttestor(claimData);
+
+      console.log("OFFSCREEN] attestorPromise", attestorPromise);
 
       offscreenLogger.info("[OFFSCREEN] Attestor promise created");
 

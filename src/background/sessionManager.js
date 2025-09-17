@@ -43,6 +43,8 @@ export async function startVerification(ctx, templateData) {
       templateData.sessionId,
       templateData.applicationId,
     );
+
+    console.log("providerData", { providerData });
     ctx.providerData = providerData;
 
     ctx.providerId = templateData.providerId;
@@ -253,7 +255,7 @@ export async function submitProofs2(ctx) {
       appId: ctx.appId || "unknown",
     });
 
-    ctx.bgLogger.info(`[BACKGROUND] Submitting proofs`);
+    ctx.bgLogger.info(`[BACKGROUND] Submitting proofs...`);
 
     ctx.sessionTimerManager.clearAllTimers();
 
@@ -433,7 +435,7 @@ export async function submitProofs(ctx) {
       appId: ctx.appId || "unknown",
     });
 
-    ctx.bgLogger.info(`[BACKGROUND] Submitting proofs`);
+    ctx.bgLogger.info(`[BACKGROUND] Submitting proofs!!!`);
 
     if (ctx.generatedProofs.size === 0) return;
 
@@ -478,6 +480,8 @@ export async function submitProofs(ctx) {
       ...fp,
       publicData: ctx.publicData ?? null,
     }));
+
+    console.log("finalProofs", { finalProofs });
 
     let submitted = false;
     // If callbackUrl provided, submit; otherwise just signal completion
@@ -619,6 +623,7 @@ export async function submitProofs(ctx) {
     ctx.activeSessionId = null;
     return { success: true };
   } catch (error) {
+    console.log(error);
     ctx.bgLogger.error(`[BACKGROUND] Error submitting proof: ${error?.message}`);
     // Release concurrency guard on failure
     ctx.activeSessionId = null;
