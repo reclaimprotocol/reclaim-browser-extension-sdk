@@ -1,3 +1,5 @@
+import { MESSAGE_SOURCES } from "../utils/constants/interfaces";
+
 window.Reclaim = window.Reclaim || {};
 let __reclaimParams = {};
 
@@ -232,7 +234,7 @@ try {
   /**
    * Execute the fetched injection script without eval
    */
-  function executeInjectionScriptNoEval(scriptContent, providerData) {
+  function executeInjectionScriptNoEval2(scriptContent, providerData) {
     const finish = (ok) => {
       if (!ok) return; /* dispatch success event */
     };
@@ -274,6 +276,76 @@ try {
       debug.error("Injection failed:", e);
       finish(false);
     }
+  }
+
+  async function executeInjectionScriptNoEval(scriptContent, providerData) {
+    // 1) Try blob: URL (most robust without eval/inline)
+    const okBlob = await injectViaBlob(scriptContent);
+    if (okBlob) return;
+
+    // // 2) Try page nonce (only if present). Still brittle, but cheap to try.
+    const okNonce = await injectInlineWithNonce(scriptContent);
+    if (okNonce) return;
+
+    // 3) Last resort: ask the service worker to inject via chrome.scripting
+    try {
+      debug.info("Injected via chrome.scripting");
+    } catch (e) {
+      debug.error("All injection strategies failed", e);
+    }
+  }
+
+  function injectViaBlob(code) {
+    return new Promise((resolve) => {
+      try {
+        const blob = new Blob([code], { type: "text/javascript" });
+        const url = URL.createObjectURL(blob);
+
+        const s = document.createElement("script");
+        s.src = url;
+        s.async = false;
+
+        // If a page nonce exists, attach it (harmless if not needed)
+        const nonceEl = document.querySelector("script[nonce]");
+        const pageNonce = nonceEl?.nonce || nonceEl?.getAttribute?.("nonce") || "";
+        if (pageNonce) s.setAttribute("nonce", pageNonce);
+
+        s.onload = () => {
+          URL.revokeObjectURL(url);
+          resolve(true);
+        };
+        s.onerror = () => {
+          URL.revokeObjectURL(url);
+          resolve(false);
+        };
+
+        (document.head || document.documentElement).appendChild(s);
+      } catch {
+        resolve(false);
+      }
+    });
+  }
+
+  function injectInlineWithNonce(code) {
+    return new Promise((resolve) => {
+      try {
+        const nonceEl = document.querySelector("script[nonce]");
+        const pageNonce = nonceEl?.nonce || nonceEl?.getAttribute?.("nonce") || "";
+        if (!pageNonce) return resolve(false);
+
+        // Inline + nonce (no reliable onload; we assume success if no sync error)
+        const s = document.createElement("script");
+        s.setAttribute("nonce", pageNonce);
+        s.textContent = String(code);
+
+        (document.head || document.documentElement).appendChild(s);
+
+        // Give the browser a tick; if CSP blocked it, you’ll usually see a console error.
+        setTimeout(() => resolve(true), 0);
+      } catch {
+        resolve(false);
+      }
+    });
   }
 
   /**

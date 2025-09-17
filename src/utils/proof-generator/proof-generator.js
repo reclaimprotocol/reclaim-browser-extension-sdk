@@ -78,7 +78,16 @@ export const generateProof = async (claimData) => {
             return;
           }
           console.log("response", response);
-          console.log("proofLogger", proofLogger);
+
+          // Edge case: success=true but proof contains an error
+          const embeddedErr =
+            response?.proof?.error?.message ||
+            (typeof response?.proof?.error === "string" ? response.proof.error : null);
+          if (embeddedErr) {
+            proofLogger.error("[PROOF-GENERATOR] Proof contains embedded error:", embeddedErr);
+            resolve({ success: false, error: embeddedErr });
+            return;
+          }
           // Return the successful response
           proofLogger.info("[PROOF-GENERATOR] Proof generation successful");
           resolve(response);

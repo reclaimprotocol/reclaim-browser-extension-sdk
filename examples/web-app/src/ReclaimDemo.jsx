@@ -3,6 +3,16 @@ import { reclaimExtensionSDK } from '@reclaimprotocol/browser-extension-sdk';
 import './ReclaimDemo.css';
 
 const PROVIDERS = [
+  {id: '2442b69e-a51d-45fe-ace2-1fa3b4e1cba6', name: 'Trex: Apple Music Test'},
+  {id: '6304e87b-b839-414b-b39d-d2a60515df94', name: "Trex: Binance VIP"},
+  {id: 'cf04e4ab-f82e-487a-a93a-ec6c70009c5c', name: "PlayStation Test"},
+  {id: 'ff4a2f11-2ad3-4a0f-b5ff-b6ebc401f418', name: "PlayStation Trex 2"},
+  {id: 'a041d469-a11a-48ca-a1e2-b073332a0705', name: "PlayStation Trex"},
+  {id: 'b3bd406a-cec0-4c91-8c8b-eeb06292cf8e', name: 'Trex: Netflix'},
+  {id: 'fbf83028-fbed-4414-b593-fa5d3e3fa131', name: "Trex: Binance Assets"},
+  {id: '921681c2-3d20-4060-b961-43ae2a0e8dd2', name: 'Gemini Injection Test'},
+  {id: 'cab9bc4e-cca7-4261-8a8c-53e7d8df1f01', name: 'applce music'},
+  {id: '9ab972fc-8aca-4c35-93f5-d1ede32e32b9', name: 'Trex: Instagram' },
   {id: '50a2286d-8c89-4de0-817b-e577447c531d', name: 'Trex: Grok' },
   {id: '25a97f94-4c73-4c02-826d-d11504997fec', name: 'Trex: Perplexity' },
   {id: '3fa453f7-dc93-4150-a51f-c1b88bbcacb8', name: 'Trex: KuCoin' },
@@ -11,6 +21,8 @@ const PROVIDERS = [
   { id: '7a956c12-486a-4d18-a81f-833c62b8b055', name: 'Gamerpay' },
   { id: '1be4821a-55cb-42b1-a208-6158910c79a0', name: 'Steam Trade History' },
   { id: '7519ad78-208a-425d-9fac-97c13b0f0d4d', name: 'Kaggle' },
+  {id: '97d77158-b910-4558-84d7-de0e7374effa', name: 'spotify'},
+  {id: '218f590e-d755-44c9-82e3-04e9907d3f44', name: 'Trex: Chatgpt'}
   { id: '31e222ba-be21-4bec-b767-af30f52837ea', name: 'Gamerpay: Steam Inventory' },
   { id: 'bfb04c86-bdac-48fb-9d22-6421820c8c04', name: 'Kaggle AI' },
   { id: '25a97f94-4c73-4c02-826d-d11504997fec', name: 'Trex Perplexity' },
@@ -403,3 +415,5 @@ export default function ReclaimDemo() {
     </div>
   );
 }
+
+
