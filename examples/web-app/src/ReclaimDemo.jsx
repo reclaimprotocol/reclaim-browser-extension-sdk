@@ -23,7 +23,7 @@ const PROVIDERS = [
   { id: '1be4821a-55cb-42b1-a208-6158910c79a0', name: 'Steam Trade History' },
   { id: '7519ad78-208a-425d-9fac-97c13b0f0d4d', name: 'Kaggle' },
   {id: '97d77158-b910-4558-84d7-de0e7374effa', name: 'spotify'},
-  {id: '218f590e-d755-44c9-82e3-04e9907d3f44', name: 'Trex: Chatgpt'}
+  {id: '218f590e-d755-44c9-82e3-04e9907d3f44', name: 'Trex: Chatgpt'},
   { id: '31e222ba-be21-4bec-b767-af30f52837ea', name: 'Gamerpay: Steam Inventory' },
   { id: 'bfb04c86-bdac-48fb-9d22-6421820c8c04', name: 'Kaggle AI' },
   { id: '25a97f94-4c73-4c02-826d-d11504997fec', name: 'Trex Perplexity' },
