@@ -369,9 +369,6 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
                 world: "MAIN",
                 func: (opts) => {
                   try {
-                    if (window.__reclaimInitialPageFetch__) return;
-                    window.__reclaimInitialPageFetch__ = true;
-
                     if (opts?.showAlert) {
                       // Use non-blocking console too in case alerts are suppressed
                       console.log("Fetching initial page…");

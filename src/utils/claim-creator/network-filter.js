@@ -114,10 +114,14 @@ function matchesResponseCriteria(responseText, matchCriteria, parameters = {}) {
   }
 
   for (const match of matchCriteria) {
-    const { pattern } = convertTemplateToRegex(match.value, parameters);
+    let pattern;
+    if (match.type === "regex") {
+      pattern = match.value;
+    } else {
+      pattern = convertTemplateToRegex(match.value, parameters).pattern;
+    }
     const regex = new RegExp(pattern);
     const matches = regex.test(responseText);
-
     // Check if match expectation is met
     const matchExpectation = match.invert ? !matches : matches;
     if (!matchExpectation) {
@@ -197,6 +201,9 @@ function matchesResponseFields(responseText, responseRedactions) {
 
 // Main filtering function
 export const filterRequest = (request, filterCriteria, parameters = {}) => {
+  if (request?.url?.includes("https://www.tiktok.com/@rikopiko15")) {
+    console.log({ request, filterCriteria, parameters });
+  }
   try {
     // First check if request matches criteria
     if (!matchesRequestCriteria(request, filterCriteria, parameters)) {

@@ -15,7 +15,13 @@ import { JSONPath } from "jsonpath-plus";
 export const getValueFromJsonPath = (jsonData, jsonPath) => {
   try {
     const results = JSONPath({ path: jsonPath, json: jsonData });
-    return results?.[0] ?? undefined;
+    const finalResult = results?.[0];
+    if (finalResult === undefined) {
+      return undefined;
+    } else if (finalResult === null) {
+      return "null";
+    }
+    return finalResult;
   } catch (error) {
     debugLogger.error(
       DebugLogType.CLAIM,

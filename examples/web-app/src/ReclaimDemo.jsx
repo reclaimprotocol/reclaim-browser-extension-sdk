@@ -3,6 +3,7 @@ import { reclaimExtensionSDK } from '@reclaimprotocol/browser-extension-sdk';
 import './ReclaimDemo.css';
 
 const PROVIDERS = [
+  {id: "214861a3-191b-427b-9862-75e301f1e63b", name: "Trex: Tiktok"},
   {id: '2442b69e-a51d-45fe-ace2-1fa3b4e1cba6', name: 'Trex: Apple Music Test'},
   {id: '6304e87b-b839-414b-b39d-d2a60515df94', name: "Trex: Binance VIP"},
   {id: 'cf04e4ab-f82e-487a-a93a-ec6c70009c5c', name: "PlayStation Test"},
@@ -22,7 +23,7 @@ const PROVIDERS = [
   { id: '1be4821a-55cb-42b1-a208-6158910c79a0', name: 'Steam Trade History' },
   { id: '7519ad78-208a-425d-9fac-97c13b0f0d4d', name: 'Kaggle' },
   {id: '97d77158-b910-4558-84d7-de0e7374effa', name: 'spotify'},
-  {id: '218f590e-d755-44c9-82e3-04e9907d3f44', name: 'Trex: Chatgpt'}
+  {id: '218f590e-d755-44c9-82e3-04e9907d3f44', name: 'Trex: Chatgpt'},
   { id: '31e222ba-be21-4bec-b767-af30f52837ea', name: 'Gamerpay: Steam Inventory' },
   { id: 'bfb04c86-bdac-48fb-9d22-6421820c8c04', name: 'Kaggle AI' },
   { id: '25a97f94-4c73-4c02-826d-d11504997fec', name: 'Trex Perplexity' },

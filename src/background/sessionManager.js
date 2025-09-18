@@ -44,7 +44,6 @@ export async function startVerification(ctx, templateData) {
       templateData.applicationId,
     );
 
-    console.log("providerData", { providerData });
     ctx.providerData = providerData;
 
     ctx.providerId = templateData.providerId;
