@@ -222,11 +222,6 @@
             const forApp = new Response(forAppStream, { status, statusText, headers });
             const forAudit = new Response(forAuditStream, { status, statusText, headers });
 
-            if (url.includes("operationName=getProfileOracle")) {
-              console.log("forAudit", forAudit);
-              console.log("forApp", forApp);
-            }
-
             // Start parsing ASAP; don't clone forAudit again
             self.processResponseMiddlewares(forAudit, requestData).catch(debug.error);
 
@@ -391,10 +386,12 @@
                   });
 
                   // Process response middlewares
+                  // console.log("responseObj", responseObj, requestInfo);
                   self
                     .processResponseMiddlewares(responseObj, requestInfo)
                     .catch((error) => debug.error("Error in response middleware:", error));
                 } catch (error) {
+                  console.log("error", error);
                   debug.error("Error processing XHR response:", error);
                 }
               }

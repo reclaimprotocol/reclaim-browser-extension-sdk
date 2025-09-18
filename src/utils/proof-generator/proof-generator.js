@@ -68,6 +68,8 @@ export const generateProof = async (claimData) => {
           clearTimeout(messageTimeout);
           chrome.runtime.onMessage.removeListener(messageListener);
 
+          console.log("response", response);
+
           // Check if the proof generation was successful
           if (!response.success) {
             proofLogger.error("[PROOF-GENERATOR] Proof generation failed:", response.error);
@@ -77,7 +79,6 @@ export const generateProof = async (claimData) => {
             });
             return;
           }
-          console.log("response", response);
 
           // Edge case: success=true but proof contains an error
           const embeddedErr =

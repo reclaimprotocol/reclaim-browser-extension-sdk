@@ -412,6 +412,7 @@ class ReclaimContentScript {
               if (!this.isFiltering) {
                 this.startNetworkFiltering();
               }
+              this.setupUrlListener();
             }
           },
         );
@@ -461,6 +462,8 @@ class ReclaimContentScript {
         if (!this.isFiltering) {
           this.startNetworkFiltering();
         }
+
+        this.setupUrlListener();
 
         logger.info(
           "[Content] Provider data received from background script and will proceed with network filtering.",
@@ -1149,6 +1152,42 @@ class ReclaimContentScript {
       localStorage.removeItem(key);
       logger.error("[Content] Failed to store injection script in localStorage: " + e.message);
     }
+  }
+
+  setupUrlListener() {
+    let lastUrl = window.location.href;
+
+    // Watch for URL changes via DOM mutations
+    const observer = new MutationObserver(() => {
+      const currentUrl = window.location.href;
+      if (currentUrl !== lastUrl) {
+        lastUrl = currentUrl;
+        // Your logic here
+        if (!this.providerData?.disableRequestReplay) {
+          chrome.runtime.sendMessage({
+            action: MESSAGE_ACTIONS.INJECT_VIA_SCRIPTING,
+            source: MESSAGE_SOURCES.CONTENT_SCRIPT,
+            target: MESSAGE_SOURCES.BACKGROUND,
+            data: { op: "REPLAY_PAGE_FETCH", showAlert: false },
+          });
+        }
+      }
+    });
+
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+    });
+
+    // // We can also poll as backup
+    // setInterval(() => {
+    //   const currentUrl = window.location.href;
+    //   if (currentUrl !== lastUrl) {
+    //     console.log("URL changed via polling:", lastUrl, "->", currentUrl);
+    //     lastUrl = currentUrl;
+    //     // Your logic here
+    //   }
+    // }, 100);
   }
 }
 
