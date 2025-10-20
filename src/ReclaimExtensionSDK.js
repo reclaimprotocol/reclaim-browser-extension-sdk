@@ -1,12 +1,14 @@
 import "./utils/polyfills";
+import { Wallet, keccak256, getBytes } from "ethers";
 import initBackground from "./background/background";
 import { BACKEND_URL, API_ENDPOINTS, RECLAIM_SDK_ACTIONS } from "./utils/constants";
-import { Wallet, keccak256, getBytes } from "ethers";
+import { loggerService } from "./utils/logger/LoggerService";
 
 // Global verification queue to serialize extension sessions (background is single-session)
 const _verificationQueue = [];
 let _queueRunning = false;
-const SDK_VERSION = "0.0.1";
+// eslint-disable-next-line no-undef
+const SDK_VERSION = __SDK_VERSION__;
 
 function _enqueueVerification(task) {
   return new Promise((resolve, reject) => {
@@ -114,7 +116,6 @@ class ReclaimExtensionProofRequest {
     });
     instance.sessionId = initRes.sessionId || "";
     instance.resolvedProviderVersion = initRes.resolvedProviderVersion || "";
-    console.log("instance from init", instance);
     return instance;
   }
 
@@ -151,7 +152,6 @@ class ReclaimExtensionProofRequest {
 
     // Keep sdkVersion as ext-* (do not trust inbound js sdkVersion)
     // instance.sdkVersion already set to ext-<version>
-    console.log("instance from fromConfig", instance);
     return instance;
   }
 
@@ -179,10 +179,8 @@ class ReclaimExtensionProofRequest {
 
   getStatusUrl() {
     if (!this.sessionId) throw new Error("Session not initialized");
-    if (API_ENDPOINTS?.STATUS_URL) {
-      return API_ENDPOINTS.STATUS_URL(this.sessionId);
-    }
-    return `${BACKEND_URL}/api/sdk/status/${this.sessionId}`;
+
+    return API_ENDPOINTS.STATUS_URL(this.sessionId);
   }
 
   // Events
@@ -373,22 +371,6 @@ class ReclaimExtensionSDK {
       typeof chrome !== "undefined" && chrome.runtime && location?.protocol === "chrome-extension:"
         ? "extension"
         : "web";
-    // if (this._mode === "extension") {
-    //   this._boundChromeHandler = (message) => {
-    //     const { action, data, error } = message || {};
-    //     const messageId = data?.sessionId;
-    //     if (!action || (this.sessionId && this.sessionId !== messageId)) return;
-    //     if (action === "PROOF_SUBMITTED") {
-    //       const proofs = data?.formattedProofs || data?.proof || data;
-    //       this._emit("completed", proofs);
-    //     } else if (action === "PROOF_SUBMISSION_FAILED" || action === "PROOF_GENERATION_FAILED") {
-    //       this._emit("error", error || new Error("Verification failed"));
-    //     }
-    //   };
-    //   try {
-    //     chrome.runtime.onMessage.addListener(this._boundChromeHandler);
-    //   } catch {}
-    // }
   }
 
   // Must be called from the consumer's own background service worker.
@@ -441,6 +423,14 @@ class ReclaimExtensionSDK {
 
   fromJsonString(json, options = {}) {
     return ReclaimExtensionProofRequest.fromJsonString(json, options);
+  }
+
+  setLogConfig(config) {
+    loggerService.setConfig(config);
+  }
+
+  getLogConfig() {
+    return loggerService.config;
   }
 }
 

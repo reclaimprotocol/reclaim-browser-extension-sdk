@@ -1,7 +1,4 @@
-// Proof generation queue for background script
-// Handles the proof generation queue and related logic
-
-import { LOG_TYPES } from "../utils/logger";
+import { LOG_TYPES, LOG_LEVEL, EVENT_TYPES } from "../utils/logger";
 
 export function addToProofGenerationQueue(ctx, claimData, requestHash) {
   ctx.proofGenerationQueue.push({
@@ -15,121 +12,25 @@ export function addToProofGenerationQueue(ctx, claimData, requestHash) {
   }
 }
 
-export async function processNextQueueItem2(ctx) {
-  if (ctx.aborted) return; // stop immediately
-  if (ctx.isProcessingQueue || ctx.proofGenerationQueue.length === 0) {
-    if (ctx.proofGenerationQueue.length === 0) {
-      if (ctx.generatedProofs.size === ctx.providerData.requestData.length) {
-        ctx.sessionTimerManager.clearAllTimers();
-        if (!ctx.expectManyClaims) {
-          setTimeout(() => ctx.submitProofs(), 0);
-        }
-        // else: hold until canExpectManyClaims(false)
-      } else {
-        ctx.sessionTimerManager.resumeSessionTimer();
-      }
-      return;
-    }
-    ctx.sessionTimerManager.resumeSessionTimer();
-  }
-
-  ctx.isProcessingQueue = true;
-
-  const task = ctx.proofGenerationQueue.shift();
-
-  try {
-    if (ctx.aborted) return;
-    chrome.tabs.sendMessage(ctx.activeTabId, {
-      action: ctx.MESSAGE_ACTIONS.PROOF_GENERATION_STARTED,
-      source: ctx.MESSAGE_SOURCES.BACKGROUND,
-      target: ctx.MESSAGE_SOURCES.CONTENT_SCRIPT,
-      data: { requestHash: task.requestHash },
-    });
-
-    ctx.bgLogger.info(
-      "[BACKGROUND] Queued proof generation request for request hash: " + task.requestHash,
-      {
-        type: LOG_TYPES.BACKGROUND,
-        sessionId: ctx.sessionId || "unknown",
-        providerId: ctx.providerId || "unknown",
-        appId: ctx.appId || "unknown",
-      },
-    );
-
-    const proofResponseObject = await ctx.generateProof({
-      ...task.claimData,
-      publicData: ctx.publicData ?? null,
-    });
-
-    if (ctx.aborted) return;
-
-    if (!proofResponseObject.success) {
-      ctx.failSession("Proof generation failed: " + proofResponseObject.error, task.requestHash);
-      return;
-    }
-
-    const proof = proofResponseObject.proof;
-
-    if (proof) {
-      if (!ctx.generatedProofs.has(task.requestHash)) {
-        ctx.generatedProofs.set(task.requestHash, proof);
-      }
-
-      ctx.bgLogger.info(
-        "[BACKGROUND] Proof generation successful for request hash: " + task.requestHash,
-        {
-          type: LOG_TYPES.BACKGROUND,
-          sessionId: ctx.sessionId || "unknown",
-          providerId: ctx.providerId || "unknown",
-          appId: ctx.appId || "unknown",
-        },
-      );
-
-      chrome.tabs.sendMessage(ctx.activeTabId, {
-        action: ctx.MESSAGE_ACTIONS.PROOF_GENERATION_SUCCESS,
-        source: ctx.MESSAGE_SOURCES.BACKGROUND,
-        target: ctx.MESSAGE_SOURCES.CONTENT_SCRIPT,
-        data: { requestHash: task.requestHash },
-      });
-
-      ctx.sessionTimerManager.resetSessionTimer();
-    }
-  } catch (error) {
-    ctx.bgLogger.setContext({
-      type: LOG_TYPES.BACKGROUND,
-      sessionId: ctx.sessionId || "unknown",
-      providerId: ctx.providerId || "unknown",
-      appId: ctx.appId || "unknown",
-    });
-    ctx.bgLogger.error(
-      `[BACKGROUND] Proof generation failed for request hash: ${task.requestHash}: ${error?.message}`,
-    );
-
-    ctx.failSession("Proof generation failed: " + error.message, task.requestHash);
-    return;
-  } finally {
-    ctx.isProcessingQueue = false;
-
-    if (ctx.aborted) return;
-
-    if (ctx.proofGenerationQueue.length > 0) {
-      processNextQueueItem(ctx);
-    } else {
-      if (ctx.generatedProofs.size === ctx.providerData.requestData.length) {
-        ctx.sessionTimerManager.clearAllTimers();
-        if (!ctx.expectManyClaims) {
-          setTimeout(() => ctx.submitProofs(), 0);
-        }
-        // else: hold until canExpectManyClaims(false)
-      } else {
-        ctx.sessionTimerManager.resumeSessionTimer();
-      }
-    }
-  }
-}
-
 export async function processNextQueueItem(ctx) {
-  if (ctx.aborted) return; // stop immediately
+  const bgLogger = ctx.bgLogger;
+  bgLogger.setContext({
+    sessionId: ctx.sessionId || "unknown",
+    providerId: ctx.providerId || "unknown",
+    appId: ctx.appId || "unknown",
+    type: LOG_TYPES.BACKGROUND,
+  });
+
+  if (ctx.aborted) {
+    bgLogger.info({
+      message: "[BACKGROUND] Proof generation queue aborted",
+      logLevel: LOG_LEVEL.INFO,
+      type: LOG_TYPES.BACKGROUND,
+      eventType: EVENT_TYPES.RECLAIM_VERIFICATION_DISMISSED,
+    });
+    return;
+  }
+
   if (ctx.isProcessingQueue || ctx.proofGenerationQueue.length === 0) {
     if (ctx.proofGenerationQueue.length === 0) {
       const templateCount = Array.isArray(ctx.providerData?.requestData)
@@ -162,7 +63,16 @@ export async function processNextQueueItem(ctx) {
   const task = ctx.proofGenerationQueue.shift();
 
   try {
-    if (ctx.aborted) return;
+    if (ctx.aborted) {
+      bgLogger.info({
+        message: "[BACKGROUND] Proof generation aborted",
+        logLevel: LOG_LEVEL.INFO,
+        type: LOG_TYPES.BACKGROUND,
+        eventType: EVENT_TYPES.PROOF_GENERATION_ABORTED,
+      });
+      return;
+    }
+
     chrome.tabs.sendMessage(ctx.activeTabId, {
       action: ctx.MESSAGE_ACTIONS.PROOF_GENERATION_STARTED,
       source: ctx.MESSAGE_SOURCES.BACKGROUND,
@@ -170,24 +80,40 @@ export async function processNextQueueItem(ctx) {
       data: { requestHash: task.requestHash },
     });
 
-    ctx.bgLogger.info(
-      "[BACKGROUND] Queued proof generation request for request hash: " + task.requestHash,
-      {
-        type: LOG_TYPES.BACKGROUND,
-        sessionId: ctx.sessionId || "unknown",
-        providerId: ctx.providerId || "unknown",
-        appId: ctx.appId || "unknown",
-      },
-    );
-
-    const proofResponseObject = await ctx.generateProof({
-      ...task.claimData,
-      publicData: ctx.publicData ?? null,
+    bgLogger.info({
+      message: "[BACKGROUND] Proof generation started for request hash: " + task.requestHash,
+      logLevel: LOG_LEVEL.INFO,
+      type: LOG_TYPES.BACKGROUND,
     });
 
-    if (ctx.aborted) return;
+    const proofResponseObject = await ctx.generateProof(
+      {
+        ...task.claimData,
+        publicData: ctx.publicData ?? null,
+      },
+      bgLogger,
+    );
+
+    if (ctx.aborted) {
+      bgLogger.info({
+        message: "[BACKGROUND] Proof generation aborted",
+        logLevel: LOG_LEVEL.INFO,
+        type: LOG_TYPES.BACKGROUND,
+        eventType: EVENT_TYPES.PROOF_GENERATION_ABORTED,
+      });
+      return;
+    }
 
     if (!proofResponseObject.success) {
+      bgLogger.error({
+        message:
+          "[BACKGROUND] Proof generation failed for request hash: " +
+          task.requestHash +
+          ": " +
+          proofResponseObject.error,
+        logLevel: LOG_LEVEL.INFO,
+        type: LOG_TYPES.BACKGROUND,
+      });
       ctx.failSession("Proof generation failed: " + proofResponseObject.error, task.requestHash);
       return;
     }
@@ -199,15 +125,11 @@ export async function processNextQueueItem(ctx) {
         ctx.generatedProofs.set(task.requestHash, proof);
       }
 
-      ctx.bgLogger.info(
-        "[BACKGROUND] Proof generation successful for request hash: " + task.requestHash,
-        {
-          type: LOG_TYPES.BACKGROUND,
-          sessionId: ctx.sessionId || "unknown",
-          providerId: ctx.providerId || "unknown",
-          appId: ctx.appId || "unknown",
-        },
-      );
+      bgLogger.info({
+        message: "[BACKGROUND] Proof generation successful for request hash: " + task.requestHash,
+        logLevel: LOG_LEVEL.INFO,
+        type: LOG_TYPES.BACKGROUND,
+      });
 
       chrome.tabs.sendMessage(ctx.activeTabId, {
         action: ctx.MESSAGE_ACTIONS.PROOF_GENERATION_SUCCESS,
@@ -219,15 +141,15 @@ export async function processNextQueueItem(ctx) {
       ctx.sessionTimerManager.resetSessionTimer();
     }
   } catch (error) {
-    ctx.bgLogger.setContext({
+    bgLogger.error({
+      message:
+        "[BACKGROUND] Proof generation failed for request hash: " +
+        task.requestHash +
+        ": " +
+        error?.message,
+      logLevel: LOG_LEVEL.INFO,
       type: LOG_TYPES.BACKGROUND,
-      sessionId: ctx.sessionId || "unknown",
-      providerId: ctx.providerId || "unknown",
-      appId: ctx.appId || "unknown",
     });
-    ctx.bgLogger.error(
-      `[BACKGROUND] Proof generation failed for request hash: ${task.requestHash}: ${error?.message}`,
-    );
 
     ctx.failSession("Proof generation failed: " + error.message, task.requestHash);
     return;

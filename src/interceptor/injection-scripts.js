@@ -1,5 +1,3 @@
-import { MESSAGE_SOURCES } from "../utils/constants/interfaces";
-
 window.Reclaim = window.Reclaim || {};
 let __reclaimParams = {};
 

@@ -5,7 +5,7 @@ import {
   isJsonFormat,
   safeJsonParse,
 } from "./params-extractor-utils.js";
-import { debugLogger, DebugLogType } from "../logger";
+import { LOG_LEVEL, LOG_TYPES, EVENT_TYPES } from "../logger";
 
 // Escape special regex characters in string
 function escapeSpecialCharacters(input) {
@@ -57,54 +57,53 @@ export function convertTemplateToRegex(template, parameters = {}) {
 
 // Function to check if a request matches filtering criteria
 function matchesRequestCriteria(request, filterCriteria, parameters = {}) {
-  // Check URL match
+  if (!filterCriteria || !request) return false;
 
-  // For exact match
-  if (filterCriteria.url === request.url) {
-    return true;
-  }
+  // 1) URL match: exact, REGEX, or TEMPLATE
+  const urlMatches = (() => {
+    const { url, urlType } = filterCriteria;
+    if (!url) return false;
 
-  // For regex match
-  if (filterCriteria.urlType === "REGEX") {
-    const urlRegex = new RegExp(convertTemplateToRegex(filterCriteria.url, parameters).pattern);
-    if (!urlRegex.test(request.url)) {
-      return false;
+    const type = (urlType || "EXACT").toUpperCase();
+
+    if (type === "EXACT") {
+      return url === request.url;
     }
-  }
 
-  // For template match
-  if (filterCriteria.urlType === "TEMPLATE") {
-    const urlTemplate = new RegExp(convertTemplateToRegex(filterCriteria.url, parameters).pattern);
-    if (!urlTemplate.test(request.url)) {
-      return false;
+    if (type === "REGEX" || type === "TEMPLATE") {
+      const { pattern } = convertTemplateToRegex(url, parameters);
+      return new RegExp(pattern).test(request.url);
     }
-  }
 
-  // Check method match
+    // Unknown urlType → fail safe
+    return false;
+  })();
+
+  if (!urlMatches) return false;
+
+  // 2) Method match
   if (request.method !== filterCriteria.method) {
     return false;
   }
 
-  // Check body match if enabled
-  if (filterCriteria.bodySniff && filterCriteria.bodySniff.enabled) {
-    const bodyTemplate = filterCriteria.bodySniff.template;
+  // 3) Body match (only if enabled)
+  const bodyMatches = (() => {
+    const sniff = filterCriteria.bodySniff;
+    if (!sniff || !sniff.enabled) return true; // no constraint
+
+    const bodyTemplate = sniff.template ?? "";
     const requestBody =
-      typeof request.body === "string" ? request.body : JSON.stringify(request.body);
+      typeof request.body === "string" ? request.body : JSON.stringify(request.body ?? {});
 
-    // For exact match
-    if (bodyTemplate === requestBody) {
-      return true;
-    }
+    // exact body equality satisfies body criterion
+    if (bodyTemplate === requestBody) return true;
 
-    // For template match
-    const bodyRegex = new RegExp(convertTemplateToRegex(bodyTemplate, parameters).pattern);
-    if (!bodyRegex.test(requestBody)) {
-      return false;
-    }
-  }
+    // template/regex body match
+    const { pattern } = convertTemplateToRegex(bodyTemplate, parameters);
+    return new RegExp(pattern).test(requestBody);
+  })();
 
-  // If we get here, all criteria matched
-  return true;
+  return bodyMatches;
 }
 
 // Function to check if response matches criteria
@@ -133,7 +132,7 @@ function matchesResponseCriteria(responseText, matchCriteria, parameters = {}) {
 }
 
 // Function to check if response fields match responseRedactions criteria
-function matchesResponseFields(responseText, responseRedactions) {
+function matchesResponseFields(responseText, responseRedactions, contentLogger) {
   if (!responseRedactions || responseRedactions.length === 0) {
     return true;
   }
@@ -144,8 +143,6 @@ function matchesResponseFields(responseText, responseRedactions) {
 
   if (isJson) {
     jsonData = safeJsonParse(responseText);
-    if (jsonData) {
-    }
   }
 
   // Check each redaction pattern
@@ -157,11 +154,12 @@ function matchesResponseFields(responseText, responseRedactions) {
         // If we get here but value is undefined, the path doesn't exist
         if (value === undefined) return false;
       } catch (error) {
-        debugLogger.error(
-          DebugLogType.CLAIM,
-          `[NETWORK-FILTER] Error checking jsonPath ${redaction.jsonPath}:`,
-          error,
-        );
+        contentLogger.error({
+          message: `[NETWORK-FILTER] Error checking jsonPath ${redaction.jsonPath}:`,
+          logLevel: LOG_LEVEL.INFO,
+          type: LOG_TYPES.CONTENT,
+          eventType: EVENT_TYPES.JSON_PATH_MATCH_REQUIREMENT_FAILED,
+        });
         return false;
       }
     }
@@ -171,11 +169,12 @@ function matchesResponseFields(responseText, responseRedactions) {
         const value = getValueFromXPath(responseText, redaction.xPath);
         if (!value) return false;
       } catch (error) {
-        debugLogger.error(
-          DebugLogType.CLAIM,
-          `[NETWORK-FILTER] Error checking xPath ${redaction.xPath}:`,
-          error,
-        );
+        contentLogger.error({
+          message: `[NETWORK-FILTER] Error checking xPath ${redaction.xPath}:`,
+          logLevel: LOG_LEVEL.INFO,
+          type: LOG_TYPES.CONTENT,
+          eventType: EVENT_TYPES.X_PATH_MATCH_REQUIREMENT_FAILED,
+        });
         return false;
       }
     }
@@ -185,11 +184,12 @@ function matchesResponseFields(responseText, responseRedactions) {
         const regex = new RegExp(redaction.regex);
         if (!regex.test(responseText)) return false;
       } catch (error) {
-        debugLogger.error(
-          DebugLogType.CLAIM,
-          `[NETWORK-FILTER] Error checking regex ${redaction.regex}:`,
-          error,
-        );
+        contentLogger.error({
+          message: `[NETWORK-FILTER] Error checking regex ${redaction.regex}:`,
+          logLevel: LOG_LEVEL.INFO,
+          type: LOG_TYPES.CONTENT,
+          eventType: EVENT_TYPES.REGEX_MATCH_REQUIREMENT_FAILED,
+        });
         return false;
       }
     }
@@ -200,35 +200,53 @@ function matchesResponseFields(responseText, responseRedactions) {
 }
 
 // Main filtering function
-export const filterRequest = (request, filterCriteria, parameters = {}) => {
-  if (request?.url?.includes("https://www.tiktok.com/@rikopiko15")) {
-    console.log({ request, filterCriteria, parameters });
-  }
+export const filterRequest = (request, filterCriteria, parameters = {}, contentLogger) => {
   try {
     // First check if request matches criteria
     if (!matchesRequestCriteria(request, filterCriteria, parameters)) {
       return false;
     }
 
+    contentLogger.info({
+      message: "[NETWORK-FILTER] Request matched the request filtering criteria",
+      logLevel: LOG_LEVEL.INFO,
+      type: LOG_TYPES.CONTENT,
+      eventType: EVENT_TYPES.REQUEST_MATCHED,
+    });
+
     // Then check if response matches (if we have response data)
-    if (request.responseText && filterCriteria.responseMatches) {
-      if (
-        !matchesResponseCriteria(request.responseText, filterCriteria.responseMatches, parameters)
-      ) {
-        return false;
-      }
+    if (
+      request.responseText &&
+      filterCriteria.responseMatches &&
+      !matchesResponseCriteria(request.responseText, filterCriteria.responseMatches, parameters)
+    ) {
+      contentLogger.info({
+        message: "[NETWORK-FILTER] Response did not match the response filtering criteria",
+        logLevel: LOG_LEVEL.INFO,
+        type: LOG_TYPES.CONTENT,
+        eventType: EVENT_TYPES.RESPONSE_MATCH_FAILED,
+      });
+      return false;
     }
 
     // Check if the response fields match the responseRedactions criteria
-    if (request.responseText && filterCriteria.responseRedactions) {
-      if (!matchesResponseFields(request.responseText, filterCriteria.responseRedactions)) {
-        return false;
-      }
+    if (
+      request.responseText &&
+      filterCriteria.responseRedactions &&
+      !matchesResponseFields(request.responseText, filterCriteria.responseRedactions, contentLogger)
+    ) {
+      return false;
     }
 
     return true;
   } catch (error) {
-    debugLogger.error(DebugLogType.CLAIM, "[NETWORK-FILTER] Error filtering request:", error);
+    contentLogger.error({
+      message: "[NETWORK-FILTER] Error filtering request:",
+      logLevel: LOG_LEVEL.ERROR,
+      type: LOG_TYPES.CONTENT,
+      eventType: EVENT_TYPES.FILTER_REQUEST_ERROR,
+      meta: { error },
+    });
     return false;
   }
 };

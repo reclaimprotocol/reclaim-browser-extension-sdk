@@ -8,8 +8,8 @@ export class LogEntry {
     appId,
     logLine,
     type,
-    level,
-    sensitive = false,
+    eventType,
+    logLevel,
     source,
     tabId,
     url,
@@ -22,8 +22,8 @@ export class LogEntry {
     this.appId = appId;
     this.logLine = logLine;
     this.type = type;
-    this.level = level;
-    this.sensitive = sensitive;
+    this.eventType = eventType;
+    this.logLevel = logLevel;
     this.source = source;
     this.tabId = tabId;
     this.url = url;
@@ -33,22 +33,25 @@ export class LogEntry {
   }
 
   toJson() {
-    return {
+    const json = {
       logLine: this.logLine,
       ts: LogEntry.fromDateTimeToTimeStamp(this.time),
-      type: this.type,
+      logLevel: this.logLevel,
       sessionId: this.sessionId,
       providerId: this.providerId,
       appId: this.appId,
-      // Optional extra fields (server can ignore if unused)
-      level: this.level,
-      sensitive: this.sensitive,
       source: this.source,
-      tabId: this.tabId,
-      url: this.url,
-      meta: this.meta,
       deviceId: this.deviceId,
     };
+
+    // Only include optional fields if they exist
+    if (this.type) json.type = this.type;
+    if (this.eventType) json.eventType = this.eventType;
+    if (this.tabId) json.tabId = this.tabId;
+    if (this.url) json.url = this.url;
+    if (this.meta) json.meta = this.meta;
+
+    return json;
   }
 
   static fromDateTimeToTimeStamp(dateTime) {

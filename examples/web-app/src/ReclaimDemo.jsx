@@ -3,6 +3,7 @@ import { reclaimExtensionSDK } from '@reclaimprotocol/browser-extension-sdk';
 import './ReclaimDemo.css';
 
 const PROVIDERS = [
+  {id: '0b212efa-8d96-42b7-82c2-ea69410224b5', name: 'Trex: Asterdex'},
   {id: "214861a3-191b-427b-9862-75e301f1e63b", name: "Trex: Tiktok"},
   {id: '2442b69e-a51d-45fe-ace2-1fa3b4e1cba6', name: 'Trex: Apple Music Test'},
   {id: '6304e87b-b839-414b-b39d-d2a60515df94', name: "Trex: Binance VIP"},
