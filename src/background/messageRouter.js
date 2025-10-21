@@ -1,11 +1,18 @@
 // Message router for background script
 // Handles chrome.runtime.onMessage and routes actions to modules
 
-import { LOG_TYPES } from "../utils/logger";
+import { LOG_TYPES, LOG_LEVEL, EVENT_TYPES } from "../utils/logger";
 import * as sessionManager from "./sessionManager";
 
 export async function handleMessage(ctx, message, sender, sendResponse) {
   const { action, source, target, data } = message;
+  const bgLogger = ctx.bgLogger;
+  bgLogger.setContext({
+    type: LOG_TYPES.BACKGROUND,
+    sessionId: ctx.sessionId || "unknown",
+    providerId: ctx.providerId || "unknown",
+    appId: ctx.appId || "unknown",
+  });
   try {
     switch (action) {
       case ctx.MESSAGE_ACTIONS.CONTENT_SCRIPT_LOADED:
@@ -13,13 +20,6 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
           source === ctx.MESSAGE_SOURCES.CONTENT_SCRIPT &&
           target === ctx.MESSAGE_SOURCES.BACKGROUND
         ) {
-          if (ctx?.sessionId) {
-            ctx.bgLogger.setContext({
-              sessionId: ctx.sessionId || "unknown",
-              providerId: ctx.providerId || "unknown",
-              appId: ctx.appId || "unknown",
-            });
-          }
           const isManaged = sender.tab?.id && ctx.managedTabs.has(sender.tab.id);
           chrome.tabs
             .sendMessage(sender.tab.id, {
@@ -29,9 +29,11 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
               data: { shouldInitialize: isManaged },
             })
             .catch((err) =>
-              ctx.bgLogger.error(
-                `[BACKGROUND] Error sending initialization status: ${err?.message}`,
-              ),
+              bgLogger.error({
+                message: "[BACKGROUND] Error sending initialization status: " + err?.message,
+                logLevel: LOG_LEVEL.INFO,
+                type: LOG_TYPES.BACKGROUND,
+              }),
             );
 
           if (isManaged && ctx.initPopupMessage && ctx.initPopupMessage.has(sender.tab.id)) {
@@ -40,15 +42,21 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
               .sendMessage(sender.tab.id, pendingMessage.message)
               .then(() => {
                 if (chrome.runtime.lastError) {
-                  ctx.bgLogger.error(
-                    `[BACKGROUND] Error sending (pending) SHOW_PROVIDER_VERIFICATION_POPUP to tab ${sender.tab.id}: ${chrome.runtime.lastError.message}`,
-                  );
+                  bgLogger.error({
+                    message: `[BACKGROUND] Error sending (pending) SHOW_PROVIDER_VERIFICATION_POPUP to tab ${sender.tab.id}: ${chrome.runtime.lastError.message}`,
+                    logLevel: LOG_LEVEL.INFO,
+                    type: LOG_TYPES.BACKGROUND,
+                    eventType: EVENT_TYPES.VERIFICATION_POPUP_ERROR,
+                  });
                 }
               })
               .catch((error) =>
-                ctx.bgLogger.error(
-                  `[BACKGROUND] Error sending (pending) SHOW_PROVIDER_VERIFICATION_POPUP to tab ${sender.tab.id} (promise catch): ${error?.message}`,
-                ),
+                bgLogger.error({
+                  message: `[BACKGROUND] Error sending (pending) SHOW_PROVIDER_VERIFICATION_POPUP to tab ${sender.tab.id} (promise catch): ${error?.message}`,
+                  logLevel: LOG_LEVEL.INFO,
+                  type: LOG_TYPES.BACKGROUND,
+                  eventType: EVENT_TYPES.VERIFICATION_POPUP_ERROR,
+                }),
               );
           }
 
@@ -58,19 +66,30 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
               .sendMessage(sender.tab.id, pendingMessage.message)
               .then(() => {
                 if (chrome.runtime.lastError) {
-                  ctx.bgLogger.error(
-                    `[BACKGROUND] Error sending (pending) PROVIDER_DATA_READY to tab ${sender.tab.id}: ${chrome.runtime.lastError.message}`,
-                  );
+                  bgLogger.error({
+                    message: `[BACKGROUND] Error sending (pending) PROVIDER_DATA_READY to tab ${sender.tab.id}: ${chrome.runtime.lastError.message}`,
+                    logLevel: LOG_LEVEL.INFO,
+                    type: LOG_TYPES.BACKGROUND,
+                    eventType: EVENT_TYPES.RECLAIM_VERIFICATION_PROVIDER_LOAD_EXCEPTION,
+                  });
                 }
               })
               .catch((error) =>
-                ctx.bgLogger.error(
-                  `[BACKGROUND] Error sending (pending) PROVIDER_DATA_READY to tab ${sender.tab.id} (promise catch): ${error?.message}`,
-                ),
+                bgLogger.error({
+                  message: `[BACKGROUND] Error sending (pending) PROVIDER_DATA_READY to tab ${sender.tab.id} (promise catch): ${error?.message}`,
+                  logLevel: LOG_LEVEL.INFO,
+                  type: LOG_TYPES.BACKGROUND,
+                  eventType: EVENT_TYPES.RECLAIM_VERIFICATION_PROVIDER_LOAD_EXCEPTION,
+                }),
               );
             ctx.providerDataMessage.delete(sender.tab.id);
           }
 
+          bgLogger.info({
+            message: `[BACKGROUND] Successfully sent (pending) SHOW_PROVIDER_VERIFICATION_POPUP and PROVIDER_DATA_READY to tab ${sender.tab.id}`,
+            logLevel: LOG_LEVEL.INFO,
+            type: LOG_TYPES.BACKGROUND,
+          });
           sendResponse({ success: true });
           break;
         }
@@ -80,13 +99,17 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
           source === ctx.MESSAGE_SOURCES.CONTENT_SCRIPT &&
           target === ctx.MESSAGE_SOURCES.BACKGROUND
         ) {
-          ctx.bgLogger.setContext({
+          bgLogger.setContext({
             sessionId: ctx.sessionId || "unknown",
             providerId: ctx.providerId || "unknown",
             appId: ctx.appId || "unknown",
             type: LOG_TYPES.BACKGROUND,
           });
-          ctx.bgLogger.info("[BACKGROUND] Content script requested provider data");
+          bgLogger.info({
+            message: "[BACKGROUND] Content script requested provider data",
+            logLevel: LOG_LEVEL.INFO,
+            type: LOG_TYPES.BACKGROUND,
+          });
 
           if (
             sender.tab?.id &&
@@ -96,10 +119,13 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
             ctx.sessionId &&
             ctx.callbackUrl !== undefined // allow empty string as optional
           ) {
-            ctx.bgLogger.info(
-              "[BACKGROUND] Sending the following provider data to content script: " +
+            bgLogger.info({
+              message:
+                "[BACKGROUND] Sending the following provider data to content script: " +
                 JSON.stringify(ctx.providerData),
-            );
+              logLevel: LOG_LEVEL.INFO,
+              type: LOG_TYPES.BACKGROUND,
+            });
 
             sendResponse({
               success: true,
@@ -113,6 +139,11 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
               },
             });
           } else {
+            bgLogger.error({
+              message: "[BACKGROUND] Provider data not available or tab not managed",
+              logLevel: LOG_LEVEL.INFO,
+              type: LOG_TYPES.BACKGROUND,
+            });
             sendResponse({
               success: false,
               error: "Provider data not available or tab not managed",
@@ -126,6 +157,11 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
           target === ctx.MESSAGE_SOURCES.BACKGROUND
         ) {
           const isManaged = sender.tab?.id && ctx.managedTabs.has(sender.tab.id);
+          bgLogger.info({
+            message: "[BACKGROUND] Checking if tab is managed: " + isManaged,
+            logLevel: LOG_LEVEL.INFO,
+            type: LOG_TYPES.BACKGROUND,
+          });
           sendResponse({ success: true, isManaged });
         }
         break;
@@ -134,15 +170,27 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
           source === ctx.MESSAGE_SOURCES.CONTENT_SCRIPT &&
           target === ctx.MESSAGE_SOURCES.BACKGROUND
         ) {
-          ctx.bgLogger.setContext({
+          bgLogger.setContext({
             sessionId: data.sessionId || ctx.sessionId || "unknown",
             providerId: data.providerId || ctx.providerId || "unknown",
             appId: data.applicationId || ctx.appId || "unknown",
             type: LOG_TYPES.BACKGROUND,
           });
-          ctx.bgLogger.info(
-            "[BACKGROUND] Starting a new verification with data: " + JSON.stringify(data),
-          );
+
+          bgLogger.info({
+            message: "Starting new verification using Reclaim Extension SDK",
+            logLevel: LOG_LEVEL.INFO,
+            type: LOG_TYPES.BACKGROUND,
+            eventType: EVENT_TYPES.IS_RECLAIM_EXTENSION_SDK,
+          });
+
+          bgLogger.info({
+            message:
+              "[BACKGROUND] Starting new verification flow with data: " + JSON.stringify(data),
+            logLevel: LOG_LEVEL.INFO,
+            type: LOG_TYPES.BACKGROUND,
+            eventType: EVENT_TYPES.VERIFICATION_FLOW_STARTED,
+          });
 
           ctx.loggerService.startFlushInterval();
 
@@ -152,7 +200,11 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
             if (ctx.managedTabs.size === 0) {
               ctx.activeSessionId = null;
             } else {
-              ctx.bgLogger.error(`[BACKGROUND] Another verification is in progress`);
+              bgLogger.error({
+                message: "[BACKGROUND] Another verification is in progress",
+                logLevel: LOG_LEVEL.INFO,
+                type: LOG_TYPES.BACKGROUND,
+              });
               sendResponse({ success: false, error: "Another verification is in progress" });
               break;
             }
@@ -162,12 +214,14 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
           if (sender.tab && sender.tab.id) {
             ctx.originalTabId = sender.tab.id;
           }
-          ctx.bgLogger.info(
-            `[BACKGROUND] Starting verification with session id: ${data.sessionId}`,
-          );
+          bgLogger.info({
+            message: "[BACKGROUND] Starting verification with session id: " + data.sessionId,
+            logLevel: LOG_LEVEL.INFO,
+            type: LOG_TYPES.BACKGROUND,
+          });
+
           const result = await sessionManager.startVerification(ctx, data);
 
-          ctx.bgLogger.info(`[BACKGROUND] Verification started with session id: ${data.sessionId}`);
           sendResponse({ success: true, result });
         } else {
           sendResponse({ success: false, error: "Action not supported" });
@@ -178,22 +232,37 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
           source === ctx.MESSAGE_SOURCES.CONTENT_SCRIPT &&
           target === ctx.MESSAGE_SOURCES.BACKGROUND
         ) {
-          ctx.bgLogger.info(
-            `[BACKGROUND] Cancelling verification with session id: ${data?.sessionId}`,
-          );
+          bgLogger.info({
+            message: "[BACKGROUND] Cancelling verification with session id: " + data?.sessionId,
+            logLevel: LOG_LEVEL.INFO,
+            type: LOG_TYPES.BACKGROUND,
+          });
+
           await sessionManager.cancelSession(ctx, data?.sessionId);
           sendResponse({ success: true });
         } else {
-          ctx.bgLogger.error(`[BACKGROUND] CANCEL_VERIFICATION: Action not supported`);
+          bgLogger.error({
+            message: "[BACKGROUND] CANCEL_VERIFICATION: Action not supported",
+            logLevel: LOG_LEVEL.INFO,
+            type: LOG_TYPES.BACKGROUND,
+          });
           sendResponse({ success: false, error: "Action not supported" });
         }
         break;
       case ctx.MESSAGE_ACTIONS.OFFSCREEN_DOCUMENT_READY:
         if (source === ctx.MESSAGE_SOURCES.OFFSCREEN && target === ctx.MESSAGE_SOURCES.BACKGROUND) {
-          ctx.bgLogger.info(`[BACKGROUND] Offscreen document ready`);
+          bgLogger.info({
+            message: "[BACKGROUND] Offscreen document ready",
+            logLevel: LOG_LEVEL.INFO,
+            type: LOG_TYPES.BACKGROUND,
+          });
           sendResponse({ success: true });
         } else {
-          ctx.bgLogger.error(`[BACKGROUND] OFFSCREEN_DOCUMENT_READY: Action not supported`);
+          bgLogger.error({
+            message: "[BACKGROUND] OFFSCREEN_DOCUMENT_READY: Action not supported",
+            logLevel: LOG_LEVEL.INFO,
+            type: LOG_TYPES.BACKGROUND,
+          });
           sendResponse({ success: false, error: "Action not supported" });
         }
         break;
@@ -205,19 +274,30 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
           if (sender.tab && sender.tab.id) {
             chrome.tabs.remove(sender.tab.id, () => {
               if (chrome.runtime.lastError) {
-                ctx.bgLogger.error(
-                  `[BACKGROUND] Error closing tab: ${chrome.runtime.lastError.message}`,
-                );
+                bgLogger.error({
+                  message: "[BACKGROUND] Error closing tab: " + chrome.runtime.lastError.message,
+                  logLevel: LOG_LEVEL.INFO,
+                  type: LOG_TYPES.BACKGROUND,
+                });
                 sendResponse({ success: false, error: chrome.runtime.lastError.message });
               } else {
                 if (ctx.managedTabs.has(sender.tab.id)) {
                   ctx.managedTabs.delete(sender.tab.id);
                 }
+                bgLogger.info({
+                  message: "[BACKGROUND] Tab closed",
+                  logLevel: LOG_LEVEL.INFO,
+                  type: LOG_TYPES.BACKGROUND,
+                });
                 sendResponse({ success: true });
               }
             });
           } else {
-            ctx.bgLogger.error(`[BACKGROUND] CLOSE_CURRENT_TAB: No tab ID provided by sender.`);
+            bgLogger.error({
+              message: "[BACKGROUND] CLOSE_CURRENT_TAB: No tab ID provided by sender.",
+              logLevel: LOG_LEVEL.INFO,
+              type: LOG_TYPES.BACKGROUND,
+            });
             sendResponse({ success: false, error: "No tab ID found to close." });
           }
         } else {
@@ -230,9 +310,13 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
           target === ctx.MESSAGE_SOURCES.BACKGROUND
         ) {
           if (ctx.filteredRequests.has(data.criteria.requestHash)) {
-            ctx.bgLogger.info(
-              `[BACKGROUND] Filtered request found with hash: ${data.criteria.requestHash}`,
-            );
+            bgLogger.info({
+              message:
+                "[BACKGROUND] Filtered request found with hash: " + data.criteria.requestHash,
+              logLevel: LOG_LEVEL.INFO,
+              type: LOG_TYPES.BACKGROUND,
+              eventType: EVENT_TYPES.FILTERED_REQUEST_FOUND,
+            });
             sendResponse({
               success: true,
               result: ctx.filteredRequests.get(data.criteria.requestHash),
@@ -245,9 +329,20 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
               data.sessionId,
               data.loginUrl,
             );
+            bgLogger.info({
+              message:
+                "[BACKGROUND] Filtered request processed with hash: " + data.criteria.requestHash,
+              logLevel: LOG_LEVEL.INFO,
+              type: LOG_TYPES.BACKGROUND,
+            });
             sendResponse({ success: true, result });
           }
         } else {
+          bgLogger.error({
+            message: "[BACKGROUND] FILTERED_REQUEST_FOUND: Action not supported",
+            logLevel: LOG_LEVEL.INFO,
+            type: LOG_TYPES.BACKGROUND,
+          });
           sendResponse({ success: false, error: "Action not supported" });
         }
         break;
@@ -256,20 +351,36 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
           source === ctx.MESSAGE_SOURCES.CONTENT_SCRIPT &&
           target === ctx.MESSAGE_SOURCES.BACKGROUND
         ) {
-          ctx.bgLogger.info(`[BACKGROUND] Getting current tab id: ${sender.tab?.id}`);
+          bgLogger.info({
+            message: "[BACKGROUND] Getting current tab id: " + sender.tab?.id,
+            logLevel: LOG_LEVEL.INFO,
+            type: LOG_TYPES.BACKGROUND,
+          });
           sendResponse({ success: true, tabId: sender.tab?.id });
         } else {
-          ctx.bgLogger.error(`[BACKGROUND] GET_CURRENT_TAB_ID: Action not supported`);
+          bgLogger.error({
+            message: "[BACKGROUND] GET_CURRENT_TAB_ID: Action not supported",
+            logLevel: LOG_LEVEL.INFO,
+            type: LOG_TYPES.BACKGROUND,
+          });
           sendResponse({ success: false, error: "Action not supported" });
         }
         break;
       case ctx.MESSAGE_ACTIONS.UPDATE_PUBLIC_DATA:
         if (sender.tab?.id && ctx.managedTabs.has(sender.tab.id)) {
-          ctx.bgLogger.info(`[BACKGROUND] Updating public data: ${data?.publicData}`);
+          bgLogger.info({
+            message: "[BACKGROUND] Updating public data: " + data?.publicData,
+            logLevel: LOG_LEVEL.INFO,
+            type: LOG_TYPES.BACKGROUND,
+          });
           ctx.publicData = typeof data?.publicData === "string" ? data.publicData : null;
           sendResponse({ success: true });
         } else {
-          ctx.bgLogger.error(`[BACKGROUND] UPDATE_PUBLIC_DATA: Tab is not managed by extension`);
+          bgLogger.error({
+            message: "[BACKGROUND] UPDATE_PUBLIC_DATA: Tab is not managed by extension",
+            logLevel: LOG_LEVEL.INFO,
+            type: LOG_TYPES.BACKGROUND,
+          });
           sendResponse({ success: false, error: "Tab is not managed by extension" });
         }
         break;
@@ -278,32 +389,48 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
           const turningOff = ctx.expectManyClaims && !data?.expectMany;
           ctx.expectManyClaims = !!data?.expectMany;
 
-          ctx.bgLogger.info(`[BACKGROUND] Updating expect many claims: ${data?.expectMany}`);
+          bgLogger.info({
+            message: "[BACKGROUND] Updating expect many claims: " + data?.expectMany,
+            logLevel: LOG_LEVEL.INFO,
+            type: LOG_TYPES.BACKGROUND,
+          });
 
           // If turning OFF and proofs are already ready, finish now
           if (turningOff && ctx.generatedProofs.size > 0) {
             try {
-              ctx.bgLogger.info(`[BACKGROUND] Turning off expect many claims, Submitting proofs`);
+              bgLogger.info({
+                message: "[BACKGROUND] Turning off expect many claims, Submitting proofs",
+                logLevel: LOG_LEVEL.INFO,
+                type: LOG_TYPES.BACKGROUND,
+              });
               await ctx.submitProofs();
             } catch {}
           }
           sendResponse({ success: true });
         } else {
-          ctx.bgLogger.error(
-            `[BACKGROUND] UPDATE_EXPECT_MANY_CLAIMS: Tab is not managed by extension`,
-          );
+          bgLogger.error({
+            message: "[BACKGROUND] UPDATE_EXPECT_MANY_CLAIMS: Tab is not managed by extension",
+            logLevel: LOG_LEVEL.INFO,
+            type: LOG_TYPES.BACKGROUND,
+          });
           sendResponse({ success: false, error: "Tab is not managed by extension" });
         }
         break;
       }
       case ctx.MESSAGE_ACTIONS.GET_PARAMETERS:
         if (sender.tab?.id && ctx.managedTabs.has(sender.tab.id)) {
-          ctx.bgLogger.info(`[BACKGROUND] Getting parameters: ${ctx.parameters}`);
+          bgLogger.info({
+            message: "[BACKGROUND] Getting parameters: " + ctx.parameters,
+            logLevel: LOG_LEVEL.INFO,
+            type: LOG_TYPES.BACKGROUND,
+          });
           sendResponse({ success: true, parameters: ctx.parameters || {} });
         } else {
-          ctx.bgLogger.error(
-            `[BACKGROUND] UPDATE_EXPECT_MANY_CLAIMS: Tab is not managed by extension`,
-          );
+          bgLogger.error({
+            message: "[BACKGROUND] UPDATE_EXPECT_MANY_CLAIMS: Tab is not managed by extension",
+            logLevel: LOG_LEVEL.INFO,
+            type: LOG_TYPES.BACKGROUND,
+          });
           sendResponse({ success: false, error: "Tab is not managed by extension" });
         }
         break;
@@ -311,10 +438,18 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
         if (sender.tab?.id && ctx.managedTabs.has(sender.tab.id)) {
           ctx.aborted = true;
           await ctx.failSession(data?.message || "Provider error");
-          ctx.bgLogger.info(`[BACKGROUND] Provider error reported: ${data?.message}`);
+          bgLogger.info({
+            message: "[BACKGROUND] Provider error reported: " + data?.message,
+            logLevel: LOG_LEVEL.INFO,
+            type: LOG_TYPES.BACKGROUND,
+          });
           sendResponse({ success: true });
         } else {
-          ctx.bgLogger.error(`[BACKGROUND] REPORT_PROVIDER_ERROR: Tab is not managed by extension`);
+          bgLogger.error({
+            message: "[BACKGROUND] REPORT_PROVIDER_ERROR: Tab is not managed by extension",
+            logLevel: LOG_LEVEL.INFO,
+            type: LOG_TYPES.BACKGROUND,
+          });
           sendResponse({ success: false, error: "Tab is not managed by extension" });
         }
         break;
@@ -333,21 +468,33 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
               break;
             }
             const result = await ctx.processFilteredRequest(
-              data.request, // carries url/method/headers/body/extractedParams
-              data.criteria, // responseMatches/redactions, requestHash
-              data.sessionId, // current session
-              data.loginUrl || "", // referer/login
+              data.request,
+              data.criteria,
+              data.sessionId,
+              data.loginUrl || "",
             );
 
-            ctx.bgLogger.info(`[BACKGROUND] Request claim processed: ${data.requestHash}`);
+            bgLogger.info({
+              message: "[BACKGROUND] Request claim processed: " + data.requestHash,
+              logLevel: LOG_LEVEL.INFO,
+              type: LOG_TYPES.BACKGROUND,
+            });
 
             sendResponse({ success: true, result });
           } catch (e) {
-            ctx.bgLogger.error(`[BACKGROUND] Request claim processing failed: ${e?.message}`);
+            bgLogger.error({
+              message: "[BACKGROUND] Request claim processing failed: " + e?.message,
+              logLevel: LOG_LEVEL.INFO,
+              type: LOG_TYPES.BACKGROUND,
+            });
             sendResponse({ success: false, error: e?.message || String(e) });
           }
         } else {
-          ctx.bgLogger.error(`[BACKGROUND] REQUEST_CLAIM: Tab is not managed by extension`);
+          bgLogger.error({
+            message: "[BACKGROUND] REQUEST_CLAIM: Tab is not managed by extension",
+            logLevel: LOG_LEVEL.INFO,
+            type: LOG_TYPES.BACKGROUND,
+          });
           sendResponse({ success: false, error: "Tab is not managed by extension" });
         }
         break;
@@ -364,6 +511,11 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
 
           try {
             if (op === "REPLAY_PAGE_FETCH") {
+              bgLogger.info({
+                message: "[BACKGROUND] REPLAY_PAGE_FETCH: Executing script",
+                logLevel: LOG_LEVEL.INFO,
+                type: LOG_TYPES.BACKGROUND,
+              });
               await chrome.scripting.executeScript({
                 target: { tabId },
                 world: "MAIN",
@@ -372,7 +524,6 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
                     if (opts?.showAlert) {
                       // Use non-blocking console too in case alerts are suppressed
                       console.log("Fetching initial page…");
-                      alert("Fetching initial page…");
                     }
                     fetch(window.location.href, {
                       method: "GET",
@@ -385,20 +536,25 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
                       cache: "no-store",
                     }).catch(() => {});
                   } catch (e) {
-                    console.error("REPLAY_PAGE_FETCH failed", e);
+                    bgLogger.error({
+                      message: "[BACKGROUND] REPLAY_PAGE_FETCH failed: " + e?.message,
+                      logLevel: LOG_LEVEL.INFO,
+                      type: LOG_TYPES.BACKGROUND,
+                    });
                   }
                 },
                 args: [{ showAlert: !!data?.showAlert }],
               });
 
-              ctx.bgLogger?.info("INJECT_VIA_SCRIPTING: REPLAY_PAGE_FETCH executed in MAIN world");
+              bgLogger.info({
+                message: "[BACKGROUND] REPLAY_PAGE_FETCH executed in MAIN world",
+                logLevel: LOG_LEVEL.INFO,
+                type: LOG_TYPES.BACKGROUND,
+              });
               sendResponse({ success: true });
               break;
             }
 
-            // In src/background/messageRouter.js, inside INJECT_VIA_SCRIPTING case
-            // inside INJECT_VIA_SCRIPTING case
-            // src/background/messageRouter.js (inside INJECT_VIA_SCRIPTING case)
             if (op === "RUN_CUSTOM_INJECTION") {
               const code = String(data?.code || "");
               const results = await chrome.scripting.executeScript({
@@ -442,7 +598,7 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
                         ];
                         for (const name of names) {
                           try {
-                            const policy = trustedTypes.createPolicy(name, {
+                            const policy = window.trustedTypes.createPolicy(name, {
                               createScript: (s) => s,
                             });
                             const s = document.createElement("script");
@@ -490,14 +646,22 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
               });
 
               const result = results?.[0]?.result;
-              ctx.bgLogger?.info(
-                `INJECT_VIA_SCRIPTING: RUN_CUSTOM_INJECTION result: ${JSON.stringify(result)}`,
-              );
+              bgLogger.info({
+                message: "[BACKGROUND] RUN_CUSTOM_INJECTION result: " + JSON.stringify(result),
+                logLevel: LOG_LEVEL.INFO,
+                type: LOG_TYPES.BACKGROUND,
+                meta: { result },
+              });
               sendResponse({ success: true, result });
               break;
             }
           } catch (e) {
-            ctx.bgLogger?.error(`INJECT_VIA_SCRIPTING failed: ${e?.message}`);
+            bgLogger.error({
+              message: "[BACKGROUND] INJECT_VIA_SCRIPTING failed: " + e?.message,
+              logLevel: LOG_LEVEL.INFO,
+              type: LOG_TYPES.BACKGROUND,
+              meta: { e },
+            });
             sendResponse({ success: false, error: e?.message || String(e) });
           }
         } else {
@@ -506,12 +670,21 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
         break;
       }
       default: {
-        ctx.bgLogger.error(`[BACKGROUND] DEFAULT: Action not supported`);
+        bgLogger.error({
+          message: "[BACKGROUND] DEFAULT: Action not supported",
+          logLevel: LOG_LEVEL.INFO,
+          type: LOG_TYPES.BACKGROUND,
+        });
         sendResponse({ success: false, error: "Action not supported" });
       }
     }
   } catch (error) {
-    ctx.bgLogger.error(`[BACKGROUND] Error handling ${action}: ${error?.message}`);
+    bgLogger.error({
+      message: "[BACKGROUND] Error handling " + action + ": " + error?.message,
+      logLevel: LOG_LEVEL.INFO,
+      type: LOG_TYPES.BACKGROUND,
+      meta: { error },
+    });
     sendResponse({ success: false, error: error.message });
   }
   // Required for async response

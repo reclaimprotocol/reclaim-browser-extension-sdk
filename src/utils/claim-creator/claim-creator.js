@@ -6,8 +6,8 @@ import {
 } from "./params-extractor";
 import { MESSAGE_ACTIONS, MESSAGE_SOURCES } from "../constants";
 import { ensureOffscreenDocument } from "../offscreen-manager";
-import { debugLogger, DebugLogType } from "../logger";
 import { getUserLocationBasedOnIp } from "./get-dynamic-geo";
+import { EVENT_TYPES, LOG_LEVEL, LOG_TYPES } from "../logger/constants";
 
 // Generate Chrome Android user agent (adapted from reference code)
 const generateChromeAndroidUserAgent = (chromeMajorVersion = 135, isMobile = true) => {
@@ -24,7 +24,12 @@ const generateChromeAndroidUserAgent = (chromeMajorVersion = 135, isMobile = tru
   return `Mozilla/5.0 ${platform} ${engine} ${chromeVersionString}${mobileToken} ${safariCompat}`;
 };
 
-const getPrivateKeyFromOffscreen = () => {
+const getPrivateKeyFromOffscreen = (sessionId = "unknown", providerId = "unknown", bgLogger) => {
+  bgLogger.setContext({
+    sessionId: sessionId,
+    providerId: providerId,
+    type: LOG_TYPES.CLAIM_CREATION,
+  });
   return new Promise((resolve, reject) => {
     // Timeout after 10 seconds
     const callTimeout = setTimeout(() => {
@@ -45,17 +50,19 @@ const getPrivateKeyFromOffscreen = () => {
         chrome.runtime.onMessage.removeListener(messageListener);
 
         if (message.success && message.privateKey) {
-          debugLogger.info(
-            DebugLogType.CLAIM,
-            "[CLAIM-CREATOR] Received private key from offscreen document",
-          );
+          bgLogger.info({
+            message: "[CLAIM-CREATOR] Received private key from offscreen document",
+            logLevel: LOG_LEVEL.INFO,
+            type: LOG_TYPES.CLAIM_CREATION,
+          });
           resolve(message.privateKey);
         } else {
-          debugLogger.error(
-            DebugLogType.CLAIM,
-            "[CLAIM-CREATOR] Failed to get private key from offscreen:",
-            message.error,
-          );
+          bgLogger.error({
+            message:
+              "[CLAIM-CREATOR] Failed to get private key from offscreen document: " + message.error,
+            logLevel: LOG_LEVEL.INFO,
+            type: LOG_TYPES.CLAIM_CREATION,
+          });
           reject(
             new Error(
               message.error || "Unknown error getting private key from offscreen document.",
@@ -69,25 +76,31 @@ const getPrivateKeyFromOffscreen = () => {
 
     chrome.runtime.onMessage.addListener(messageListener);
 
-    debugLogger.info(
-      DebugLogType.CLAIM,
-      "[CLAIM-CREATOR] Requesting private key from offscreen document",
-    );
+    bgLogger.info({
+      message: "[CLAIM-CREATOR] Requesting private key from offscreen document",
+      logLevel: LOG_LEVEL.INFO,
+      type: LOG_TYPES.CLAIM_CREATION,
+    });
+
     chrome.runtime.sendMessage(
       {
         action: MESSAGE_ACTIONS.GET_PRIVATE_KEY,
         source: MESSAGE_SOURCES.BACKGROUND, // Assuming this script runs in background context
         target: MESSAGE_SOURCES.OFFSCREEN,
+        sessionId: sessionId,
+        providerId: providerId,
       },
       (response) => {
         if (chrome.runtime.lastError) {
           clearTimeout(callTimeout);
           chrome.runtime.onMessage.removeListener(messageListener);
-          debugLogger.error(
-            DebugLogType.CLAIM,
-            "[CLAIM-CREATOR] Error sending GET_PRIVATE_KEY message:",
-            chrome.runtime.lastError.message,
-          );
+          bgLogger.error({
+            message:
+              "[CLAIM-CREATOR] Error sending GET_PRIVATE_KEY message: " +
+              chrome.runtime.lastError.message,
+            logLevel: LOG_LEVEL.INFO,
+            type: LOG_TYPES.CLAIM_CREATION,
+          });
           reject(
             new Error(
               `Error sending message to offscreen document: ${chrome.runtime.lastError.message}`,
@@ -101,19 +114,49 @@ const getPrivateKeyFromOffscreen = () => {
   });
 };
 
-export const createClaimObject = async (request, providerData, sessionId, loginUrl) => {
-  debugLogger.info(DebugLogType.CLAIM, "[CLAIM-CREATOR] Creating claim object from request data");
+export const createClaimObject = async (
+  request,
+  providerData,
+  sessionId = "unknown",
+  providerId = "unknown",
+  loginUrl,
+  bgLogger,
+) => {
+  bgLogger.setContext({
+    sessionId: sessionId,
+    providerId: providerId,
+    type: LOG_TYPES.CLAIM_CREATION,
+  });
+
+  bgLogger.info({
+    message: "[CLAIM-CREATOR] Creating claim object from request data",
+    logLevel: LOG_LEVEL.INFO,
+    type: LOG_TYPES.CLAIM_CREATION,
+    eventType: EVENT_TYPES.CLAIM_CREATION_STARTED,
+  });
   // Ensure offscreen document is ready
   try {
-    debugLogger.info(DebugLogType.CLAIM, "[CLAIM-CREATOR] Ensuring offscreen document is ready...");
-    await ensureOffscreenDocument();
-    debugLogger.info(DebugLogType.CLAIM, "[CLAIM-CREATOR] Offscreen document is ready.");
+    await ensureOffscreenDocument(bgLogger);
+    bgLogger.info({
+      message: "[CLAIM-CREATOR] Offscreen document is ready.",
+      logLevel: LOG_LEVEL.INFO,
+      type: LOG_TYPES.CLAIM_CREATION,
+      eventType: EVENT_TYPES.OFFSCREEN_DOCUMENT_READY,
+    });
   } catch (error) {
-    debugLogger.error(
-      DebugLogType.CLAIM,
-      "[CLAIM-CREATOR] Failed to ensure offscreen document:",
-      error,
-    );
+    bgLogger.error({
+      message: "[CLAIM-CREATOR] Failed to ensure offscreen document: " + error?.message,
+      logLevel: LOG_LEVEL.INFO,
+      type: LOG_TYPES.CLAIM_CREATION,
+      eventType: EVENT_TYPES.OFFSCREEN_DOCUMENT_NOT_READY_EXCEPTION,
+      meta: {
+        error: error?.message,
+        request: request,
+        providerData: providerData,
+        sessionId: sessionId,
+        loginUrl: loginUrl,
+      },
+    });
     // Depending on requirements, you might want to throw error or handle differently
     throw new Error(`Failed to initialize offscreen document: ${error.message}`);
   }
@@ -149,7 +192,6 @@ export const createClaimObject = async (request, providerData, sessionId, loginU
 
   // Process headers - split between public and secret
   if (request.headers) {
-    debugLogger.info(DebugLogType.CLAIM, "[CLAIM-CREATOR] request.headers: ", request.headers);
     const publicHeaders = {
       "Sec-Fetch-Mode": "same-origin",
       "Sec-Fetch-Site": "same-origin",
@@ -168,10 +210,6 @@ export const createClaimObject = async (request, providerData, sessionId, loginU
       }
     });
 
-    // if (origin && !publicHeaders.Origin && !request.headers?.Origin) {
-    //   publicHeaders.Origin = origin;
-    // }
-
     if (Object.keys(publicHeaders).length > 0) {
       params.headers = publicHeaders;
     }
@@ -181,11 +219,6 @@ export const createClaimObject = async (request, providerData, sessionId, loginU
     }
   }
 
-  // Process body if available
-  // if (providerData?.bodySniff?.enabled && request.body) {
-  //   params.body = providerData?.bodySniff?.template;
-  // }
-
   if (request.body) {
     if (providerData?.bodySniff?.enabled) {
       params.body = providerData.bodySniff.template;
@@ -193,8 +226,6 @@ export const createClaimObject = async (request, providerData, sessionId, loginU
       params.body = request.body; // pass-through raw body
     }
   }
-
-  console.log(request.cookieStr, "request.cookieStr");
 
   // Process cookie string if available in request
   if (request.cookieStr) {
@@ -317,20 +348,30 @@ export const createClaimObject = async (request, providerData, sessionId, loginU
 
   let ownerPrivateKey;
   try {
-    ownerPrivateKey = await getPrivateKeyFromOffscreen();
+    ownerPrivateKey = await getPrivateKeyFromOffscreen(sessionId, providerId, bgLogger);
   } catch (error) {
-    debugLogger.error(DebugLogType.CLAIM, "[CLAIM-CREATOR] Could not obtain private key:", error);
     // Fallback or re-throw, depending on how critical the key is.
     // For now, let's re-throw to make the failure visible.
+    bgLogger.error({
+      message: "[CLAIM-CREATOR] Error obtaining owner private key: " + error.message,
+      logLevel: LOG_LEVEL.INFO,
+      type: LOG_TYPES.CLAIM_CREATION,
+      eventType: EVENT_TYPES.CLAIM_CREATION_FAILED,
+    });
     throw new Error(`Could not obtain owner private key: ${error.message}`);
   }
 
   let geoLocation = providerData?.geoLocation ?? "";
-  console.log(geoLocation, "geoLocation", providerData);
 
   if (geoLocation === "{{DYNAMIC_GEO}}") {
     geoLocation = await getUserLocationBasedOnIp();
   }
+
+  bgLogger.log({
+    message: "[CLAIM-CREATOR] Geo location: " + geoLocation,
+    logLevel: LOG_LEVEL.INFO,
+    type: LOG_TYPES.CLAIM_CREATION,
+  });
 
   params.geoLocation = geoLocation;
 
@@ -346,9 +387,18 @@ export const createClaimObject = async (request, providerData, sessionId, loginU
     },
   };
 
-  console.log(JSON.stringify(claimObject, null, 2));
+  bgLogger.info({
+    message: "[CLAIM-CREATOR] Claim object created successfully",
+    logLevel: LOG_LEVEL.INFO,
+    type: LOG_TYPES.CLAIM_CREATION,
+    eventType: EVENT_TYPES.CLAIM_CREATION_SUCCESS,
+  });
 
-  debugLogger.info(DebugLogType.CLAIM, "[CLAIM-CREATOR] Claim object created successfully");
+  bgLogger.log({
+    message: "[CLAIM-CREATOR] Claim object: " + JSON.stringify(claimObject, null, 2),
+    logLevel: LOG_LEVEL.ALL,
+    type: LOG_TYPES.CLAIM_CREATION,
+  });
 
   return claimObject;
 };

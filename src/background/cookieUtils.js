@@ -1,98 +1,16 @@
-// Cookie utilities for background script
-// Handles cookie fetching and filtering logic
+import { LOG_LEVEL, LOG_TYPES } from "../utils/logger";
 
-export async function getCookiesForUrl2(url, debugLogger, DebugLogType) {
+export async function getCookiesForUrl(url, bgLogger) {
   try {
     if (!chrome.cookies || !chrome.cookies.getAll) {
-      debugLogger.warn(DebugLogType.BACKGROUND, "[BACKGROUND] Chrome cookies API not available");
-      return null;
-    }
-
-    const urlObj = new URL(url);
-    const domain = urlObj.hostname;
-
-    const allCookies = [];
-
-    const exactDomainCookies = await chrome.cookies.getAll({ domain });
-
-    allCookies.push(...exactDomainCookies);
-
-    const domainParts = domain.split(".");
-    for (let i = 1; i < domainParts.length; i++) {
-      const parentDomain = "." + domainParts.slice(i).join(".");
-      try {
-        const parentCookies = await chrome.cookies.getAll({ domain: parentDomain });
-        allCookies.push(...parentCookies);
-      } catch (error) {
-        debugLogger.warn(
-          DebugLogType.BACKGROUND,
-          `[BACKGROUND] Could not get cookies for parent domain ${parentDomain}:`,
-          error,
-        );
-      }
-    }
-
-    try {
-      const urlCookies = await chrome.cookies.getAll({ url });
-      allCookies.push(...urlCookies);
-    } catch (error) {
-      debugLogger.warn(
-        DebugLogType.BACKGROUND,
-        `[BACKGROUND] Could not get cookies by URL ${url}:`,
-        error,
-      );
-    }
-
-    const uniqueCookies = [];
-    const cookieKeys = new Set();
-
-    for (const cookie of allCookies) {
-      const key = `${cookie.name}|${cookie.domain}|${cookie.path}`;
-      if (!cookieKeys.has(key)) {
-        const shouldInclude = shouldIncludeCookie(cookie, urlObj, debugLogger, DebugLogType);
-        if (shouldInclude) {
-          cookieKeys.add(key);
-          uniqueCookies.push(cookie);
-        }
-      }
-    }
-
-    if (uniqueCookies.length > 0) {
-      uniqueCookies.sort((a, b) => {
-        if (a.path.length !== b.path.length) {
-          return b.path.length - a.path.length;
-        }
-        return (a.creationDate || 0) - (b.creationDate || 0);
+      bgLogger.info({
+        message: "[BACKGROUND] Chrome cookies API not available",
+        logLevel: LOG_LEVEL.INFO,
+        type: LOG_TYPES.BACKGROUND,
+        meta: {
+          url: url,
+        },
       });
-
-      const cookieStr = uniqueCookies.map((c) => `${c.name}=${c.value}`).join("; ");
-      return cookieStr;
-    }
-
-    return null;
-  } catch (error) {
-    debugLogger.error(
-      DebugLogType.BACKGROUND,
-      "[BACKGROUND] Error getting cookies for URL:",
-      error,
-    );
-    return null;
-  }
-}
-
-// Drop-in replacement (MV3). No feature removals; only enhancements.
-// - Enumerates all cookie stores
-// - Collects exact+parent domains, url-based, and partitioned cookies
-// - Dedups (domain+path+name+partitionKey), prefers hostOnly & longer paths
-// - Returns a Cookie header string (name=value; ...)
-
-export async function getCookiesForUrl(url, debugLogger, DebugLogType) {
-  try {
-    if (!chrome.cookies || !chrome.cookies.getAll) {
-      debugLogger?.warn?.(
-        DebugLogType?.BACKGROUND,
-        "[BACKGROUND] Chrome cookies API not available",
-      );
       return null;
     }
 
@@ -161,12 +79,15 @@ export async function getCookiesForUrl(url, debugLogger, DebugLogType) {
       try {
         return await chrome.cookies.getAll(details);
       } catch (error) {
-        debugLogger?.warn?.(
-          DebugLogType?.BACKGROUND,
-          "[BACKGROUND] cookies.getAll failed for",
-          details,
-          error,
-        );
+        bgLogger.info({
+          message: "[BACKGROUND] cookies.getAll failed for details: ",
+          logLevel: LOG_LEVEL.INFO,
+          type: LOG_TYPES.BACKGROUND,
+          meta: {
+            details: details,
+            error: error?.message,
+          },
+        });
         return [];
       }
     };
@@ -206,7 +127,7 @@ export async function getCookiesForUrl(url, debugLogger, DebugLogType) {
 
     const localShouldInclude =
       typeof shouldIncludeCookie === "function"
-        ? (cookie) => shouldIncludeCookie(cookie, urlObj, debugLogger, DebugLogType)
+        ? (cookie) => shouldIncludeCookie(cookie, urlObj, bgLogger)
         : defaultShouldIncludeCookie;
 
     // Choose the "better" cookie if we see duplicates (same name+domain+path+partition)
@@ -303,16 +224,19 @@ export async function getCookiesForUrl(url, debugLogger, DebugLogType) {
     const cookieStr = uniqueCookies.map((c) => `${c.name}=${c.value}`).join("; ");
     return cookieStr || null;
   } catch (error) {
-    debugLogger?.error?.(
-      DebugLogType?.BACKGROUND,
-      "[BACKGROUND] Error getting cookies for URL:",
-      error,
-    );
+    bgLogger.error({
+      message: "[BACKGROUND] Error getting cookies for URL: " + error?.message,
+      logLevel: LOG_LEVEL.INFO,
+      type: LOG_TYPES.BACKGROUND,
+      meta: {
+        error: error?.message,
+      },
+    });
     return null;
   }
 }
 
-export function shouldIncludeCookie(cookie, urlObj, debugLogger, DebugLogType) {
+export function shouldIncludeCookie(cookie, urlObj, bgLogger) {
   try {
     // Check domain match
     const cookieDomain = cookie.domain.startsWith(".") ? cookie.domain.substring(1) : cookie.domain;
@@ -349,11 +273,14 @@ export function shouldIncludeCookie(cookie, urlObj, debugLogger, DebugLogType) {
 
     return true;
   } catch (error) {
-    debugLogger.warn(
-      DebugLogType.BACKGROUND,
-      "[BACKGROUND] Error checking cookie inclusion:",
-      error,
-    );
+    bgLogger.info({
+      message: "[BACKGROUND] Error checking cookie inclusion: " + error?.message,
+      logLevel: LOG_LEVEL.INFO,
+      type: LOG_TYPES.BACKGROUND,
+      meta: {
+        error: error?.message,
+      },
+    });
     return false;
   }
 }

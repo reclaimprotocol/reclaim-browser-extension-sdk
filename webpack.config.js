@@ -8,6 +8,7 @@ var webpack = require("webpack"),
   TerserPlugin = require("terser-webpack-plugin");
 var ReactRefreshWebpackPlugin = require("@pmmmwh/react-refresh-webpack-plugin");
 var NodePolyfillPlugin = require("node-polyfill-webpack-plugin");
+const { version } = require("./package.json");
 
 const ASSET_PATH = process.env.ASSET_PATH || "/";
 const isDevelopment = process.env.NODE_ENV !== "production";
@@ -121,6 +122,7 @@ const commonPlugins = [
     "process.env.NODE_ENV": JSON.stringify(env.NODE_ENV),
     "process.env.DEBUG": JSON.stringify(process.env.DEBUG || false),
     "process.env.EXTENSION_ID": JSON.stringify(env.EXTENSION_ID),
+    __SDK_VERSION__: JSON.stringify(version),
   }),
   new NodePolyfillPlugin(),
   new webpack.ProvidePlugin({ Buffer: ["buffer", "Buffer"], process: "process/browser.js" }),

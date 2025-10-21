@@ -78,61 +78,6 @@
        * @param {Response} response - The response object to parse
        * @returns {Object} - Parsed response with standardized format
        */
-      async parseResponse2(response) {
-        let responseBody;
-        let contentType = response.headers.get("content-type") || "";
-
-        if (response?.url?.includes("operationName=getProfileOracle")) {
-          const copy = response.clone(); // tee the stream
-          const contentType = copy.headers.get("content-type") || "";
-
-          console.log("contentType", contentType);
-          console.log("copyresponse", copy);
-
-          try {
-            const data = await copy.json(); // read the clone, not the original
-            console.log("responseBody", data);
-          } catch (e) {
-            console.log("json read error", e);
-          }
-        }
-
-        try {
-          // Check if the response body is already consumed
-          if (response.bodyUsed) {
-            responseBody = "[Response body already consumed]";
-          } else {
-            // Try to parse based on content type using the provided response directly
-            if (contentType.includes("text/") || contentType.includes("application/json")) {
-              try {
-                responseBody = await response.text();
-              } catch (textError) {
-                // If response body parsing fails, the body is consumed, we can't read it again
-                responseBody = "[Invalid response format]";
-              }
-            } else {
-              // For binary data, get as text but mark it as binary
-              const text = await response.text();
-              responseBody = text === "" ? "[Binary Data]" : text;
-            }
-          }
-        } catch (error) {
-          debug.error("Error parsing response:", error);
-          responseBody = `[Error reading response: ${error.message}]`;
-        }
-
-        return {
-          id: response.id || null,
-          url: response.url,
-          status: response.status,
-          statusText: response.statusText,
-          headers: Object.fromEntries(response.headers.entries()),
-          body: responseBody,
-          originalResponse: response,
-          timestamp: Date.now(),
-        };
-      }
-
       async parseResponse(response) {
         let responseBody;
         const url = response.url || "";
@@ -386,7 +331,6 @@
                   });
 
                   // Process response middlewares
-                  // console.log("responseObj", responseObj, requestInfo);
                   self
                     .processResponseMiddlewares(responseObj, requestInfo)
                     .catch((error) => debug.error("Error in response middleware:", error));

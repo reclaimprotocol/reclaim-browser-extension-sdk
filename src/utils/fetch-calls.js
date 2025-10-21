@@ -1,16 +1,6 @@
 import { API_ENDPOINTS, RECLAIM_SESSION_STATUS } from "./constants";
-import { loggerService, createContextLogger } from "./logger/LoggerService";
-import { LOG_TYPES, LOG_LEVEL } from "./logger/constants";
-
-// Default: INFO+ to console and backend
-loggerService.setConfig({
-  consoleEnabled: true,
-  backendEnabled: true,
-  consoleLevel: LOG_LEVEL.INFO,
-  backendLevel: LOG_LEVEL.INFO,
-  includeSensitiveToBackend: false,
-  debugMode: false, // set true to print every log to console
-});
+import { createContextLogger } from "./logger/LoggerService";
+import { EVENT_TYPES, LOG_LEVEL, LOG_TYPES } from "./logger/constants";
 
 export const fetchProviderData = async (providerId, sessionId, appId) => {
   const logger = createContextLogger({
@@ -27,11 +17,20 @@ export const fetchProviderData = async (providerId, sessionId, appId) => {
     if (!response.ok) {
       throw new Error("Failed to fetch provider data");
     }
-    logger.info("Successfully fetched provider data from the backend: " + JSON.stringify(response));
+    logger.info({
+      message: "Successfully fetched provider data from the backend: " + JSON.stringify(response),
+      logLevel: LOG_LEVEL.INFO,
+      type: LOG_TYPES.FETCH_DATA,
+    });
     const data = await response.json();
     return data?.providers;
   } catch (error) {
-    logger.error("[FETCH-CALLS] Error fetching provider data: " + error.toString());
+    logger.error({
+      message: "Error fetching provider data: " + error.toString(),
+      logLevel: LOG_LEVEL.ERROR,
+      type: LOG_TYPES.FETCH_DATA,
+      eventType: EVENT_TYPES.RECLAIM_PROVIDER_DATA_FETCH_ERROR,
+    });
     throw error;
   }
 };
@@ -54,12 +53,22 @@ export const updateSessionStatus = async (sessionId, status, providerId, appId) 
     if (!response.ok) {
       throw new Error("Failed to update session status");
     }
-    logger.info("Successfully updated session status: " + status);
+
+    logger.info({
+      message: "Successfully updated session status: " + status,
+      logLevel: LOG_LEVEL.INFO,
+      type: LOG_TYPES.FETCH_DATA,
+    });
 
     const res = await response.json();
     return res;
   } catch (error) {
-    logger.error("Error updating session status: " + error.toString());
+    logger.error({
+      message: "Error updating session status: " + error.toString(),
+      logLevel: LOG_LEVEL.ERROR,
+      type: LOG_TYPES.FETCH_DATA,
+      eventType: EVENT_TYPES.UPDATE_SESSION_STATUS_ERROR,
+    });
     throw error;
   }
 };
@@ -89,12 +98,21 @@ export const submitProofOnCallback = async (proofs, submitUrl, sessionId, provid
       await updateSessionStatus(sessionId, RECLAIM_SESSION_STATUS.PROOF_SUBMISSION_FAILED);
       throw new Error("Failed to submit proof to Callback and update session status");
     }
-    logger.info("Successfully submitted proof to Callback and updated session status");
+    logger.info({
+      message: "Successfully submitted proof to Callback and updated session status",
+      logLevel: LOG_LEVEL.INFO,
+      type: LOG_TYPES.FETCH_DATA,
+      eventType: EVENT_TYPES.SUBMITTING_PROOF_TO_CALLBACK_URL_SUCCESS,
+    });
 
     await updateSessionStatus(sessionId, RECLAIM_SESSION_STATUS.PROOF_SUBMITTED);
     return res;
   } catch (error) {
-    logger.error("[FETCH-CALLS] Error submitting proof to Callback: " + error.toString());
+    logger.error({
+      message: "Error submitting proof to Callback: " + error.toString(),
+      logLevel: LOG_LEVEL.ERROR,
+      type: LOG_TYPES.FETCH_DATA,
+    });
     throw error;
   }
 };

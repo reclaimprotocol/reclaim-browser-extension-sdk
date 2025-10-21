@@ -1,4 +1,4 @@
-import { LOGGING_ENDPOINTS, DEFAULT_LOG_CONFIG, LOG_LEVEL } from "./constants";
+import { LOGGING_ENDPOINTS, DEFAULT_LOG_CONFIG, LOG_LEVEL, LOG_LEVEL_MAP } from "./constants";
 import { LogEntry } from "./LogEntry";
 
 export class LoggerService {
@@ -31,7 +31,6 @@ export class LoggerService {
     }
   }
 
-  // Ensure stable deviceId across batches
   async getDeviceLoggingId() {
     if (this.deviceId) return this.deviceId;
     try {
@@ -58,76 +57,72 @@ export class LoggerService {
     if (this.logs.length >= this.maxBatchSize) this.flush();
   }
 
-  shouldLogToConsole(level, sensitive) {
-    if (!this.config.consoleEnabled) return false;
-    if (this.config.debugMode) return true; // print everything in debug mode
-    if (sensitive && !this.config.includeSensitiveToConsole) return false;
-    return level >= this.config.consoleLevel;
+  shouldLog(requestedLevel) {
+    const configLevel = LOG_LEVEL_MAP[this.config.logLevel] || LOG_LEVEL.INFO;
+
+    // Hierarchical check: request level must be <= config level
+    // If config is INFO (10), only INFO (10) passes
+    // If config is DEBUG (20), INFO (10) and DEBUG (20) pass
+    // If config is ALL (30), everything passes
+    return requestedLevel <= configLevel;
   }
 
-  shouldSendToBackend(level, sensitive) {
-    if (!this.config.backendEnabled) return false;
-    if (sensitive && !this.config.includeSensitiveToBackend) return false;
-    return level >= this.config.backendLevel;
-  }
-
-  emitToConsole(level, message, meta) {
-    const line = meta ? `${message} ${JSON.stringify(meta)}` : message;
-    switch (level) {
-      case LOG_LEVEL.ERROR:
-        console.error(line);
-        break;
-      case LOG_LEVEL.WARN:
-        console.warn(line);
-        break;
-      case LOG_LEVEL.INFO:
-        console.info(line);
-        break;
-      default:
-        console.log(line);
+  emitToConsole(logLevel, message, meta) {
+    const prefix = `[${logLevel}]`;
+    const line = `${prefix} ${message}`;
+    if (meta) {
+      console.log(line, meta);
+    } else {
+      console.log(line);
     }
   }
 
-  logWithLevel(
-    level,
-    { sessionId, providerId, appId, message, type, sensitive = false, meta, source, tabId, url },
-  ) {
-    const src = source || this.config.source;
-
-    if (this.shouldLogToConsole(level, sensitive)) {
-      this.emitToConsole(level, message, meta);
+  log({
+    message,
+    logLevel,
+    type,
+    eventType,
+    meta,
+    sessionId,
+    providerId,
+    appId,
+    source,
+    tabId,
+    url,
+  }) {
+    // Validate required fields
+    if (!message || !logLevel) {
+      console.error("Logger: message and logLevel are required");
+      return;
     }
 
-    if (this.shouldSendToBackend(level, sensitive)) {
-      const entry = new LogEntry({
-        sessionId,
-        providerId,
-        appId,
-        logLine: message,
-        type,
-        level,
-        sensitive,
-        source: src,
-        tabId,
-        url,
-        meta,
-        time: new Date(),
-      });
-      this.addLog(entry);
+    // Check if we should log this level
+    if (!this.shouldLog(logLevel)) {
+      return;
     }
-  }
 
-  debug(opts) {
-    this.logWithLevel(LOG_LEVEL.DEBUG, opts);
-  }
-  info(opts) {
-    this.logWithLevel(LOG_LEVEL.INFO, opts);
-  }
-  warn(opts) {
-    this.logWithLevel(LOG_LEVEL.WARN, opts);
-  }
-  error(opts) {
-    this.logWithLevel(LOG_LEVEL.ERROR, opts);
+    // Console output
+
+    if (this.config.consoleEnabled) {
+      this.emitToConsole(logLevel, message, meta);
+    }
+
+    // Backend logging
+    const entry = new LogEntry({
+      sessionId: sessionId || "unknown",
+      providerId: providerId || "unknown",
+      appId: appId || "unknown",
+      logLine: message,
+      type,
+      eventType,
+      logLevel,
+      source: source || this.config.source,
+      tabId,
+      url,
+      meta,
+      time: new Date(),
+    });
+    this.addLog(entry);
   }
 
   async flush() {
@@ -153,7 +148,7 @@ export class LoggerService {
     const deviceId = await this.getDeviceLoggingId();
     const formattedLogs = entries.map((e) => {
       const obj = e.toJson();
-      obj.deviceId = obj.deviceId || deviceId; // ensure present for server grouping
+      obj.deviceId = obj.deviceId || deviceId;
       return obj;
     });
 
@@ -188,7 +183,6 @@ export const createContextLogger = (initial = {}) => {
   };
 
   return {
-    // Read-only snapshot if you need it
     get context() {
       return { ...ctx };
     },
@@ -198,18 +192,23 @@ export const createContextLogger = (initial = {}) => {
       Object.assign(ctx, partial);
     },
 
-    // Level helpers
-    debug(msg, opts = {}) {
-      loggerService.debug({ ...ctx, message: msg, ...opts });
+    // Main log method - pass object with message, logLevel, and optional fields
+    log(opts) {
+      loggerService.log({ ...ctx, ...opts });
     },
-    info(msg, opts = {}) {
-      loggerService.info({ ...ctx, message: msg, ...opts });
+
+    // Convenience methods (optional, can be removed if you only want .log())
+    info(opts = {}) {
+      loggerService.log({ ...ctx, logLevel: "INFO", ...opts });
     },
-    warn(msg, opts = {}) {
-      loggerService.warn({ ...ctx, message: msg, ...opts });
+    debug(opts = {}) {
+      loggerService.log({ ...ctx, logLevel: "DEBUG", ...opts });
     },
-    error(msg, opts = {}) {
-      loggerService.error({ ...ctx, message: msg, ...opts });
+    all(opts = {}) {
+      loggerService.log({ ...ctx, logLevel: "ALL", ...opts });
+    },
+    error(opts = {}) {
+      loggerService.log({ ...ctx, logLevel: "ALL", ...opts });
     },
   };
 };
