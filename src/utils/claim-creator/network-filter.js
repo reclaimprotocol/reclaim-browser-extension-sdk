@@ -207,25 +207,12 @@ export const filterRequest = (request, filterCriteria, parameters = {}, contentL
       return false;
     }
 
-    contentLogger.info({
-      message: "[NETWORK-FILTER] Request matched the request filtering criteria",
-      logLevel: LOG_LEVEL.INFO,
-      type: LOG_TYPES.CONTENT,
-      eventType: EVENT_TYPES.REQUEST_MATCHED,
-    });
-
     // Then check if response matches (if we have response data)
     if (
       request.responseText &&
       filterCriteria.responseMatches &&
       !matchesResponseCriteria(request.responseText, filterCriteria.responseMatches, parameters)
     ) {
-      contentLogger.info({
-        message: "[NETWORK-FILTER] Response did not match the response filtering criteria",
-        logLevel: LOG_LEVEL.INFO,
-        type: LOG_TYPES.CONTENT,
-        eventType: EVENT_TYPES.RESPONSE_MATCH_FAILED,
-      });
       return false;
     }
 
