@@ -247,7 +247,7 @@ export default function ReclaimDemo() {
 
       reclaimExtensionSDK.setLogConfig({
         logLevel: "ALL",
-        consoleEnabled: false,
+        consoleEnabled: true,
       }, EXTENSION_ID);
 
       // request.setAppCallbackUrl("https://6cf90f1e87f7.ngrok-free.app/receive-proofs");

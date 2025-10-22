@@ -126,7 +126,7 @@
               url,
               options: {
                 ...options,
-                method: options.method || "GET",
+                method: options?.method?.toUpperCase() || "GET",
                 headers: options.headers || {},
               },
             };
@@ -454,7 +454,10 @@
         const combinedData = {
           request: {
             url: url,
-            method: typeof request.options.method === "string" ? request.options.method : "GET",
+            method:
+              typeof request.options.method === "string"
+                ? request.options.method?.toUpperCase()
+                : "GET",
             headers: extractHeaders(request.options.headers),
             body: extractBody(request.options.body),
           },
