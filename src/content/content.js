@@ -4,7 +4,7 @@ import "../utils/polyfills";
 import { RECLAIM_SDK_ACTIONS, MESSAGE_ACTIONS, MESSAGE_SOURCES } from "../utils/constants";
 import { createProviderVerificationPopup } from "./components/reclaim-provider-verification-popup";
 import { filterRequest } from "../utils/claim-creator";
-import { createContextLogger } from "../utils/logger/LoggerService";
+import { createContextLogger, loggerService } from "../utils/logger/LoggerService";
 import { LOG_TYPES, LOG_LEVEL, EVENT_TYPES } from "../utils/logger/constants";
 
 const contentLogger = createContextLogger({
@@ -305,6 +305,21 @@ class ReclaimContentScript {
       };
       try {
         chrome.runtime.onMessage.addListener(this._boundChromeHandler);
+      } catch {}
+
+      // Load and live-sync log config
+      try {
+        const { LOG_CONFIG_STORAGE_KEY } = require("../utils/logger/constants");
+        chrome.storage.local.get([LOG_CONFIG_STORAGE_KEY], (res) => {
+          const cfg = res?.[LOG_CONFIG_STORAGE_KEY];
+          if (cfg && typeof cfg === "object") loggerService.setConfig(cfg);
+        });
+        chrome.storage.onChanged.addListener((changes, area) => {
+          if (area === "local" && changes[LOG_CONFIG_STORAGE_KEY]) {
+            const newCfg = changes[LOG_CONFIG_STORAGE_KEY].newValue || {};
+            loggerService.setConfig(newCfg);
+          }
+        });
       } catch {}
     } else {
       this._boundWindowHandler = this.handleWindowMessage.bind(this);
@@ -757,6 +772,23 @@ class ReclaimContentScript {
         },
         "*",
       );
+    }
+
+    if (action === RECLAIM_SDK_ACTIONS.SET_LOG_CONFIG && data?.config) {
+      if (!this.checkExtensionId(extensionID)) {
+        return;
+      }
+      try {
+        // Immediate local apply for this content context
+        loggerService.setConfig(data.config);
+      } catch {}
+
+      try {
+        // Persist into storage so all contexts update via onChanged
+        const { LOG_CONFIG_STORAGE_KEY } = require("../utils/logger/constants");
+        chrome.storage.local.set({ [LOG_CONFIG_STORAGE_KEY]: data.config });
+      } catch {}
+      return;
     }
 
     // Handle provider ID request from injection script

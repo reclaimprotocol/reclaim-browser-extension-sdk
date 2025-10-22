@@ -3,6 +3,7 @@ import { reclaimExtensionSDK } from '@reclaimprotocol/browser-extension-sdk';
 import './ReclaimDemo.css';
 
 const PROVIDERS = [
+  {id: '47a84ec8-00fa-4628-b6d0-02e26af7f4f1', name: "Trex: OKXX"},
   {id: 'aea48d15-2ce7-4571-a1c9-d47ab99487a9', name: "Trex Youtube"},
   {id: '26387e16-6537-4374-8b71-96d68067b28e', name: "Trex Binance New"},
   {id: '0b212efa-8d96-42b7-82c2-ea69410224b5', name: 'Trex: Asterdex'},
@@ -243,6 +244,11 @@ export default function ReclaimDemo() {
         extensionID: EXTENSION_ID,
         // callbackUrl: 'https://your.server/receive-proofs' // optional
       });
+
+      reclaimExtensionSDK.setLogConfig({
+        logLevel: "ALL",
+        consoleEnabled: false,
+      }, EXTENSION_ID);
 
       // request.setAppCallbackUrl("https://6cf90f1e87f7.ngrok-free.app/receive-proofs");
       // request.setParams({ userProfileLink: "https://steamcommunity.com/id/Sa2199/" });

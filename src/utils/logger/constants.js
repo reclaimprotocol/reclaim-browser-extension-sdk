@@ -80,3 +80,5 @@ export const DEFAULT_LOG_CONFIG = {
   consoleEnabled: false, // Enable/disable console logging
   source: "reclaim-extension-sdk",
 };
+
+export const LOG_CONFIG_STORAGE_KEY = "reclaim_extension_sdk_log_config";

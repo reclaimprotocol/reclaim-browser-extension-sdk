@@ -85,6 +85,21 @@ export default function initBackground() {
     type: LOG_TYPES.BACKGROUND,
   });
 
+  // Load and live-sync log config
+  try {
+    const { LOG_CONFIG_STORAGE_KEY } = require("../utils/logger/constants");
+    chrome.storage.local.get([LOG_CONFIG_STORAGE_KEY], (res) => {
+      const cfg = res?.[LOG_CONFIG_STORAGE_KEY];
+      if (cfg && typeof cfg === "object") ctx.loggerService.setConfig(cfg);
+    });
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === "local" && changes[LOG_CONFIG_STORAGE_KEY]) {
+        const newCfg = changes[LOG_CONFIG_STORAGE_KEY].newValue || {};
+        ctx.loggerService.setConfig(newCfg);
+      }
+    });
+  } catch {}
+
   bgLogger.info({
     message: "Background initialized INFO",
     logLevel: LOG_LEVEL.INFO,

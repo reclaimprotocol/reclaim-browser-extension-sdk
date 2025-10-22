@@ -425,8 +425,29 @@ class ReclaimExtensionSDK {
     return ReclaimExtensionProofRequest.fromJsonString(json, options);
   }
 
-  setLogConfig(config) {
+  setLogConfig(config, extensionID) {
     loggerService.setConfig(config);
+
+    // In extension contexts, persist to storage (propagates to all contexts)
+    try {
+      if (this._mode === "extension" && typeof chrome !== "undefined" && chrome.storage?.local) {
+        const { LOG_CONFIG_STORAGE_KEY } = require("./utils/logger/constants");
+        chrome.storage.local.set({
+          [LOG_CONFIG_STORAGE_KEY]: { ...loggerService.config, ...config },
+        });
+        return;
+      }
+    } catch {}
+
+    // In web page context, ask the content script to persist it
+    window.postMessage(
+      {
+        action: RECLAIM_SDK_ACTIONS.SET_LOG_CONFIG,
+        extensionID,
+        data: { config },
+      },
+      "*",
+    );
   }
 
   getLogConfig() {

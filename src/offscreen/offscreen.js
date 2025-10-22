@@ -53,6 +53,22 @@ class OffscreenProofGenerator {
       type: LOG_TYPES.OFFSCREEN,
     });
     chrome.runtime.onMessage.addListener(this.handleMessage.bind(this));
+
+    // Load and live-sync log config
+    try {
+      const { LOG_CONFIG_STORAGE_KEY } = require("../utils/logger/constants");
+      chrome.storage.local.get([LOG_CONFIG_STORAGE_KEY], (res) => {
+        const cfg = res?.[LOG_CONFIG_STORAGE_KEY];
+        if (cfg && typeof cfg === "object") loggerService.setConfig(cfg);
+      });
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === "local" && changes[LOG_CONFIG_STORAGE_KEY]) {
+          const newCfg = changes[LOG_CONFIG_STORAGE_KEY].newValue || {};
+          loggerService.setConfig(newCfg);
+        }
+      });
+    } catch {}
+
     this.sendReadySignal();
   }
 
