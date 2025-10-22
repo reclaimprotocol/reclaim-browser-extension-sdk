@@ -1,4 +1,10 @@
-import { LOGGING_ENDPOINTS, DEFAULT_LOG_CONFIG, LOG_LEVEL, LOG_LEVEL_MAP } from "./constants";
+import {
+  LOGGING_ENDPOINTS,
+  DEFAULT_LOG_CONFIG,
+  LOG_LEVEL,
+  LOG_LEVEL_MAP,
+  LOG_CONFIG_STORAGE_KEY,
+} from "./constants";
 import { LogEntry } from "./LogEntry";
 
 export class LoggerService {
@@ -11,6 +17,24 @@ export class LoggerService {
 
     this.config = { ...DEFAULT_LOG_CONFIG };
     this.deviceId = null;
+
+    // Load and live-sync config from chrome.storage when available
+    try {
+      if (typeof chrome !== "undefined" && chrome.storage?.local) {
+        chrome.storage.local.get([LOG_CONFIG_STORAGE_KEY], (res) => {
+          const cfg = res?.[LOG_CONFIG_STORAGE_KEY];
+          if (cfg && typeof cfg === "object") {
+            this.setConfig(cfg);
+          }
+        });
+        chrome.storage.onChanged.addListener((changes, area) => {
+          if (area === "local" && changes[LOG_CONFIG_STORAGE_KEY]) {
+            const newCfg = changes[LOG_CONFIG_STORAGE_KEY].newValue || {};
+            this.setConfig(newCfg);
+          }
+        });
+      }
+    } catch {}
 
     this.startFlushInterval();
   }

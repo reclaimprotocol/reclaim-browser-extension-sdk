@@ -72,25 +72,22 @@ function matchesRequestCriteria(request, filterCriteria, parameters = {}) {
 
     if (type === "REGEX" || type === "TEMPLATE") {
       const { pattern } = convertTemplateToRegex(url, parameters);
+
       return new RegExp(pattern).test(request.url);
     }
 
-    // Unknown urlType → fail safe
     return false;
   })();
 
   if (!urlMatches) return false;
-
-  // 2) Method match
-  if (request.method !== filterCriteria.method) {
+  if (request.method?.toUpperCase() !== filterCriteria.method?.toUpperCase()) {
     return false;
   }
 
   // 3) Body match (only if enabled)
   const bodyMatches = (() => {
     const sniff = filterCriteria.bodySniff;
-    if (!sniff || !sniff.enabled) return true; // no constraint
-
+    if (!sniff || !sniff.enabled) return true;
     const bodyTemplate = sniff.template ?? "";
     const requestBody =
       typeof request.body === "string" ? request.body : JSON.stringify(request.body ?? {});
