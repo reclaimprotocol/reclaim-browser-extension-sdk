@@ -521,33 +521,38 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
                 world: "MAIN",
                 func: (opts) => {
                   try {
+                    const url = window.location.href;
+
+                    // Prefer XHR to avoid any site reassignments of window.fetch
+                    const xhr = new XMLHttpRequest();
+                    xhr.open("GET", url, true);
+                    xhr.withCredentials = true; // same-origin anyway, keeps cookies
+                    xhr.setRequestHeader(
+                      "accept",
+                      "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+                    );
+                    xhr.setRequestHeader("accept-language", "en-GB,en;q=0.5");
+                    xhr.setRequestHeader("cache-control", "no-store");
+                    // Optional debug marker
+                    xhr.setRequestHeader("x-reclaim-replay", "1");
+
+                    xhr.onreadystatechange = function () {
+                      // No-op; interception happens in the patched XHR prototype
+                    };
+                    xhr.send(null);
+
                     if (opts?.showAlert) {
-                      // Use non-blocking console too in case alerts are suppressed
-                      console.log("Fetching initial page…");
+                      console.log("Replaying via XHR…", url);
                     }
-                    fetch(window.location.href, {
-                      method: "GET",
-                      headers: {
-                        accept:
-                          "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-                        "accept-language": "en-GB,en;q=0.5",
-                      },
-                      credentials: "include",
-                      cache: "no-store",
-                    }).catch(() => {});
                   } catch (e) {
-                    bgLogger.error({
-                      message: "[BACKGROUND] REPLAY_PAGE_FETCH failed: " + e?.message,
-                      logLevel: LOG_LEVEL.INFO,
-                      type: LOG_TYPES.BACKGROUND,
-                    });
+                    console.log("REPLAY_PAGE_FETCH XHR failed:", e && e.message);
                   }
                 },
                 args: [{ showAlert: !!data?.showAlert }],
               });
 
               bgLogger.info({
-                message: "[BACKGROUND] REPLAY_PAGE_FETCH executed in MAIN world",
+                message: "[BACKGROUND] REPLAY_PAGE_FETCH executed in MAIN world (XHR)",
                 logLevel: LOG_LEVEL.INFO,
                 type: LOG_TYPES.BACKGROUND,
               });
