@@ -839,6 +839,22 @@ class ReclaimContentScript {
           data: data,
         },
         (response) => {
+          // In MV3, the service worker message port can close before sendResponse
+          // is called (e.g. while awaiting fetchProviderData). This does NOT mean
+          // verification failed — the background is still running. Suppress the
+          // lastError so Chrome doesn't log an unchecked-lastError warning, and
+          // let the background signal completion via PROOF_SUBMITTED later.
+          if (chrome.runtime.lastError) {
+            contentLogger.info({
+              message:
+                "[Content] sendMessage port closed before response (MV3 SW timing): " +
+                chrome.runtime.lastError.message,
+              logLevel: LOG_LEVEL.INFO,
+              type: LOG_TYPES.CONTENT,
+            });
+            return;
+          }
+
           // Store parameters and session ID for later use
           if (data.parameters) {
             this.parameters = data.parameters;
