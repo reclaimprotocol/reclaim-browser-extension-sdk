@@ -206,6 +206,20 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
                 type: LOG_TYPES.BACKGROUND,
               });
               sendResponse({ success: false, error: "Another verification is in progress" });
+              // Send terminal failure to original tab so SDK Promise doesn't hang
+              if (sender.tab?.id) {
+                chrome.tabs
+                  .sendMessage(sender.tab.id, {
+                    action: ctx.MESSAGE_ACTIONS.PROOF_GENERATION_FAILED,
+                    source: ctx.MESSAGE_SOURCES.BACKGROUND,
+                    target: ctx.MESSAGE_SOURCES.CONTENT_SCRIPT,
+                    data: {
+                      error: "Another verification is in progress",
+                      sessionId: data.sessionId,
+                    },
+                  })
+                  .catch(() => {});
+              }
               break;
             }
           }
@@ -220,9 +234,28 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
             type: LOG_TYPES.BACKGROUND,
           });
 
-          const result = await sessionManager.startVerification(ctx, data);
-
-          sendResponse({ success: true, result });
+          try {
+            const result = await sessionManager.startVerification(ctx, data);
+            sendResponse({ success: true, result });
+          } catch (startError) {
+            bgLogger.error({
+              message: "[BACKGROUND] startVerification failed: " + startError?.message,
+              logLevel: LOG_LEVEL.INFO,
+              type: LOG_TYPES.BACKGROUND,
+            });
+            sendResponse({ success: false, error: startError.message });
+            // startVerification clears ctx.sessionId before it can throw,
+            // so restore it from the original request data before calling
+            // failSession — otherwise the terminal event carries sessionId:null
+            // and the SDK ignores it.
+            if (data.sessionId) {
+              ctx.sessionId = data.sessionId;
+            }
+            // Send terminal failure event so the SDK Promise doesn't hang.
+            // The content script no longer fires VERIFICATION_FAILED from the
+            // sendMessage callback, so we must dispatch it through failSession.
+            await sessionManager.failSession(ctx, startError.message);
+          }
         } else {
           sendResponse({ success: false, error: "Action not supported" });
         }

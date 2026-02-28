@@ -839,11 +839,7 @@ class ReclaimContentScript {
           data: data,
         },
         (response) => {
-          // In MV3, the service worker message port can close before sendResponse
-          // is called (e.g. while awaiting fetchProviderData). This does NOT mean
-          // verification failed — the background is still running. Suppress the
-          // lastError so Chrome doesn't log an unchecked-lastError warning, and
-          // let the background signal completion via PROOF_SUBMITTED later.
+          // Suppress chrome.runtime.lastError to avoid unchecked-lastError warnings.
           if (chrome.runtime.lastError) {
             contentLogger.info({
               message:
@@ -852,7 +848,6 @@ class ReclaimContentScript {
               logLevel: LOG_LEVEL.INFO,
               type: LOG_TYPES.CONTENT,
             });
-            return;
           }
 
           // Store parameters and session ID for later use
@@ -875,7 +870,11 @@ class ReclaimContentScript {
             this.sessionId = data.sessionId;
           }
 
-          // Send confirmation back to SDK
+          // This callback is ONLY used to signal VERIFICATION_STARTED.
+          // We never fire VERIFICATION_FAILED here because the background
+          // may still be running (MV3 SW timing, async fetchProviderData,
+          // etc.). The real terminal outcome is delivered through separate
+          // message channels: PROOF_SUBMITTED or PROOF_GENERATION_FAILED.
           if (response && response.success) {
             window.postMessage(
               {
@@ -885,21 +884,14 @@ class ReclaimContentScript {
               },
               "*",
             );
-          } else {
-            window.postMessage(
-              {
-                action: RECLAIM_SDK_ACTIONS.VERIFICATION_FAILED,
-                messageId: messageId,
-                error: response?.error || "Failed to start verification",
-              },
-              "*",
-            );
+          } else if (response && !response.success) {
             contentLogger.info({
-              message: "[Content] Verification failed",
+              message:
+                "[Content] START_VERIFICATION response indicated failure, awaiting terminal event",
               logLevel: LOG_LEVEL.INFO,
               type: LOG_TYPES.CONTENT,
               meta: {
-                error: response?.error || "Failed to start verification",
+                error: response?.error || "unknown",
               },
             });
           }
