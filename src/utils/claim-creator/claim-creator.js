@@ -151,10 +151,7 @@ export const createClaimObject = async (
       eventType: EVENT_TYPES.OFFSCREEN_DOCUMENT_NOT_READY_EXCEPTION,
       meta: {
         error: error?.message,
-        request: request,
-        providerData: providerData,
         sessionId: sessionId,
-        loginUrl: loginUrl,
       },
     });
     // Depending on requirements, you might want to throw error or handle differently
@@ -392,12 +389,6 @@ export const createClaimObject = async (
     logLevel: LOG_LEVEL.INFO,
     type: LOG_TYPES.CLAIM_CREATION,
     eventType: EVENT_TYPES.CLAIM_CREATION_SUCCESS,
-  });
-
-  bgLogger.log({
-    message: "[CLAIM-CREATOR] Claim object: " + JSON.stringify(claimObject, null, 2),
-    logLevel: LOG_LEVEL.ALL,
-    type: LOG_TYPES.CLAIM_CREATION,
   });
 
   return claimObject;
