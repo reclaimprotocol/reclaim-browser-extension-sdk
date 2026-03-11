@@ -145,11 +145,8 @@ export default function initBackground() {
         logLevel: LOG_LEVEL.ALL,
         type: LOG_TYPES.BACKGROUND,
         meta: {
-          request: request,
-          criteria: criteria,
           sessionId: sessionId,
-          loginUrl: loginUrl,
-          cookies: cookies,
+          url: request.url,
         },
       });
 
