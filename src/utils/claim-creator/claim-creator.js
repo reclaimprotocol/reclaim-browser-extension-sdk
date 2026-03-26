@@ -121,6 +121,7 @@ export const createClaimObject = async (
   providerId = "unknown",
   loginUrl,
   bgLogger,
+  context,
 ) => {
   bgLogger.setContext({
     sessionId: sessionId,
@@ -386,6 +387,11 @@ export const createClaimObject = async (
       url: "wss://attestor.reclaimprotocol.org/ws",
     },
   };
+
+  // Include user-supplied context (contextAddress & contextMessage) if provided
+  if (context && typeof context === "object" && Object.keys(context).length > 0) {
+    claimObject.context = context;
+  }
 
   bgLogger.info({
     message: "[CLAIM-CREATOR] Claim object created successfully",

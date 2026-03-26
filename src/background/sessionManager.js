@@ -9,6 +9,7 @@ export async function startVerification(ctx, templateData) {
     // clear all the member variables
     ctx.providerData = null;
     ctx.parameters = {};
+    ctx.context = null;
     ctx.providerId = null;
     ctx.appId = null;
     ctx.sessionId = null;
@@ -52,6 +53,18 @@ export async function startVerification(ctx, templateData) {
     ctx.providerId = templateData.providerId;
     if (templateData.parameters) {
       ctx.parameters = templateData.parameters;
+    }
+
+    // Store user-supplied context (contextAddress & contextMessage) for claim creation
+    if (templateData.context) {
+      try {
+        ctx.context =
+          typeof templateData.context === "string"
+            ? JSON.parse(templateData.context)
+            : templateData.context;
+      } catch {
+        ctx.context = null;
+      }
     }
 
     // callbackUrl optional
@@ -696,6 +709,7 @@ export async function cancelSession(ctx) {
     ctx.isProcessingQueue = false;
     ctx.providerData = null;
     ctx.parameters = {};
+    ctx.context = null;
     ctx.providerId = null;
     ctx.appId = null;
     ctx.sessionId = null;
