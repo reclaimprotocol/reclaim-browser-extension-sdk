@@ -61,6 +61,7 @@ window.Reclaim.reportProviderError = function (msg) {
 
 window.Reclaim.requestClaim = function (rdObject) {
   try {
+    console.log("Reclaim.requestClaim rdObject", rdObject);
     window.postMessage({ action: "RECLAIM_REQUEST_CLAIM", data: { rdObject } }, "*");
   } catch (e) {
     console.error("Reclaim.requestClaim error:", e);

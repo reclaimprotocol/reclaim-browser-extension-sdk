@@ -4,15 +4,10 @@ import "../utils/polyfills";
 import { RECLAIM_SDK_ACTIONS, MESSAGE_ACTIONS, MESSAGE_SOURCES } from "../utils/constants";
 import { createProviderVerificationPopup } from "./components/reclaim-provider-verification-popup";
 import { filterRequest } from "../utils/claim-creator";
-import { createContextLogger, loggerService } from "../utils/logger/LoggerService";
-import { LOG_TYPES, LOG_LEVEL, EVENT_TYPES } from "../utils/logger/constants";
+import { createRemoteLogger } from "../utils/logger/RemoteLogger";
+import { LOG_CONFIG_STORAGE_KEY } from "../utils/logger/constants";
 
-const contentLogger = createContextLogger({
-  sessionId: "unknown",
-  providerId: "unknown",
-  appId: "unknown",
-  source: "reclaim-extension-sdk",
-});
+const logger = createRemoteLogger("content");
 
 // Create a flag to track if we should initialize
 let shouldInitialize = false;
@@ -160,11 +155,7 @@ try {
           "*",
         );
       } catch {}
-      contentLogger.info({
-        message: "[CONTENT] Proof submitted",
-        logLevel: LOG_LEVEL.INFO,
-        type: LOG_TYPES.CONTENT,
-      });
+      logger.info("[CONTENT] Proof submitted", "content.proof");
       sendResponse?.({ success: true });
       return true;
     }
@@ -182,11 +173,7 @@ try {
           "*",
         );
       } catch {}
-      contentLogger.info({
-        message: "[CONTENT] Proof submission failed",
-        logLevel: LOG_LEVEL.INFO,
-        type: LOG_TYPES.CONTENT,
-      });
+      logger.info("[CONTENT] Proof submission failed", "content.proof");
       sendResponse?.({ success: true });
       return true;
     }
@@ -306,21 +293,6 @@ class ReclaimContentScript {
       try {
         chrome.runtime.onMessage.addListener(this._boundChromeHandler);
       } catch {}
-
-      // Load and live-sync log config
-      try {
-        const { LOG_CONFIG_STORAGE_KEY } = require("../utils/logger/constants");
-        chrome.storage.local.get([LOG_CONFIG_STORAGE_KEY], (res) => {
-          const cfg = res?.[LOG_CONFIG_STORAGE_KEY];
-          if (cfg && typeof cfg === "object") loggerService.setConfig(cfg);
-        });
-        chrome.storage.onChanged.addListener((changes, area) => {
-          if (area === "local" && changes[LOG_CONFIG_STORAGE_KEY]) {
-            const newCfg = changes[LOG_CONFIG_STORAGE_KEY].newValue || {};
-            loggerService.setConfig(newCfg);
-          }
-        });
-      } catch {}
     } else {
       this._boundWindowHandler = this.handleWindowMessage.bind(this);
       window.addEventListener("message", this._boundWindowHandler);
@@ -328,9 +300,6 @@ class ReclaimContentScript {
   }
 
   init() {
-    // Listen for messages from the web page
-    // window.addEventListener("message", this.handleWindowMessage.bind(this));
-
     if (!shouldInitialize) {
       return;
     }
@@ -371,19 +340,10 @@ class ReclaimContentScript {
               this.providerId = response.data.providerId || "unknown";
               this.appId = response.data.appId || "unknown";
 
-              contentLogger.setContext({
-                sessionId: this.sessionId,
-                providerId: this.providerId,
-                appId: this.appId,
-                type: LOG_TYPES.CONTENT,
-              });
-
-              contentLogger.info({
-                message:
-                  "[Content] Provider data received from background script and will proceed with network filtering.",
-                logLevel: LOG_LEVEL.INFO,
-                type: LOG_TYPES.CONTENT,
-              });
+              logger.info(
+                "[Content] Provider data received from background script",
+                "content.provider",
+              );
 
               // Trigger one-time page fetch if replay is allowed
               if (!this.providerData?.disableRequestReplay) {
@@ -442,13 +402,6 @@ class ReclaimContentScript {
   handleMessage(message, sender, sendResponse) {
     const { action, data, source } = message;
 
-    contentLogger.setContext({
-      sessionId: this.sessionId,
-      providerId: this.providerId,
-      appId: this.appId,
-      type: LOG_TYPES.CONTENT,
-    });
-
     switch (action) {
       case MESSAGE_ACTIONS.SHOULD_INITIALIZE:
         // ignore this message since we already handle it in the initialization check
@@ -457,12 +410,7 @@ class ReclaimContentScript {
       case MESSAGE_ACTIONS.PROVIDER_DATA_READY:
         // Only process provider data if this is a managed tab
         if (!this.isManagedTab) {
-          contentLogger.info({
-            message: "[Content] Tab is not managed by extension",
-            logLevel: LOG_LEVEL.INFO,
-            type: LOG_TYPES.CONTENT,
-            eventType: EVENT_TYPES.TAB_NOT_MANAGED_BY_EXTENSION_EXCEPTION,
-          });
+          logger.info("[Content] Tab is not managed by extension", "content.tab");
           sendResponse({ success: false, message: "Tab is not managed by extension" });
           break;
         }
@@ -497,12 +445,10 @@ class ReclaimContentScript {
 
         this.setupUrlListener();
 
-        contentLogger.info({
-          message:
-            "[Content] Provider data received from background script and starting network filtering.",
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.CONTENT,
-        });
+        logger.info(
+          "[Content] Provider data received, starting network filtering",
+          "content.provider",
+        );
 
         sendResponse({ success: true });
         break;
@@ -519,12 +465,7 @@ class ReclaimContentScript {
           (response) => {
             if (!response.success || !response.isManaged) {
               // This tab is not managed by the extension, don't show popup
-              contentLogger.info({
-                message: "[Content] Tab is not managed by extension",
-                logLevel: LOG_LEVEL.INFO,
-                type: LOG_TYPES.CONTENT,
-                eventType: EVENT_TYPES.TAB_NOT_MANAGED_BY_EXTENSION_EXCEPTION,
-              });
+              logger.info("[Content] Tab is not managed by extension", "content.tab");
               sendResponse({ success: false, message: "Tab is not managed by extension" });
               return;
             }
@@ -532,11 +473,7 @@ class ReclaimContentScript {
             // Only proceed with popup creation if this is a managed tab
             if (this.verificationPopup) {
               try {
-                contentLogger.info({
-                  message: "[Content] Removing existing popup",
-                  logLevel: LOG_LEVEL.INFO,
-                  type: LOG_TYPES.CONTENT,
-                });
+                logger.info("[Content] Removing existing popup", "content.popup");
                 document.body.removeChild(this.verificationPopup.element);
               } catch (e) {
                 // Silent error handling
@@ -598,11 +535,7 @@ class ReclaimContentScript {
         if (this.verificationPopup) {
           this.verificationPopup.handleClaimCreationRequested(data.requestHash);
         }
-        contentLogger.info({
-          message: "[Content] Claim creation requested",
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.CONTENT,
-        });
+        logger.info("[Content] Claim creation requested", "content.claim");
         sendResponse({ success: true });
         break;
 
@@ -610,11 +543,7 @@ class ReclaimContentScript {
         if (this.verificationPopup) {
           this.verificationPopup.handleClaimCreationSuccess(data.requestHash);
         }
-        contentLogger.info({
-          message: "[Content] Claim creation success",
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.CONTENT,
-        });
+        logger.info("[Content] Claim creation success", "content.claim");
         sendResponse({ success: true });
         break;
 
@@ -622,11 +551,7 @@ class ReclaimContentScript {
         if (this.verificationPopup) {
           this.verificationPopup.handleClaimCreationFailed(data.requestHash);
         }
-        contentLogger.info({
-          message: "[Content] Claim creation failed",
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.CONTENT,
-        });
+        logger.info("[Content] Claim creation failed", "content.claim");
         sendResponse({ success: true });
         break;
 
@@ -634,11 +559,7 @@ class ReclaimContentScript {
         if (this.verificationPopup) {
           this.verificationPopup.handleProofGenerationStarted(data.requestHash);
         }
-        contentLogger.info({
-          message: "[Content] Proof generation started",
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.CONTENT,
-        });
+        logger.info("[Content] Proof generation started", "content.proof");
         sendResponse({ success: true });
         break;
 
@@ -646,11 +567,7 @@ class ReclaimContentScript {
         if (this.verificationPopup) {
           this.verificationPopup.handleProofGenerationSuccess(data.requestHash);
         }
-        contentLogger.info({
-          message: "[Content] Proof generation success",
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.CONTENT,
-        });
+        logger.info("[Content] Proof generation success", "content.proof");
         sendResponse({ success: true });
         break;
 
@@ -670,11 +587,7 @@ class ReclaimContentScript {
         if (this.verificationPopup) {
           this.verificationPopup.handleProofGenerationFailed(data.requestHash);
         }
-        contentLogger.info({
-          message: "[Content] Proof generation failed",
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.CONTENT,
-        });
+        logger.info("[Content] Proof generation failed", "content.proof");
         sendResponse({ success: true });
         break;
 
@@ -695,11 +608,7 @@ class ReclaimContentScript {
         if (this.verificationPopup) {
           this.verificationPopup.handleProofSubmitted();
         }
-        contentLogger.info({
-          message: "[Content] Proof submitted",
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.CONTENT,
-        });
+        logger.info("[Content] Proof submitted", "content.proof");
         sendResponse({ success: true });
         break;
 
@@ -720,11 +629,7 @@ class ReclaimContentScript {
         if (this.verificationPopup) {
           this.verificationPopup.handleProofSubmissionFailed(data.error);
         }
-        contentLogger.info({
-          message: "[Content] Proof submission failed",
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.CONTENT,
-        });
+        logger.info("[Content] Proof submission failed..", "content.proof");
         sendResponse({ success: true });
         break;
 
@@ -745,7 +650,7 @@ class ReclaimContentScript {
         // Non-strict mode: if caller didn't specify an ID, treat this extension as installed
         return !!runtimeId;
       }
-      // Strict mode: only true if caller-supplied ID matches this extension’s runtime ID
+      // Strict mode: only true if caller-supplied ID matches this extension's runtime ID
       return !!runtimeId && extensionID === runtimeId;
     } catch {
       return false;
@@ -772,23 +677,6 @@ class ReclaimContentScript {
         },
         "*",
       );
-    }
-
-    if (action === RECLAIM_SDK_ACTIONS.SET_LOG_CONFIG && data?.config) {
-      if (!this.checkExtensionId(extensionID)) {
-        return;
-      }
-      try {
-        // Immediate local apply for this content context
-        loggerService.setConfig(data.config);
-      } catch {}
-
-      try {
-        // Persist into storage so all contexts update via onChanged
-        const { LOG_CONFIG_STORAGE_KEY } = require("../utils/logger/constants");
-        chrome.storage.local.set({ [LOG_CONFIG_STORAGE_KEY]: data.config });
-      } catch {}
-      return;
     }
 
     // Handle provider ID request from injection script
@@ -822,14 +710,7 @@ class ReclaimContentScript {
       if (!this.checkExtensionId(extensionID)) {
         return;
       }
-      contentLogger.info({
-        message: "[Content] Starting verification with data from SDK: " + JSON.stringify(data),
-        logLevel: LOG_LEVEL.INFO,
-        type: LOG_TYPES.CONTENT,
-        meta: {
-          data,
-        },
-      });
+      logger.info("[Content] Starting verification with data from SDK", "content.verification");
 
       chrome.runtime.sendMessage(
         {
@@ -878,14 +759,10 @@ class ReclaimContentScript {
               },
               "*",
             );
-            contentLogger.info({
-              message: "[Content] Verification failed",
-              logLevel: LOG_LEVEL.INFO,
-              type: LOG_TYPES.CONTENT,
-              meta: {
-                error: response?.error || "Failed to start verification",
-              },
-            });
+            logger.error(
+              "[Content] Verification failed: " + (response?.error || "Unknown error"),
+              "content.verification",
+            );
           }
         },
       );
@@ -905,11 +782,7 @@ class ReclaimContentScript {
         // eslint-disable-next-line @typescript-eslint/no-empty-function
         () => {},
       );
-      contentLogger.info({
-        message: "[Content] Verification cancelled",
-        logLevel: LOG_LEVEL.INFO,
-        type: LOG_TYPES.CONTENT,
-      });
+      logger.info("[Content] Verification cancelled", "content.verification");
     }
 
     if (action === RECLAIM_SDK_ACTIONS.SET_PUBLIC_DATA && data?.publicData !== null) {
@@ -924,11 +797,7 @@ class ReclaimContentScript {
         // eslint-disable-next-line @typescript-eslint/no-empty-function
         () => {},
       );
-      contentLogger.info({
-        message: "[Content] Public data set",
-        logLevel: LOG_LEVEL.INFO,
-        type: LOG_TYPES.CONTENT,
-      });
+      logger.info("[Content] Public data set", "content.data");
       return;
     }
 
@@ -946,11 +815,7 @@ class ReclaimContentScript {
         // eslint-disable-next-line @typescript-eslint/no-empty-function
         () => {},
       );
-      contentLogger.info({
-        message: "[Content] Expect many claims set",
-        logLevel: LOG_LEVEL.INFO,
-        type: LOG_TYPES.CONTENT,
-      });
+      logger.info("[Content] Expect many claims set", "content.claim");
       return;
     }
 
@@ -975,11 +840,7 @@ class ReclaimContentScript {
           );
         },
       );
-      contentLogger.info({
-        message: "[Content] Parameters get",
-        logLevel: LOG_LEVEL.INFO,
-        type: LOG_TYPES.CONTENT,
-      });
+      logger.info("[Content] Parameters get", "content.data");
       return;
     }
 
@@ -999,6 +860,53 @@ class ReclaimContentScript {
       );
     }
 
+    // Handle log config updates from SDK
+    if (action === RECLAIM_SDK_ACTIONS.SET_LOG_CONFIG && data?.config) {
+      if (!this.checkExtensionId(extensionID)) {
+        return;
+      }
+      const configMessageId = event.data?.messageId;
+      try {
+        // Store in storage for persistence
+        chrome.storage.local.set({ [LOG_CONFIG_STORAGE_KEY]: data.config }, () => {
+          // Also send directly to background to update LoggingHub immediately
+          chrome.runtime.sendMessage(
+            {
+              action: MESSAGE_ACTIONS.UPDATE_LOG_CONFIG,
+              source: MESSAGE_SOURCES.CONTENT_SCRIPT,
+              target: MESSAGE_SOURCES.BACKGROUND,
+              data: { config: data.config },
+            },
+            () => {
+              // Send confirmation back to SDK
+              window.postMessage(
+                {
+                  action: RECLAIM_SDK_ACTIONS.LOG_CONFIG_UPDATED,
+                  messageId: configMessageId,
+                  success: true,
+                },
+                "*",
+              );
+              logger.info("[Content] Log config updated", "content.config");
+            },
+          );
+        });
+      } catch (e) {
+        // Send failure notification
+        window.postMessage(
+          {
+            action: RECLAIM_SDK_ACTIONS.LOG_CONFIG_UPDATED,
+            messageId: configMessageId,
+            success: false,
+            error: e?.message,
+          },
+          "*",
+        );
+        logger.error("[Content] Failed to update log config: " + e?.message, "content.config");
+      }
+      return;
+    }
+
     if (action === RECLAIM_SDK_ACTIONS.REPORT_PROVIDER_ERROR && data?.message) {
       chrome.runtime.sendMessage(
         {
@@ -1010,11 +918,7 @@ class ReclaimContentScript {
         // eslint-disable-next-line @typescript-eslint/no-empty-function
         () => {},
       );
-      contentLogger.info({
-        message: "[Content] Provider error reported",
-        logLevel: LOG_LEVEL.INFO,
-        type: LOG_TYPES.CONTENT,
-      });
+      logger.info("[Content] Provider error reported", "content.provider");
 
       return;
     }
@@ -1051,6 +955,9 @@ class ReclaimContentScript {
         additionalClientOptions: {},
         requestHash,
       };
+      if (rdObject?.writeRedactionMode) {
+        criteria.writeRedactionMode = rdObject?.writeRedactionMode;
+      }
 
       chrome.runtime.sendMessage(
         {
@@ -1067,11 +974,7 @@ class ReclaimContentScript {
         // eslint-disable-next-line @typescript-eslint/no-empty-function
         () => {},
       );
-      contentLogger.info({
-        message: "[Content] Claim requested",
-        logLevel: LOG_LEVEL.INFO,
-        type: LOG_TYPES.CONTENT,
-      });
+      logger.info("[Content] Claim requested", "content.claim");
       return;
     }
   }
@@ -1176,17 +1079,15 @@ class ReclaimContentScript {
 
       // Check against each criteria in provider data
       for (const criteria of this.providerData.requestData) {
-        if (filterRequest(formattedRequest, criteria, this.parameters, contentLogger)) {
+        if (filterRequest(formattedRequest, criteria, this.parameters, logger)) {
           // Mark this request as filtered
-          contentLogger.info({
-            message:
-              "[Content] Matching request found: " +
+          logger.info(
+            "[Content] Matching request found: " +
               formattedRequest.method +
               " " +
               formattedRequest.url,
-            logLevel: LOG_LEVEL.INFO,
-            type: LOG_TYPES.CONTENT,
-          });
+            "content.filter",
+          );
 
           this.filteredRequests.push(key);
 
@@ -1225,13 +1126,10 @@ class ReclaimContentScript {
 
   // Send filtered request to background script
   sendFilteredRequestToBackground(formattedRequest, matchingCriteria, loginUrl) {
-    contentLogger.info({
-      message:
-        "[Content] Sending filtered request to background script: " +
-        JSON.stringify(formattedRequest.url),
-      logLevel: LOG_LEVEL.INFO,
-      type: LOG_TYPES.CONTENT,
-    });
+    logger.info(
+      "[Content] Sending filtered request to background: " + formattedRequest.url,
+      "content.filter",
+    );
 
     chrome.runtime.sendMessage(
       {
@@ -1257,29 +1155,25 @@ class ReclaimContentScript {
     const key = "reclaimBrowserExtensionProviderId";
     if (!providerId || providerId === "unknown") {
       localStorage.removeItem(key);
-      contentLogger.info({
-        message: "[Content] Skipping localStorage storage for invalid provider ID: " + providerId,
-        logLevel: LOG_LEVEL.INFO,
-        type: LOG_TYPES.CONTENT,
-      });
+      logger.info(
+        "[Content] Skipping localStorage storage for invalid provider ID: " + providerId,
+        "content.storage",
+      );
       return;
     }
 
     try {
       localStorage.setItem(key, providerId);
-      contentLogger.info({
-        message: "[Content] Provider ID " + providerId + " stored in localStorage.",
-        logLevel: LOG_LEVEL.INFO,
-        type: LOG_TYPES.CONTENT,
-      });
+      logger.info(
+        "[Content] Provider ID " + providerId + " stored in localStorage",
+        "content.storage",
+      );
     } catch (e) {
       localStorage.removeItem(key);
-      contentLogger.error({
-        message:
-          "[Content] Failed to store provider ID " + providerId + " in localStorage: " + e.message,
-        logLevel: LOG_LEVEL.ERROR,
-        type: LOG_TYPES.CONTENT,
-      });
+      logger.error(
+        "[Content] Failed to store provider ID in localStorage: " + e.message,
+        "content.storage",
+      );
     }
   }
 
@@ -1288,43 +1182,30 @@ class ReclaimContentScript {
     const key = `reclaimBrowserExtensionInjectionScript:${providerId}`;
     if (!providerId || providerId === "unknown") {
       localStorage.removeItem(key);
-      contentLogger.error({
-        message: "[Content] Failed to store provider ID " + providerId + " in localStorage: ",
-        logLevel: LOG_LEVEL.ERROR,
-        type: LOG_TYPES.CONTENT,
-        eventType: EVENT_TYPES.INJECTION_SCRIPT_SET_IN_LOCAL_STORAGE_FAILED,
-      });
+      logger.error("[Content] Failed to store provider ID in localStorage", "content.storage");
 
       return;
     }
 
     if (!injectionScript?.length) {
       localStorage.removeItem(key);
-      contentLogger.error({
-        message: "[Content] Skipping localStorage storage for injection script",
-        logLevel: LOG_LEVEL.ERROR,
-        type: LOG_TYPES.CONTENT,
-        eventType: EVENT_TYPES.INJECTION_SCRIPT_SET_IN_LOCAL_STORAGE_FAILED,
-      });
+      logger.error(
+        "[Content] Skipping localStorage storage for injection script",
+        "content.storage",
+      );
 
       return;
     }
 
     try {
       localStorage.setItem(key, injectionScript);
-      contentLogger.info({
-        message: "[Content] Injection script stored in localStorage...",
-        logLevel: LOG_LEVEL.INFO,
-        type: LOG_TYPES.CONTENT,
-      });
+      logger.info("[Content] Injection script stored in localStorage", "content.storage");
     } catch (e) {
       localStorage.removeItem(key);
-      contentLogger.error({
-        message: "[Content] Failed to store injection script in localStorage: " + e.message,
-        logLevel: LOG_LEVEL.ERROR,
-        type: LOG_TYPES.CONTENT,
-        eventType: EVENT_TYPES.INJECTION_SCRIPT_SET_IN_LOCAL_STORAGE_FAILED,
-      });
+      logger.error(
+        "[Content] Failed to store injection script in localStorage: " + e.message,
+        "content.storage",
+      );
     }
   }
 
@@ -1352,16 +1233,6 @@ class ReclaimContentScript {
       childList: true,
       subtree: true,
     });
-
-    // // We can also poll as backup
-    // setInterval(() => {
-    //   const currentUrl = window.location.href;
-    //   if (currentUrl !== lastUrl) {
-    //     console.log("URL changed via polling:", lastUrl, "->", currentUrl);
-    //     lastUrl = currentUrl;
-    //     // Your logic here
-    //   }
-    // }, 100);
   }
 }
 

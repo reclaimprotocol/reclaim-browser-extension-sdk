@@ -62,23 +62,17 @@ export const EVENT_TYPES = {
   UPDATE_SESSION_STATUS_ERROR: "UPDATE_SESSION_STATUS_ERROR",
 };
 
-// Numeric levels for easy threshold checks
+// Log levels for filtering
+// INFO: All logs except .debug() calls
+// DEBUG: All logs including .debug() calls
 export const LOG_LEVEL = {
-  INFO: 10,
-  DEBUG: 20,
-  ALL: 30,
-};
-
-export const LOG_LEVEL_MAP = {
-  INFO: LOG_LEVEL.INFO,
-  DEBUG: LOG_LEVEL.DEBUG,
-  ALL: LOG_LEVEL.ALL,
+  INFO: 1,
+  DEBUG: 2,
 };
 
 export const DEFAULT_LOG_CONFIG = {
-  logLevel: "INFO", // "INFO" | "DEBUG" | "ALL" - applies to both console and backend
+  logLevel: "DEBUG", // "INFO" | "DEBUG" - filter threshold
   consoleEnabled: false, // Enable/disable console logging
-  source: "reclaim-extension-sdk",
 };
 
 export const LOG_CONFIG_STORAGE_KEY = "reclaim_extension_sdk_log_config";

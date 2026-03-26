@@ -1,16 +1,7 @@
-import { LOG_LEVEL, LOG_TYPES } from "../utils/logger";
-
-export async function getCookiesForUrl(url, bgLogger) {
+export async function getCookiesForUrl(url, loggingHub) {
   try {
     if (!chrome.cookies || !chrome.cookies.getAll) {
-      bgLogger.info({
-        message: "[BACKGROUND] Chrome cookies API not available",
-        logLevel: LOG_LEVEL.INFO,
-        type: LOG_TYPES.BACKGROUND,
-        meta: {
-          url: url,
-        },
-      });
+      loggingHub.info("[BACKGROUND] Chrome cookies API not available", "background.cookies");
       return null;
     }
 
@@ -79,15 +70,10 @@ export async function getCookiesForUrl(url, bgLogger) {
       try {
         return await chrome.cookies.getAll(details);
       } catch (error) {
-        bgLogger.info({
-          message: "[BACKGROUND] cookies.getAll failed for details: ",
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.BACKGROUND,
-          meta: {
-            details: details,
-            error: error?.message,
-          },
-        });
+        loggingHub.info(
+          "[BACKGROUND] cookies.getAll failed: " + error?.message,
+          "background.cookies",
+        );
         return [];
       }
     };
@@ -127,7 +113,7 @@ export async function getCookiesForUrl(url, bgLogger) {
 
     const localShouldInclude =
       typeof shouldIncludeCookie === "function"
-        ? (cookie) => shouldIncludeCookie(cookie, urlObj, bgLogger)
+        ? (cookie) => shouldIncludeCookie(cookie, urlObj, loggingHub)
         : defaultShouldIncludeCookie;
 
     // Choose the "better" cookie if we see duplicates (same name+domain+path+partition)
@@ -224,19 +210,15 @@ export async function getCookiesForUrl(url, bgLogger) {
     const cookieStr = uniqueCookies.map((c) => `${c.name}=${c.value}`).join("; ");
     return cookieStr || null;
   } catch (error) {
-    bgLogger.error({
-      message: "[BACKGROUND] Error getting cookies for URL: " + error?.message,
-      logLevel: LOG_LEVEL.INFO,
-      type: LOG_TYPES.BACKGROUND,
-      meta: {
-        error: error?.message,
-      },
-    });
+    loggingHub.error(
+      "[BACKGROUND] Error getting cookies for URL: " + error?.message,
+      "background.cookies",
+    );
     return null;
   }
 }
 
-export function shouldIncludeCookie(cookie, urlObj, bgLogger) {
+export function shouldIncludeCookie(cookie, urlObj, loggingHub) {
   try {
     // Check domain match
     const cookieDomain = cookie.domain.startsWith(".") ? cookie.domain.substring(1) : cookie.domain;
@@ -273,14 +255,10 @@ export function shouldIncludeCookie(cookie, urlObj, bgLogger) {
 
     return true;
   } catch (error) {
-    bgLogger.info({
-      message: "[BACKGROUND] Error checking cookie inclusion: " + error?.message,
-      logLevel: LOG_LEVEL.INFO,
-      type: LOG_TYPES.BACKGROUND,
-      meta: {
-        error: error?.message,
-      },
-    });
+    loggingHub.info(
+      "[BACKGROUND] Error checking cookie inclusion: " + error?.message,
+      "background.cookies",
+    );
     return false;
   }
 }

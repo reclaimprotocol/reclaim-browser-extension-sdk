@@ -204,22 +204,32 @@ export const filterRequest = (request, filterCriteria, parameters = {}, contentL
       return false;
     }
 
-    // Then check if response matches (if we have response data)
-    if (
-      request.responseText &&
-      filterCriteria.responseMatches &&
-      !matchesResponseCriteria(request.responseText, filterCriteria.responseMatches, parameters)
-    ) {
-      return false;
+    // If criteria requires response validation but we have no response, reject
+    if (filterCriteria.responseMatches && filterCriteria.responseMatches.length > 0) {
+      if (!request.responseText) {
+        return false;
+      }
+      if (
+        !matchesResponseCriteria(request.responseText, filterCriteria.responseMatches, parameters)
+      ) {
+        return false;
+      }
     }
 
     // Check if the response fields match the responseRedactions criteria
-    if (
-      request.responseText &&
-      filterCriteria.responseRedactions &&
-      !matchesResponseFields(request.responseText, filterCriteria.responseRedactions, contentLogger)
-    ) {
-      return false;
+    if (filterCriteria.responseRedactions && filterCriteria.responseRedactions.length > 0) {
+      if (!request.responseText) {
+        return false;
+      }
+      if (
+        !matchesResponseFields(
+          request.responseText,
+          filterCriteria.responseRedactions,
+          contentLogger,
+        )
+      ) {
+        return false;
+      }
     }
 
     return true;

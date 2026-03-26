@@ -6,7 +6,6 @@ import {
   isJsonFormat,
   safeJsonParse,
 } from "./params-extractor-utils.js";
-import { LOG_LEVEL, LOG_TYPES, EVENT_TYPES } from "../logger";
 
 /**
  * Extract dynamic parameters from a string by matching {{PARAM_NAME}} patterns
@@ -89,7 +88,6 @@ export const extractParamsFromResponse = (
   responseMatches,
   responseRedactions,
   paramValues = {},
-  bgLogger,
 ) => {
   if (!responseText) return paramValues;
 
@@ -158,13 +156,7 @@ export const extractParamsFromResponse = (
       }
     }
   } catch (error) {
-    bgLogger.error({
-      message: "[PARAM-EXTRACTOR] Error extracting params from response:",
-      logLevel: LOG_LEVEL.INFO,
-      type: LOG_TYPES.CLAIM_CREATION,
-      eventType: EVENT_TYPES.CLAIM_PARAMETER_VALIDATION_FAILED_EXCEPTION,
-      meta: { error },
-    });
+    console.error("[PARAM-EXTRACTOR] Error extracting params from response:", error);
   }
 
   return paramValues;

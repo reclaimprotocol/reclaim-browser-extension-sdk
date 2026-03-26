@@ -3,6 +3,10 @@ import { reclaimExtensionSDK } from '@reclaimprotocol/browser-extension-sdk';
 import './ReclaimDemo.css';
 
 const PROVIDERS = [
+  {id: '06667ea1-7367-4f68-906d-98cb2bbadcf9', name: "Trex: YT"},
+  {id: 'b98cf5f0-74b3-49e8-b2c5-6e1d7291a54f', name: "Trex: Instagram"},
+  {id: '5f3b22f7-32e2-4ec3-8ee0-5e70ec79ca66', name: "Trex: Instagram 2"},
+  
   {id: '47a84ec8-00fa-4628-b6d0-02e26af7f4f1', name: "Trex: OKXX"},
   {id: 'aea48d15-2ce7-4571-a1c9-d47ab99487a9', name: "Trex Youtube"},
   {id: '26387e16-6537-4374-8b71-96d68067b28e', name: "Trex Binance New"},
@@ -246,12 +250,12 @@ export default function ReclaimDemo() {
       });
 
       reclaimExtensionSDK.setLogConfig({
-        logLevel: "ALL",
+        logLevel: "DEBUG",
         consoleEnabled: true,
       }, EXTENSION_ID);
 
       // request.setAppCallbackUrl("https://6cf90f1e87f7.ngrok-free.app/receive-proofs");
-      // request.setParams({ userProfileLink: "https://steamcommunity.com/id/Sa2199/" });
+      request.setParams({"subscribed_account":"nike"});
 
       setReq(request);
       setStatusUrl(request.getStatusUrl());
