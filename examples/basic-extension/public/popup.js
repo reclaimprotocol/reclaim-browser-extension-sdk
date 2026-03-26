@@ -33,7 +33,7 @@ document.getElementById("startBtn").addEventListener("click", async () => {
     }
     
     request.setParams({ demo: "1" });
-    request.addContext("0x0", "popup demo");
+    request.setContext("0x0", "popup demo");
 
     request.on("started", ({ sessionId }) => console.log("started", sessionId));
     request.on("completed", (proofs) => console.log("completed", proofs));
