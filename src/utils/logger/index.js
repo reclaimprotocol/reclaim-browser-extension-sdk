@@ -5,7 +5,6 @@ export { createRemoteLogger } from "./RemoteLogger";
 // Constants
 export {
   LOGGING_ENDPOINTS,
-  LOG_TYPES,
   LOG_SOURCES,
   LOG_LEVEL,
   EVENT_TYPES,

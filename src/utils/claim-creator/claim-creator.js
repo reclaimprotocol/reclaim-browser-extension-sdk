@@ -105,6 +105,7 @@ export const createClaimObject = async (
   providerId = "unknown",
   loginUrl,
   loggingHub,
+  context,
 ) => {
   loggingHub.info("[CLAIM-CREATOR] Creating claim object from request data", "claim.creation");
 
@@ -344,6 +345,10 @@ export const createClaimObject = async (
   };
 
   loggingHub.info("[CLAIM-CREATOR] Claim object created successfully", "claim.creation");
+  // Include user-supplied context (contextAddress & contextMessage) if provided
+  if (context && typeof context === "object" && Object.keys(context).length > 0) {
+    claimObject.context = context;
+  }
 
   loggingHub.debug(
     "[CLAIM-CREATOR] Claim object: " + JSON.stringify(claimObject, null, 2),

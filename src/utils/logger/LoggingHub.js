@@ -30,18 +30,20 @@ class LoggingHub {
     this.logs = [];
     this.deviceId = null;
     this.maxBatchSize = 20;
+    this.maxQueueSize = 500; // Drop oldest logs if queue exceeds this
     this.flushIntervalMs = 5000;
     this.flushIntervalId = null;
     this.isFlushing = false;
 
-    // Deduplication: track recent log hashes
-    this._recentLogHashes = new Set();
+    // Deduplication: Map of logHash -> timestamp (ms)
+    this._recentLogHashes = new Map();
     this._dedupeWindowMs = 100; // Ignore duplicates within 100ms
 
     // Stats tracking
     this.stats = {
       totalLogsQueued: 0,
       totalLogsSent: 0,
+      totalLogsDropped: 0,
       totalDeduplicated: 0,
       flushCount: 0,
     };
@@ -49,13 +51,19 @@ class LoggingHub {
     // Log config (log level + console output)
     this.config = { ...DEFAULT_LOG_CONFIG };
 
-    this._initDeviceId();
-    this._startFlushInterval();
-    this._restoreSessionContext();
-    this._loadConfig();
-    this._watchConfigChanges();
+    // Ready promise - resolves when async init completes
+    this.ready = this._init();
 
     singletonInstance = this;
+  }
+
+  /**
+   * Run all async initialization and start flush interval
+   */
+  async _init() {
+    await Promise.all([this._initDeviceId(), this._restoreSessionContext(), this._loadConfig()]);
+    this._watchConfigChanges();
+    this._startFlushInterval();
   }
 
   /**
@@ -143,12 +151,13 @@ class LoggingHub {
 
   /**
    * Check if a log should be recorded based on level
-   * @param {string} level - Log level ("INFO" or "DEBUG")
+   * @param {string} level - Log level ("ERROR" | "WARN" | "INFO" | "DEBUG")
    * @returns {boolean}
    */
   _shouldLog(level) {
     const configThreshold = LOG_LEVEL[this.config.logLevel] || LOG_LEVEL.INFO;
     const requestedLevel = LOG_LEVEL[level] || LOG_LEVEL.INFO;
+    // Lower number = higher severity; log if severity <= threshold
     return requestedLevel <= configThreshold;
   }
 
@@ -216,7 +225,7 @@ class LoggingHub {
    * Internal method to add a log entry
    * @param {string} message - Log message
    * @param {string} type - Log type/category
-   * @param {string} level - Log level ("INFO" or "DEBUG")
+   * @param {string} level - Log level ("ERROR" | "WARN" | "INFO" | "DEBUG")
    */
   _addLog(message, type, level = "INFO") {
     // Filter by log level
@@ -226,29 +235,35 @@ class LoggingHub {
 
     // Console output if enabled
     if (this.config.consoleEnabled) {
-      console.log(`[${level}] ${message}`);
+      const consoleFn =
+        level === "ERROR" ? console.error : level === "WARN" ? console.warn : console.log;
+      consoleFn(`[${level}] ${message}`);
     }
 
     const now = Date.now();
 
-    // Create a hash for deduplication (message + type)
+    // Deduplication: skip if we've seen this exact log within dedupeWindowMs
     const logHash = `${message}|${type}`;
-
-    // Skip if we've seen this exact log very recently (within dedupeWindowMs)
-    if (this._recentLogHashes.has(logHash)) {
+    const lastSeen = this._recentLogHashes.get(logHash);
+    if (lastSeen !== undefined && now - lastSeen < this._dedupeWindowMs) {
       this.stats.totalDeduplicated++;
       return;
     }
+    this._recentLogHashes.set(logHash, now);
 
-    // Add to recent hashes and schedule removal
-    this._recentLogHashes.add(logHash);
-    setTimeout(() => {
-      this._recentLogHashes.delete(logHash);
-    }, this._dedupeWindowMs);
+    // Periodically prune stale entries from the dedup map (every 100 entries)
+    if (this._recentLogHashes.size > 100) {
+      for (const [key, ts] of this._recentLogHashes) {
+        if (now - ts >= this._dedupeWindowMs) {
+          this._recentLogHashes.delete(key);
+        }
+      }
+    }
 
     const entry = {
       logLine: message,
       ts: String(now * 1000000), // nanoseconds for Loki
+      logLevel: level,
       type: type || "unknown",
       sessionId: this.sessionContext.sessionId || "unknown",
       providerId: this.sessionContext.providerId || "unknown",
@@ -259,6 +274,13 @@ class LoggingHub {
     this.logs.push(entry);
     this.stats.totalLogsQueued++;
 
+    // Drop oldest logs if queue exceeds max size (prevents OOM on API outage)
+    if (this.logs.length > this.maxQueueSize) {
+      const dropped = this.logs.length - this.maxQueueSize;
+      this.logs = this.logs.slice(dropped);
+      this.stats.totalLogsDropped += dropped;
+    }
+
     // Trigger flush if batch size reached
     if (this.logs.length >= this.maxBatchSize) {
       this.flush();
@@ -268,20 +290,29 @@ class LoggingHub {
   // Public API - consistent across all loggers
 
   /**
-   * Log an info message (always logged unless level < INFO)
-   * @param {string} message - Log message
-   * @param {string} type - Log type/category
-   */
-  info(message, type) {
-    this._addLog(message, type, "INFO");
-  }
-
-  /**
-   * Log an error message (treated as INFO level - always logged)
+   * Log an error message (highest severity - always logged)
    * @param {string} message - Log message
    * @param {string} type - Log type/category
    */
   error(message, type) {
+    this._addLog(message, type, "ERROR");
+  }
+
+  /**
+   * Log a warning message
+   * @param {string} message - Log message
+   * @param {string} type - Log type/category
+   */
+  warn(message, type) {
+    this._addLog(message, type, "WARN");
+  }
+
+  /**
+   * Log an info message
+   * @param {string} message - Log message
+   * @param {string} type - Log type/category
+   */
+  info(message, type) {
     this._addLog(message, type, "INFO");
   }
 
@@ -299,7 +330,7 @@ class LoggingHub {
    * Called by message router when receiving LOG_MESSAGE action
    * @param {string} message - Log message
    * @param {string} type - Log type/category
-   * @param {string} level - Log level ("INFO" or "DEBUG")
+   * @param {string} level - Log level ("ERROR" | "WARN" | "INFO" | "DEBUG")
    */
   handleRemoteLog(message, type, level = "INFO") {
     this._addLog(message, type, level);
@@ -329,21 +360,31 @@ class LoggingHub {
       });
 
       if (!response.ok) {
-        // Re-queue failed logs (prepend to maintain order)
+        // Re-queue failed logs (prepend to maintain order), respecting max queue size
         this.logs.unshift(...batch);
-        console.error("[LoggingHub] Failed to flush logs:", response.status);
+        if (this.logs.length > this.maxQueueSize) {
+          const dropped = this.logs.length - this.maxQueueSize;
+          this.logs = this.logs.slice(dropped);
+          this.stats.totalLogsDropped += dropped;
+        }
+        if (this.config.consoleEnabled) {
+          console.error("[LoggingHub] Failed to flush logs:", response.status);
+        }
       } else {
-        // Successfully sent
         this.stats.totalLogsSent += batchSize;
         this.stats.flushCount++;
-        console.log(
-          `[LoggingHub] Flushed ${batchSize} logs. Total sent: ${this.stats.totalLogsSent}, Queued: ${this.stats.totalLogsQueued}, Deduplicated: ${this.stats.totalDeduplicated}`,
-        );
       }
     } catch (error) {
-      // Re-queue failed logs
+      // Re-queue failed logs, respecting max queue size
       this.logs.unshift(...batch);
-      console.error("[LoggingHub] Error flushing logs:", error);
+      if (this.logs.length > this.maxQueueSize) {
+        const dropped = this.logs.length - this.maxQueueSize;
+        this.logs = this.logs.slice(dropped);
+        this.stats.totalLogsDropped += dropped;
+      }
+      if (this.config.consoleEnabled) {
+        console.error("[LoggingHub] Error flushing logs:", error);
+      }
     } finally {
       this.isFlushing = false;
     }

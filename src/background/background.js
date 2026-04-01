@@ -29,6 +29,7 @@ export default function initBackground() {
     activeTabId: null,
     providerData: null,
     parameters: {},
+    context: null,
     providerId: null,
     appId: null,
     sessionId: null,
@@ -120,6 +121,7 @@ export default function initBackground() {
           ctx.providerId,
           loginUrl,
           loggingHub,
+          ctx.context,
         );
       } catch (error) {
         loggingHub.error(

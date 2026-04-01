@@ -181,7 +181,7 @@ class OffscreenProofGenerator {
         }, 60000 * 2);
       });
 
-      console.log("final claimData for attestor", claimData);
+      logger.debug("[OFFSCREEN] Final claimData for attestor", "offscreen.proof");
 
       const attestorPromise = await createClaimOnAttestor(claimData);
 

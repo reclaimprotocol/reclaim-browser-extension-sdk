@@ -20,7 +20,7 @@ class RemoteLogger {
    * Send log to background hub
    * @param {string} message - Log message
    * @param {string} type - Log type/category
-   * @param {string} level - Log level ("INFO" or "DEBUG")
+   * @param {string} level - Log level ("ERROR" | "WARN" | "INFO" | "DEBUG")
    */
   _sendLog(message, type, level = "INFO") {
     try {
@@ -49,20 +49,29 @@ class RemoteLogger {
   }
 
   /**
-   * Log an info message (always logged unless level < INFO)
-   * @param {string} message - Log message
-   * @param {string} type - Log type/category
-   */
-  info(message, type) {
-    this._sendLog(message, type, "INFO");
-  }
-
-  /**
-   * Log an error message (treated as INFO level - always logged)
+   * Log an error message (highest severity - always logged)
    * @param {string} message - Log message
    * @param {string} type - Log type/category
    */
   error(message, type) {
+    this._sendLog(message, type, "ERROR");
+  }
+
+  /**
+   * Log a warning message
+   * @param {string} message - Log message
+   * @param {string} type - Log type/category
+   */
+  warn(message, type) {
+    this._sendLog(message, type, "WARN");
+  }
+
+  /**
+   * Log an info message
+   * @param {string} message - Log message
+   * @param {string} type - Log type/category
+   */
+  info(message, type) {
     this._sendLog(message, type, "INFO");
   }
 

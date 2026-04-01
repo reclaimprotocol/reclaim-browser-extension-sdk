@@ -3,10 +3,10 @@ import { reclaimExtensionSDK } from '@reclaimprotocol/browser-extension-sdk';
 import './ReclaimDemo.css';
 
 const PROVIDERS = [
+  {id: '218f590e-d755-44c9-82e3-04e9907d3f44', name: "ChatGpt"},
   {id: '06667ea1-7367-4f68-906d-98cb2bbadcf9', name: "Trex: YT"},
   {id: 'b98cf5f0-74b3-49e8-b2c5-6e1d7291a54f', name: "Trex: Instagram"},
   {id: '5f3b22f7-32e2-4ec3-8ee0-5e70ec79ca66', name: "Trex: Instagram 2"},
-  
   {id: '47a84ec8-00fa-4628-b6d0-02e26af7f4f1', name: "Trex: OKXX"},
   {id: 'aea48d15-2ce7-4571-a1c9-d47ab99487a9', name: "Trex Youtube"},
   {id: '26387e16-6537-4374-8b71-96d68067b28e', name: "Trex Binance New"},
@@ -30,16 +30,6 @@ const PROVIDERS = [
   { id: '7a956c12-486a-4d18-a81f-833c62b8b055', name: 'Gamerpay' },
   { id: '1be4821a-55cb-42b1-a208-6158910c79a0', name: 'Steam Trade History' },
   { id: '7519ad78-208a-425d-9fac-97c13b0f0d4d', name: 'Kaggle' },
-  {id: '97d77158-b910-4558-84d7-de0e7374effa', name: 'spotify'},
-  {id: '218f590e-d755-44c9-82e3-04e9907d3f44', name: 'Trex: Chatgpt'},
-  { id: '31e222ba-be21-4bec-b767-af30f52837ea', name: 'Gamerpay: Steam Inventory' },
-  { id: 'bfb04c86-bdac-48fb-9d22-6421820c8c04', name: 'Kaggle AI' },
-  { id: '25a97f94-4c73-4c02-826d-d11504997fec', name: 'Trex Perplexity' },
-  { id: '218f590e-d755-44c9-82e3-04e9907d3f44', name: 'Trex - Chatgpt' },
-  { id: '32dc2faa-77fa-4af1-a8ed-5df70fdca8dd', name: 'Claude' },
-  { id: '921681c2-3d20-4060-b961-43ae2a0e8dd2', name: 'Gemini' },
-  { id: '9ab972fc-8aca-4c35-93f5-d1ede32e32b9', name: 'Trex - Instagram' },
-  { id: '50a2286d-8c89-4de0-817b-e577447c531d', name: 'Trex - Grok' },
 ];
 
 const APP_ID = import.meta.env.VITE_RECLAIM_APP_ID;
@@ -51,7 +41,7 @@ const ExtractedParams = ({ context }) => {
   try {
     const contextData = JSON.parse(context);
     const extractedParams = contextData.extractedParameters || {};
-    
+
     if (Object.keys(extractedParams).length === 0) {
       return <div className="no-data">No extracted parameters</div>;
     }
@@ -76,7 +66,7 @@ const PublicData = ({ publicData }) => {
   if (!publicData) {
     return <div className="no-data">No public data available</div>;
   }
-  
+
   return (
     <div className="public-data">
       <pre>{JSON.stringify(publicData, null, 2)}</pre>
@@ -87,7 +77,7 @@ const PublicData = ({ publicData }) => {
 // Main proof card component
 const ProofCard = ({ proof, index }) => {
   const [activeTab, setActiveTab] = useState('summary');
-  
+
   const copyToClipboard = (data, type) => {
     navigator.clipboard.writeText(typeof data === 'string' ? data : JSON.stringify(data, null, 2));
     // Visual feedback
@@ -103,7 +93,7 @@ const ProofCard = ({ proof, index }) => {
         <h4>Proof #{index + 1}</h4>
         <div className="proof-id">
           ID: {proof.identifier?.substring(0, 16)}...
-          <button 
+          <button
             className="copy-button-small"
             onClick={() => copyToClipboard(proof.identifier, 'ID')}
           >
@@ -113,25 +103,25 @@ const ProofCard = ({ proof, index }) => {
       </div>
 
       <div className="tab-navigation">
-        <button 
+        <button
           className={`tab-button ${activeTab === 'summary' ? 'active' : ''}`}
           onClick={() => setActiveTab('summary')}
         >
           Summary
         </button>
-        <button 
+        <button
           className={`tab-button ${activeTab === 'params' ? 'active' : ''}`}
           onClick={() => setActiveTab('params')}
         >
           Extracted Params
         </button>
-        <button 
+        <button
           className={`tab-button ${activeTab === 'public' ? 'active' : ''}`}
           onClick={() => setActiveTab('public')}
         >
           Public Data
         </button>
-        <button 
+        <button
           className={`tab-button ${activeTab === 'raw' ? 'active' : ''}`}
           onClick={() => setActiveTab('raw')}
         >
@@ -175,7 +165,7 @@ const ProofCard = ({ proof, index }) => {
           <div className="params-content">
             <div className="content-header">
               <h5>Extracted Parameters</h5>
-              <button 
+              <button
                 className="copy-button-small"
                 onClick={(e) => copyToClipboard(proof.claimData?.context, 'params')}
               >
@@ -190,7 +180,7 @@ const ProofCard = ({ proof, index }) => {
           <div className="public-content">
             <div className="content-header">
               <h5>Public Data</h5>
-              <button 
+              <button
                 className="copy-button-small"
                 onClick={(e) => copyToClipboard(proof.publicData, 'public data')}
               >
@@ -205,7 +195,7 @@ const ProofCard = ({ proof, index }) => {
           <div className="raw-content">
             <div className="content-header">
               <h5>Complete Proof Object</h5>
-              <button 
+              <button
                 className="copy-button-small"
                 onClick={(e) => copyToClipboard(proof, 'proof')}
               >
@@ -256,6 +246,8 @@ export default function ReclaimDemo() {
 
       // request.setAppCallbackUrl("https://6cf90f1e87f7.ngrok-free.app/receive-proofs");
       request.setParams({"subscribed_account":"nike"});
+
+      request.setContext("0x0", "sample context");
 
       setReq(request);
       setStatusUrl(request.getStatusUrl());
@@ -402,7 +394,7 @@ export default function ReclaimDemo() {
             <div className="proof-container">
               <div className="proof-header">
                 <h3>Verification Results</h3>
-                <button 
+                <button
                   className="copy-button"
                   onClick={() => {
                     navigator.clipboard.writeText(JSON.stringify(proofs, null, 2));
@@ -424,7 +416,7 @@ export default function ReclaimDemo() {
             </div>
           </section>
         )}
-        
+
       </div>
     </div>
   );

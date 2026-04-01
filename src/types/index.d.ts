@@ -29,6 +29,9 @@ export class ReclaimExtensionProofRequest {
 
   setAppCallbackUrl(url: string, jsonProofResponse?: boolean): void;
   setRedirectUrl(url: string): void;
+  setContext(address: string, message: string): void;
+  setJsonContext(address: string, jsonObj: Record<string, unknown>): void;
+  /** @deprecated Use setContext() instead */
   addContext(address: string | number, message: string): void;
   setParams(params: Record<string, unknown>): void;
 

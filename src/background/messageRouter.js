@@ -36,7 +36,10 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
               action: ctx.MESSAGE_ACTIONS.SHOULD_INITIALIZE,
               source: ctx.MESSAGE_SOURCES.BACKGROUND,
               target: ctx.MESSAGE_SOURCES.CONTENT_SCRIPT,
-              data: { shouldInitialize: isManaged },
+              data: {
+                shouldInitialize: isManaged,
+                injectionType: ctx.providerData?.injectionType || null,
+              },
             })
             .catch((err) =>
               loggingHub.error(
@@ -151,7 +154,11 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
             "[BACKGROUND] Checking if tab is managed: " + isManaged,
             "background.tab",
           );
-          sendResponse({ success: true, isManaged });
+          sendResponse({
+            success: true,
+            isManaged,
+            injectionType: ctx.providerData?.injectionType || null,
+          });
         }
         break;
       case ctx.MESSAGE_ACTIONS.START_VERIFICATION:
@@ -187,6 +194,20 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
                 "background.verification",
               );
               sendResponse({ success: false, error: "Another verification is in progress" });
+              // Send terminal failure to original tab so SDK Promise doesn't hang
+              if (sender.tab?.id) {
+                chrome.tabs
+                  .sendMessage(sender.tab.id, {
+                    action: ctx.MESSAGE_ACTIONS.PROOF_GENERATION_FAILED,
+                    source: ctx.MESSAGE_SOURCES.BACKGROUND,
+                    target: ctx.MESSAGE_SOURCES.CONTENT_SCRIPT,
+                    data: {
+                      error: "Another verification is in progress",
+                      sessionId: data.sessionId,
+                    },
+                  })
+                  .catch(() => {});
+              }
               break;
             }
           }
@@ -200,9 +221,27 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
             "background.verification",
           );
 
-          const result = await sessionManager.startVerification(ctx, data);
-
-          sendResponse({ success: true, result });
+          try {
+            const result = await sessionManager.startVerification(ctx, data);
+            sendResponse({ success: true, result });
+          } catch (startError) {
+            loggingHub.error(
+              "[BACKGROUND] startVerification failed: " + startError?.message,
+              "background.verification",
+            );
+            sendResponse({ success: false, error: startError.message });
+            // startVerification clears ctx.sessionId before it can throw,
+            // so restore it from the original request data before calling
+            // failSession — otherwise the terminal event carries sessionId:null
+            // and the SDK ignores it.
+            if (data.sessionId) {
+              ctx.sessionId = data.sessionId;
+            }
+            // Send terminal failure event so the SDK Promise doesn't hang.
+            // The content script no longer fires VERIFICATION_FAILED from the
+            // sendMessage callback, so we must dispatch it through failSession.
+            await sessionManager.failSession(ctx, startError.message);
+          }
         } else {
           sendResponse({ success: false, error: "Action not supported" });
         }
@@ -420,8 +459,6 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
               data.sessionId,
               data.loginUrl || "",
             );
-
-            console.log("REQUEST_CLAIM result", result, data);
 
             loggingHub.info(
               "[BACKGROUND] Request claim processed: " + data.requestHash,

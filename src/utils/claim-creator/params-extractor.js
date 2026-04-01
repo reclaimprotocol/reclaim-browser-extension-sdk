@@ -37,7 +37,7 @@ export const extractParamsFromUrl = (urlTemplate, actualUrl, paramValues = {}) =
   if (match && match.length > 1) {
     // Start from index 1 to skip the full match
     for (let i = 0; i < paramNames.length; i++) {
-      if (match[i + 1]) {
+      if (match[i + 1] !== undefined) {
         paramValues[paramNames[i]] = match[i + 1];
       }
     }
@@ -66,7 +66,7 @@ export const extractParamsFromBody = (bodyTemplate, actualBody, paramValues = {}
   if (match && match.length > 1) {
     // Start from index 1 to skip the full match
     for (let i = 0; i < paramNames.length; i++) {
-      if (match[i + 1]) {
+      if (match[i + 1] !== undefined) {
         paramValues[paramNames[i]] = match[i + 1];
       }
     }

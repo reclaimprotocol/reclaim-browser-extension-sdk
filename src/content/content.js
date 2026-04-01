@@ -198,9 +198,10 @@ try {
           if (resp?.success && resp.isManaged) {
             shouldInitialize = true;
 
-            injectNetworkInterceptor(); // safe: guarded by interceptorInjected
-            // Optional: if you also want the extra script:
-            injectDynamicInjectionScript();
+            if (resp.injectionType !== "NONE") {
+              injectNetworkInterceptor();
+              injectDynamicInjectionScript();
+            }
           }
         },
       );
@@ -224,13 +225,11 @@ try {
         shouldInitialize = data.shouldInitialize;
 
         if (shouldInitialize) {
-          // If we should initialize, inject the interceptor immediately
-          injectNetworkInterceptor();
+          if (data.injectionType !== "NONE") {
+            injectNetworkInterceptor();
+            injectDynamicInjectionScript();
+          }
 
-          // Also inject the dynamic injection script loader
-          injectDynamicInjectionScript();
-
-          // And initialize the content script
           window.reclaimContentScript = new ReclaimContentScript();
         }
 
@@ -720,6 +719,15 @@ class ReclaimContentScript {
           data: data,
         },
         (response) => {
+          // Suppress chrome.runtime.lastError to avoid unchecked-lastError warnings.
+          if (chrome.runtime.lastError) {
+            logger.warn(
+              "[Content] sendMessage port closed before response (MV3 SW timing): " +
+                chrome.runtime.lastError.message,
+              "content.message",
+            );
+          }
+
           // Store parameters and session ID for later use
           if (data.parameters) {
             this.parameters = data.parameters;
@@ -740,7 +748,11 @@ class ReclaimContentScript {
             this.sessionId = data.sessionId;
           }
 
-          // Send confirmation back to SDK
+          // This callback is ONLY used to signal VERIFICATION_STARTED.
+          // We never fire VERIFICATION_FAILED here because the background
+          // may still be running (MV3 SW timing, async fetchProviderData,
+          // etc.). The real terminal outcome is delivered through separate
+          // message channels: PROOF_SUBMITTED or PROOF_GENERATION_FAILED.
           if (response && response.success) {
             window.postMessage(
               {
@@ -749,6 +761,12 @@ class ReclaimContentScript {
                 sessionId: data.sessionId,
               },
               "*",
+            );
+          } else if (response && !response.success) {
+            logger.warn(
+              "[Content] START_VERIFICATION response indicated failure, awaiting terminal event: " +
+                (response?.error || "unknown"),
+              "content.verification",
             );
           } else {
             window.postMessage(

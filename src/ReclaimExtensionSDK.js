@@ -167,9 +167,20 @@ class ReclaimExtensionProofRequest {
     this.redirectUrl = url;
   }
 
-  addContext(address, message) {
+  setContext(address, message) {
     if (!address || !message) throw new Error("Both address and message are required");
     this.context = { contextAddress: String(address), contextMessage: String(message) };
+  }
+
+  setJsonContext(address, jsonObj) {
+    if (!address) throw new Error("address is required");
+    if (!jsonObj || typeof jsonObj !== "object") throw new Error("message must be an object");
+    this.context = { contextAddress: String(address), contextMessage: JSON.stringify(jsonObj) };
+  }
+
+  /** @deprecated Use setContext() instead */
+  addContext(address, message) {
+    this.setContext(address, message);
   }
 
   setParams(params) {
