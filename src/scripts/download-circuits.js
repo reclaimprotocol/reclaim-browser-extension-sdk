@@ -188,7 +188,11 @@ async function main() {
     const ciphers = ["chacha20", "aes-256-ctr", "aes-128-ctr"];
     const files = ["circuit_final.zkey", "circuit.wasm", "circuit.r1cs"];
 
-    const allFiles = [...ciphers.flatMap((c) => files.map((f) => `snarkjs/${c}/${f}`))];
+    const allFiles = [
+      ...ciphers.flatMap((c) => files.map((f) => `snarkjs/${c}/${f}`)),
+      "stwo/s2circuits.js",
+      "stwo/s2circuits_bg.wasm",
+    ];
 
     // Check if all files exist
     const allFilesExist = await Promise.all(

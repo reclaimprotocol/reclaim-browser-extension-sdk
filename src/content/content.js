@@ -200,8 +200,8 @@ try {
 
             if (resp.injectionType !== "NONE") {
               injectNetworkInterceptor();
-              injectDynamicInjectionScript();
             }
+            injectDynamicInjectionScript();
           }
         },
       );
@@ -227,8 +227,8 @@ try {
         if (shouldInitialize) {
           if (data.injectionType !== "NONE") {
             injectNetworkInterceptor();
-            injectDynamicInjectionScript();
           }
+          injectDynamicInjectionScript();
 
           window.reclaimContentScript = new ReclaimContentScript();
         }
@@ -372,7 +372,7 @@ class ReclaimContentScript {
               // Store injection script in website's localStorage for injection script access
               if (
                 this.providerData?.customInjection?.length &&
-                this.providerData?.extensionConfig?.allowInjectionsViaChromeScritpting
+                this.providerData?.extensionConfig?.allowInjectionsViaChromeScripting
               ) {
                 chrome.runtime.sendMessage({
                   action: MESSAGE_ACTIONS.INJECT_VIA_SCRIPTING,
@@ -1094,6 +1094,12 @@ class ReclaimContentScript {
         headers: requestValue.headers || {},
         responseText: responseBody,
       };
+
+      if (formattedRequest.url?.includes("settingsApiMiniProfile")) {
+        console.log("Formatted request url:", formattedRequest.url);
+        console.log("Formatted request method:", formattedRequest.method);
+        console.log("Formatted response text:", formattedRequest.responseText);
+      }
 
       // Check against each criteria in provider data
       for (const criteria of this.providerData.requestData) {

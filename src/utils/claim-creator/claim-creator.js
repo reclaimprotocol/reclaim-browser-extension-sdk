@@ -262,13 +262,16 @@ export const createClaimObject = async (
       const cleanedRedaction = {};
 
       Object.entries(redaction).forEach(([key, value]) => {
-        // Skip the hash field
-        if (key === "hash") {
+        // Skip empty jsonPath and xPath
+        if ((key === "jsonPath" || key === "xPath") && (!value || value === "")) {
           return;
         }
 
-        // Skip empty jsonPath and xPath
-        if ((key === "jsonPath" || key === "xPath") && (!value || value === "")) {
+        // Include hash if it has a value, skip if null/undefined
+        if (key === "hash") {
+          if (value) {
+            cleanedRedaction[key] = value;
+          }
           return;
         }
 
@@ -339,8 +342,9 @@ export const createClaimObject = async (
     params,
     secretParams,
     ownerPrivateKey: ownerPrivateKey,
+    zkEngine: "stwo",
     client: {
-      url: "wss://attestor.reclaimprotocol.org:444/ws",
+      url: "ws://localhost:8001/ws",
     },
   };
 

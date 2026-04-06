@@ -1,13 +1,35 @@
 // Import necessary utilities and interfaces
 import "../utils/polyfills";
 import { MESSAGE_ACTIONS, MESSAGE_SOURCES, RECLAIM_SESSION_STATUS } from "../utils/constants";
-import { createClaimOnAttestor } from "@reclaimprotocol/attestor-core";
+import { createClaimOnAttestor } from "@reclaimprotocol/attestor-core/browser";
+
 // Import our specialized WebSocket implementation for offscreen document
 import { WebSocket } from "../utils/offscreen-websocket";
 import { updateSessionStatus } from "../utils/fetch-calls";
 import { createRemoteLogger } from "../utils/logger/RemoteLogger";
 
 const logger = createRemoteLogger("offscreen");
+
+/**
+ * Map raw ClaimTunnelResponse to a clean response object.
+ * Strips the large TLS transcript data to stay within
+ * chrome.runtime.sendMessage 64MB limit.
+ * TODO: Remove once attestor-core returns mapped response directly.
+ */
+function mapToCreateClaimResponse(res) {
+  if (!res.claim) {
+    const errorMsg = res.error?.message || res.error || "Unknown attestor error";
+    throw new Error(errorMsg);
+  }
+
+  return {
+    claim: res.claim,
+    signatures: {
+      claimSignature: res.signatures?.claimSignature,
+      attestorAddress: res.signatures?.attestorAddress,
+    },
+  };
+}
 
 // Ensure WebAssembly is available
 if (typeof WebAssembly === "undefined") {
@@ -183,15 +205,18 @@ class OffscreenProofGenerator {
 
       logger.debug("[OFFSCREEN] Final claimData for attestor", "offscreen.proof");
 
-      const attestorPromise = await createClaimOnAttestor(claimData);
+      const attestorPromise = createClaimOnAttestor(claimData);
 
       logger.info("[OFFSCREEN] Attestor promise created", "offscreen.proof");
 
-      const result = await Promise.race([attestorPromise, timeoutPromise]);
-
-      result.publicData = typeof claimData.publicData === "string" ? claimData.publicData : null;
+      const rawResult = await Promise.race([attestorPromise, timeoutPromise]);
 
       logger.info("[OFFSCREEN] Attestor promise result received", "offscreen.proof");
+
+      // Map raw ClaimTunnelResponse to clean CreateClaimResponse
+      // to avoid exceeding chrome.runtime.sendMessage 64MB limit
+      const result = mapToCreateClaimResponse(rawResult);
+      result.publicData = typeof claimData.publicData === "string" ? claimData.publicData : null;
 
       await updateSessionStatus(sessionId, RECLAIM_SESSION_STATUS.PROOF_GENERATION_SUCCESS);
       return result;

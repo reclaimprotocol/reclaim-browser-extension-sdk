@@ -3,6 +3,7 @@ import { reclaimExtensionSDK } from '@reclaimprotocol/browser-extension-sdk';
 import './ReclaimDemo.css';
 
 const PROVIDERS = [
+  {id: 'f4722dc7-83ae-44a7-9a6f-e98c274f25f4', name: "Linkedin"},
   {id: '218f590e-d755-44c9-82e3-04e9907d3f44', name: "ChatGpt"},
   {id: '06667ea1-7367-4f68-906d-98cb2bbadcf9', name: "Trex: YT"},
   {id: 'b98cf5f0-74b3-49e8-b2c5-6e1d7291a54f', name: "Trex: Instagram"},

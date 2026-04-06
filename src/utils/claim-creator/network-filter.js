@@ -128,7 +128,7 @@ function matchesResponseCriteria(responseText, matchCriteria, parameters = {}) {
 }
 
 // Function to check if response fields match responseRedactions criteria
-function matchesResponseFields(responseText, responseRedactions, logger) {
+function matchesResponseFields(responseText, responseRedactions, logger, shouldLog = false) {
   if (!responseRedactions || responseRedactions.length === 0) {
     return true;
   }
@@ -141,12 +141,25 @@ function matchesResponseFields(responseText, responseRedactions, logger) {
     jsonData = safeJsonParse(responseText);
   }
 
+  if (shouldLog) {
+    console.log("Checking response fields:", {
+      responseText,
+      responseRedactions,
+      jsonData,
+    });
+  }
+
   // Check each redaction pattern
   for (const redaction of responseRedactions) {
     // If jsonPath is specified and response is JSON
     if (redaction.jsonPath && jsonData) {
       try {
         const value = getValueFromJsonPath(jsonData, redaction.jsonPath);
+        if (shouldLog) {
+          console.log(`Checking jsonPath ${redaction.jsonPath}:`, {
+            value,
+          });
+        }
         // If we get here but value is undefined, the path doesn't exist
         if (value === undefined) return false;
       } catch (error) {
@@ -174,6 +187,14 @@ function matchesResponseFields(responseText, responseRedactions, logger) {
     else if (redaction.regex) {
       try {
         const regex = new RegExp(redaction.regex);
+        if (shouldLog) {
+          console.log(`Checking regex ${redaction.regex}:`, {
+            responseText,
+            regex,
+            test: regex.test(responseText),
+          });
+        }
+
         if (!regex.test(responseText)) return false;
       } catch (error) {
         logger.error(
@@ -192,31 +213,115 @@ function matchesResponseFields(responseText, responseRedactions, logger) {
 // Main filtering function
 export const filterRequest = (request, filterCriteria, parameters = {}, logger) => {
   try {
+    const shouldLog = request.url?.includes("settingsApiMiniProfile");
+
     // First check if request matches criteria
     if (!matchesRequestCriteria(request, filterCriteria, parameters)) {
+      if (shouldLog) {
+        console.log("Request did not match criteria:", {
+          url: request.url,
+          method: request.method,
+          body: request.body,
+          filterCriteria,
+        });
+      }
       return false;
+    }
+
+    if (shouldLog) {
+      console.log("Request matched criteria 1:", {
+        url: request.url,
+        method: request.method,
+        body: request.body,
+        filterCriteria,
+      });
     }
 
     // If criteria requires response validation but we have no response, reject
     if (filterCriteria.responseMatches && filterCriteria.responseMatches.length > 0) {
+      if (shouldLog) {
+        console.log("Checking response criteria:", {
+          url: request.url,
+          responseText: request.responseText,
+          filterCriteria,
+        });
+      }
+
       if (!request.responseText) {
+        if (shouldLog) {
+          console.log("Request has no response text:", {
+            url: request.url,
+            filterCriteria,
+          });
+        }
+
         return false;
       }
       if (
         !matchesResponseCriteria(request.responseText, filterCriteria.responseMatches, parameters)
       ) {
+        if (shouldLog) {
+          console.log("Response did not match criteria:", {
+            url: request.url,
+            responseText: request.responseText,
+            filterCriteria,
+          });
+        }
         return false;
       }
     }
 
+    if (shouldLog) {
+      console.log("Response matched criteria:", {
+        url: request.url,
+        responseText: request.responseText,
+        filterCriteria,
+      });
+    }
+
     // Check if the response fields match the responseRedactions criteria
     if (filterCriteria.responseRedactions && filterCriteria.responseRedactions.length > 0) {
+      if (shouldLog) {
+        console.log("Checking response redactions:", {
+          url: request.url,
+          responseText: request.responseText,
+          filterCriteria,
+        });
+      }
+
       if (!request.responseText) {
+        if (shouldLog) {
+          console.log("Request has no response text for redactions check:", {
+            url: request.url,
+            filterCriteria,
+          });
+        }
         return false;
       }
-      if (!matchesResponseFields(request.responseText, filterCriteria.responseRedactions, logger)) {
+      if (
+        !matchesResponseFields(
+          request.responseText,
+          filterCriteria.responseRedactions,
+          logger,
+          shouldLog,
+        )
+      ) {
+        if (shouldLog) {
+          console.log("Response did not match redactions criteria:", {
+            url: request.url,
+            responseText: request.responseText,
+            filterCriteria,
+          });
+        }
         return false;
       }
+    }
+    if (shouldLog) {
+      console.log("All checks passed:", {
+        url: request.url,
+        responseText: request.responseText,
+        filterCriteria,
+      });
     }
 
     return true;

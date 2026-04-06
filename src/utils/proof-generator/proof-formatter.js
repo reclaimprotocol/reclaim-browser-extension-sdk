@@ -6,7 +6,7 @@ export const formatProof = (proof, requestData) => {
     witnesses: [
       {
         id: proof.signatures.attestorAddress,
-        url: "wss://attestor.reclaimprotocol.org/ws",
+        url: "ws://localhost:8001/ws",
       },
     ],
     taskId: null,
