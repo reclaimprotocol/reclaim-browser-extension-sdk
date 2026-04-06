@@ -1,5 +1,3 @@
-import { LOG_TYPES, LOG_LEVEL, EVENT_TYPES } from "../utils/logger";
-
 export function addToProofGenerationQueue(ctx, claimData, requestHash) {
   ctx.proofGenerationQueue.push({
     claimData,
@@ -13,21 +11,10 @@ export function addToProofGenerationQueue(ctx, claimData, requestHash) {
 }
 
 export async function processNextQueueItem(ctx) {
-  const bgLogger = ctx.bgLogger;
-  bgLogger.setContext({
-    sessionId: ctx.sessionId || "unknown",
-    providerId: ctx.providerId || "unknown",
-    appId: ctx.appId || "unknown",
-    type: LOG_TYPES.BACKGROUND,
-  });
+  const { loggingHub } = ctx;
 
   if (ctx.aborted) {
-    bgLogger.info({
-      message: "[BACKGROUND] Proof generation queue aborted",
-      logLevel: LOG_LEVEL.INFO,
-      type: LOG_TYPES.BACKGROUND,
-      eventType: EVENT_TYPES.RECLAIM_VERIFICATION_DISMISSED,
-    });
+    loggingHub.info("[BACKGROUND] Proof generation queue aborted", "background.proofQueue");
     return;
   }
 
@@ -64,12 +51,7 @@ export async function processNextQueueItem(ctx) {
 
   try {
     if (ctx.aborted) {
-      bgLogger.info({
-        message: "[BACKGROUND] Proof generation aborted",
-        logLevel: LOG_LEVEL.INFO,
-        type: LOG_TYPES.BACKGROUND,
-        eventType: EVENT_TYPES.PROOF_GENERATION_ABORTED,
-      });
+      loggingHub.info("[BACKGROUND] Proof generation aborted", "background.proofQueue");
       return;
     }
 
@@ -80,40 +62,32 @@ export async function processNextQueueItem(ctx) {
       data: { requestHash: task.requestHash },
     });
 
-    bgLogger.info({
-      message: "[BACKGROUND] Proof generation started for request hash: " + task.requestHash,
-      logLevel: LOG_LEVEL.INFO,
-      type: LOG_TYPES.BACKGROUND,
-    });
+    loggingHub.info(
+      "[BACKGROUND] Proof generation started for request hash: " + task.requestHash,
+      "background.proofQueue",
+    );
 
     const proofResponseObject = await ctx.generateProof(
       {
         ...task.claimData,
         publicData: ctx.publicData ?? null,
       },
-      bgLogger,
+      loggingHub,
     );
 
     if (ctx.aborted) {
-      bgLogger.info({
-        message: "[BACKGROUND] Proof generation aborted",
-        logLevel: LOG_LEVEL.INFO,
-        type: LOG_TYPES.BACKGROUND,
-        eventType: EVENT_TYPES.PROOF_GENERATION_ABORTED,
-      });
+      loggingHub.info("[BACKGROUND] Proof generation aborted", "background.proofQueue");
       return;
     }
 
     if (!proofResponseObject.success) {
-      bgLogger.error({
-        message:
-          "[BACKGROUND] Proof generation failed for request hash: " +
+      loggingHub.error(
+        "[BACKGROUND] Proof generation failed for request hash: " +
           task.requestHash +
           ": " +
           proofResponseObject.error,
-        logLevel: LOG_LEVEL.INFO,
-        type: LOG_TYPES.BACKGROUND,
-      });
+        "background.proofQueue",
+      );
       ctx.failSession("Proof generation failed: " + proofResponseObject.error, task.requestHash);
       return;
     }
@@ -125,11 +99,10 @@ export async function processNextQueueItem(ctx) {
         ctx.generatedProofs.set(task.requestHash, proof);
       }
 
-      bgLogger.info({
-        message: "[BACKGROUND] Proof generation successful for request hash: " + task.requestHash,
-        logLevel: LOG_LEVEL.INFO,
-        type: LOG_TYPES.BACKGROUND,
-      });
+      loggingHub.info(
+        "[BACKGROUND] Proof generation successful for request hash: " + task.requestHash,
+        "background.proofQueue",
+      );
 
       chrome.tabs.sendMessage(ctx.activeTabId, {
         action: ctx.MESSAGE_ACTIONS.PROOF_GENERATION_SUCCESS,
@@ -141,15 +114,13 @@ export async function processNextQueueItem(ctx) {
       ctx.sessionTimerManager.resetSessionTimer();
     }
   } catch (error) {
-    bgLogger.error({
-      message:
-        "[BACKGROUND] Proof generation failed for request hash: " +
+    loggingHub.error(
+      "[BACKGROUND] Proof generation failed for request hash: " +
         task.requestHash +
         ": " +
         error?.message,
-      logLevel: LOG_LEVEL.INFO,
-      type: LOG_TYPES.BACKGROUND,
-    });
+      "background.proofQueue",
+    );
 
     ctx.failSession("Proof generation failed: " + error.message, task.requestHash);
     return;

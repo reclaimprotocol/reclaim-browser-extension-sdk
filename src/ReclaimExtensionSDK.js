@@ -2,7 +2,7 @@ import "./utils/polyfills";
 import { Wallet, keccak256, getBytes } from "ethers";
 import initBackground from "./background/background";
 import { BACKEND_URL, API_ENDPOINTS, RECLAIM_SDK_ACTIONS } from "./utils/constants";
-import { loggerService } from "./utils/logger/LoggerService";
+import { LOG_CONFIG_STORAGE_KEY, DEFAULT_LOG_CONFIG } from "./utils/logger/constants";
 
 // Global verification queue to serialize extension sessions (background is single-session)
 const _verificationQueue = [];
@@ -429,6 +429,18 @@ class ReclaimExtensionSDK {
 
   // Primary API: create a per-request instance
   async init(applicationId, appSecret, providerId, options = {}) {
+    // If logConfig is provided, apply it FIRST before any other operations
+    // This ensures all logs from init onwards are captured
+    if (options.logConfig) {
+      const extensionID = options.extensionID || "";
+      const configApplied = await this.setLogConfig(options.logConfig, extensionID);
+      if (!configApplied) {
+        console.warn(
+          "[ReclaimSDK] Log config could not be applied (extension not ready or timeout)",
+        );
+      }
+    }
+
     return await ReclaimExtensionProofRequest.init(applicationId, appSecret, providerId, options);
   }
 
@@ -436,33 +448,75 @@ class ReclaimExtensionSDK {
     return ReclaimExtensionProofRequest.fromJsonString(json, options);
   }
 
-  setLogConfig(config, extensionID) {
-    loggerService.setConfig(config);
-
-    // In extension contexts, persist to storage (propagates to all contexts)
+  /**
+   * Set log configuration
+   * @param {Object} config - Log config { logLevel: "INFO"|"DEBUG", consoleEnabled: boolean }
+   * @param {string} extensionID - Required in web mode to route config to extension
+   * @param {number} timeout - Timeout in ms (default 2000)
+   * @returns {Promise<boolean>} Resolves true when config is applied, false on timeout
+   */
+  async setLogConfig(config, extensionID, timeout = 2000) {
+    // In extension contexts, persist to storage (propagates to LoggingHub via onChanged)
     try {
       if (this._mode === "extension" && typeof chrome !== "undefined" && chrome.storage?.local) {
-        const { LOG_CONFIG_STORAGE_KEY } = require("./utils/logger/constants");
-        chrome.storage.local.set({
-          [LOG_CONFIG_STORAGE_KEY]: { ...loggerService.config, ...config },
+        await chrome.storage.local.set({
+          [LOG_CONFIG_STORAGE_KEY]: config,
         });
-        return;
+        return true;
       }
     } catch {}
 
-    // In web page context, ask the content script to persist it
-    window.postMessage(
-      {
-        action: RECLAIM_SDK_ACTIONS.SET_LOG_CONFIG,
-        extensionID,
-        data: { config },
-      },
-      "*",
-    );
+    // In web page context, ask the content script to persist it and wait for confirmation
+    return new Promise((resolve) => {
+      const messageId = `log-config-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      let resolved = false;
+
+      const handler = (event) => {
+        if (event.source !== window) return;
+        if (
+          event.data?.action === RECLAIM_SDK_ACTIONS.LOG_CONFIG_UPDATED &&
+          event.data?.messageId === messageId
+        ) {
+          resolved = true;
+          window.removeEventListener("message", handler);
+          resolve(event.data?.success ?? true);
+        }
+      };
+
+      window.addEventListener("message", handler);
+
+      window.postMessage(
+        {
+          action: RECLAIM_SDK_ACTIONS.SET_LOG_CONFIG,
+          extensionID,
+          messageId,
+          data: { config },
+        },
+        "*",
+      );
+
+      // Timeout fallback
+      setTimeout(() => {
+        if (!resolved) {
+          window.removeEventListener("message", handler);
+          resolve(false);
+        }
+      }, timeout);
+    });
   }
 
-  getLogConfig() {
-    return loggerService.config;
+  /**
+   * Get current log configuration (async - reads from storage)
+   * @returns {Promise<Object>} Log config
+   */
+  async getLogConfig() {
+    try {
+      if (typeof chrome !== "undefined" && chrome.storage?.local) {
+        const result = await chrome.storage.local.get(LOG_CONFIG_STORAGE_KEY);
+        return result[LOG_CONFIG_STORAGE_KEY] || { ...DEFAULT_LOG_CONFIG };
+      }
+    } catch {}
+    return { ...DEFAULT_LOG_CONFIG };
   }
 }
 

@@ -5,21 +5,16 @@ import { createClaimOnAttestor } from "@reclaimprotocol/attestor-core";
 // Import our specialized WebSocket implementation for offscreen document
 import { WebSocket } from "../utils/offscreen-websocket";
 import { updateSessionStatus } from "../utils/fetch-calls";
-import { debugLogger, DebugLogType } from "../utils/logger";
-import { loggerService, createContextLogger } from "../utils/logger/LoggerService";
-import { EVENT_TYPES, LOG_LEVEL, LOG_TYPES } from "../utils/logger/constants";
+import { createRemoteLogger } from "../utils/logger/RemoteLogger";
 
-const offscreenLogger = createContextLogger({
-  sessionId: "unknown",
-  providerId: "unknown",
-  appId: "unknown",
-  source: "reclaim-extension-sdk",
-  type: LOG_TYPES.OFFSCREEN,
-});
+const logger = createRemoteLogger("offscreen");
 
 // Ensure WebAssembly is available
 if (typeof WebAssembly === "undefined") {
-  debugLogger.error(DebugLogType.OFFSCREEN, "WebAssembly is not available in this browser context");
+  logger.error(
+    "[OFFSCREEN] WebAssembly is not available in this browser context",
+    "offscreen.init",
+  );
 }
 
 // Set WASM path to the extension's public path
@@ -47,28 +42,8 @@ class OffscreenProofGenerator {
   }
 
   init() {
-    offscreenLogger.info({
-      message: "[OFFSCREEN] Offscreen ready",
-      logLevel: LOG_LEVEL.INFO,
-      type: LOG_TYPES.OFFSCREEN,
-    });
+    logger.info("[OFFSCREEN] Offscreen ready", "offscreen.init");
     chrome.runtime.onMessage.addListener(this.handleMessage.bind(this));
-
-    // Load and live-sync log config
-    try {
-      const { LOG_CONFIG_STORAGE_KEY } = require("../utils/logger/constants");
-      chrome.storage.local.get([LOG_CONFIG_STORAGE_KEY], (res) => {
-        const cfg = res?.[LOG_CONFIG_STORAGE_KEY];
-        if (cfg && typeof cfg === "object") loggerService.setConfig(cfg);
-      });
-      chrome.storage.onChanged.addListener((changes, area) => {
-        if (area === "local" && changes[LOG_CONFIG_STORAGE_KEY]) {
-          const newCfg = changes[LOG_CONFIG_STORAGE_KEY].newValue || {};
-          loggerService.setConfig(newCfg);
-        }
-      });
-    } catch {}
-
     this.sendReadySignal();
   }
 
@@ -83,14 +58,6 @@ class OffscreenProofGenerator {
   handleMessage(message, sender, sendResponse) {
     const { action, source, target, data, sessionId, providerId } = message;
 
-    if (sessionId && providerId && sessionId !== "unknown" && providerId !== "unknown") {
-      offscreenLogger.setContext({
-        sessionId: sessionId,
-        providerId: providerId,
-        type: LOG_TYPES.OFFSCREEN,
-      });
-    }
-
     if (target !== MESSAGE_SOURCES.OFFSCREEN) return;
 
     switch (action) {
@@ -102,26 +69,19 @@ class OffscreenProofGenerator {
       case MESSAGE_ACTIONS.GENERATE_PROOF:
         (async () => {
           try {
-            offscreenLogger.info({
-              message: "[OFFSCREEN] Generating proof",
-              logLevel: LOG_LEVEL.INFO,
-              type: LOG_TYPES.OFFSCREEN,
-              eventType: EVENT_TYPES.PROOF_GENERATION_STARTED,
-            });
+            logger.info("[OFFSCREEN] Generating proof", "offscreen.proof");
 
-            const proof = await this.generateProof(data, offscreenLogger);
+            const proof = await this.generateProof(data);
 
             // Edge case: proof object contains an error
             const embeddedErr =
               proof?.error?.message || (typeof proof?.error === "string" ? proof.error : null);
 
             if (embeddedErr) {
-              offscreenLogger.error({
-                message: "[OFFSCREEN] Proof contains embedded error:",
-                logLevel: LOG_LEVEL.ERROR,
-                type: LOG_TYPES.OFFSCREEN,
-                eventType: EVENT_TYPES.PROOF_GENERATION_FAILED,
-              });
+              logger.error(
+                "[OFFSCREEN] Proof contains embedded error: " + embeddedErr,
+                "offscreen.proof",
+              );
               chrome.runtime.sendMessage({
                 action: MESSAGE_ACTIONS.GENERATE_PROOF_RESPONSE,
                 source: MESSAGE_SOURCES.OFFSCREEN,
@@ -140,12 +100,7 @@ class OffscreenProofGenerator {
               proof: proof,
             });
           } catch (error) {
-            offscreenLogger.error({
-              message: "[OFFSCREEN] Error generating proof: " + error.message,
-              logLevel: LOG_LEVEL.ERROR,
-              type: LOG_TYPES.OFFSCREEN,
-              eventType: EVENT_TYPES.PROOF_GENERATION_FAILED,
-            });
+            logger.error("[OFFSCREEN] Error generating proof: " + error.message, "offscreen.proof");
             chrome.runtime.sendMessage({
               action: MESSAGE_ACTIONS.GENERATE_PROOF_RESPONSE,
               source: MESSAGE_SOURCES.OFFSCREEN,
@@ -175,11 +130,7 @@ class OffscreenProofGenerator {
             success: true,
             privateKey: privateKey,
           });
-          offscreenLogger.info({
-            message: "[OFFSCREEN] Private key generated",
-            logLevel: LOG_LEVEL.INFO,
-            type: LOG_TYPES.OFFSCREEN,
-          });
+          logger.info("[OFFSCREEN] Private key generated", "offscreen.key");
           sendResponse({ success: true, received: true });
         } catch (error) {
           chrome.runtime.sendMessage({
@@ -189,28 +140,23 @@ class OffscreenProofGenerator {
             success: false,
             error: error.message || "Unknown error generating private key",
           });
-          offscreenLogger.error({
-            message: "[OFFSCREEN] Error generating private key: " + error.message,
-            logLevel: LOG_LEVEL.ERROR,
-            type: LOG_TYPES.OFFSCREEN,
-          });
+          logger.error(
+            "[OFFSCREEN] Error generating private key: " + error.message,
+            "offscreen.key",
+          );
           sendResponse({ success: false, error: error.message });
         }
         break;
 
       default:
-        offscreenLogger.error({
-          message: "[OFFSCREEN] Unknown action: " + action,
-          logLevel: LOG_LEVEL.ERROR,
-          type: LOG_TYPES.OFFSCREEN,
-        });
+        logger.error("[OFFSCREEN] Unknown action: " + action, "offscreen.message");
         sendResponse({ success: false, error: "Unknown action" });
     }
 
     return true;
   }
 
-  async generateProof(claimData, offscreenLogger) {
+  async generateProof(claimData) {
     if (!claimData) {
       throw new Error("No claim data provided for proof generation");
     }
@@ -219,12 +165,10 @@ class OffscreenProofGenerator {
     delete claimData.sessionId;
 
     try {
-      offscreenLogger.info({
-        message: "[OFFSCREEN] Updating session status to PROOF_GENERATION_STARTED",
-        logLevel: LOG_LEVEL.INFO,
-        type: LOG_TYPES.OFFSCREEN,
-        eventType: EVENT_TYPES.PROOF_GENERATION_STARTED,
-      });
+      logger.info(
+        "[OFFSCREEN] Updating session status to PROOF_GENERATION_STARTED",
+        "offscreen.proof",
+      );
 
       await updateSessionStatus(sessionId, RECLAIM_SESSION_STATUS.PROOF_GENERATION_STARTED);
 
@@ -237,36 +181,25 @@ class OffscreenProofGenerator {
         }, 60000 * 2);
       });
 
+      logger.debug("[OFFSCREEN] Final claimData for attestor", "offscreen.proof");
+
       const attestorPromise = await createClaimOnAttestor(claimData);
 
-      offscreenLogger.info({
-        message: "[OFFSCREEN] Attestor promise created",
-        logLevel: LOG_LEVEL.INFO,
-        type: LOG_TYPES.OFFSCREEN,
-        eventType: EVENT_TYPES.PROOF_GENERATION_SUCCESS,
-      });
+      logger.info("[OFFSCREEN] Attestor promise created", "offscreen.proof");
 
       const result = await Promise.race([attestorPromise, timeoutPromise]);
 
       result.publicData = typeof claimData.publicData === "string" ? claimData.publicData : null;
 
-      offscreenLogger.info({
-        message: "[OFFSCREEN] Attestor promise result: " + JSON.stringify(result),
-        logLevel: LOG_LEVEL.ALL,
-        type: LOG_TYPES.OFFSCREEN,
-        eventType: EVENT_TYPES.RESULT_RECEIVED,
-        meta: { result },
-      });
+      logger.info("[OFFSCREEN] Attestor promise result received", "offscreen.proof");
 
       await updateSessionStatus(sessionId, RECLAIM_SESSION_STATUS.PROOF_GENERATION_SUCCESS);
       return result;
     } catch (error) {
-      offscreenLogger.error({
-        message: "[OFFSCREEN] Error generating proof: " + error?.message || "Unknown error",
-        logLevel: LOG_LEVEL.ERROR,
-        type: LOG_TYPES.OFFSCREEN,
-        eventType: EVENT_TYPES.PROOF_GENERATION_FAILED,
-      });
+      logger.error(
+        "[OFFSCREEN] Error generating proof: " + (error?.message || "Unknown error"),
+        "offscreen.proof",
+      );
       await updateSessionStatus(sessionId, RECLAIM_SESSION_STATUS.PROOF_GENERATION_FAILED);
       throw error;
     }

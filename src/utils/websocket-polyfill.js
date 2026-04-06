@@ -8,7 +8,6 @@
 
 // Check if we're in a context with window (browser/content script) or not (background script)
 const isBackgroundContext = typeof window === "undefined";
-import { debugLogger, DebugLogType } from "./logger";
 
 // Create either a real WebSocket wrapper or a mock implementation
 let WebSocketPolyfill;
@@ -19,11 +18,6 @@ if (!isBackgroundContext) {
 
   WebSocketPolyfill = class extends BrowserWebSocket {
     constructor(url, protocols) {
-      debugLogger.info(
-        DebugLogType.POLYFILLS,
-        "[WEBSOCKET-POLYFILL] Creating WebSocket with URL:",
-        url,
-      );
       super(url, protocols);
 
       // Add event handling compatibility
@@ -64,19 +58,10 @@ if (!isBackgroundContext) {
       });
     }
   };
-
-  debugLogger.info(
-    DebugLogType.POLYFILLS,
-    "[WEBSOCKET-POLYFILL] Using browser WebSocket implementation",
-  );
 } else {
   // Background script context - create a mock implementation
   WebSocketPolyfill = class {
     constructor(url, protocols) {
-      debugLogger.info(
-        DebugLogType.POLYFILLS,
-        "[WEBSOCKET-POLYFILL] Creating mock WebSocket for background context",
-      );
       this.url = url;
       this.protocols = protocols;
       this.readyState = 3; // CLOSED
@@ -91,10 +76,6 @@ if (!isBackgroundContext) {
 
     // No-op methods
     send() {
-      debugLogger.warn(
-        DebugLogType.POLYFILLS,
-        "[WEBSOCKET-POLYFILL] Cannot use WebSockets in background context",
-      );
       throw new Error("WebSockets are not available in background context");
     }
 
@@ -114,11 +95,6 @@ if (!isBackgroundContext) {
       // No-op
     }
   };
-
-  debugLogger.info(
-    DebugLogType.POLYFILLS,
-    "[WEBSOCKET-POLYFILL] Using mock WebSocket implementation for background context",
-  );
 }
 
 // Export the WebSocket class and constructor
@@ -131,5 +107,3 @@ if (typeof module !== "undefined" && module.exports) {
   module.exports.WebSocket = WebSocketPolyfill;
   module.exports.default = WebSocketPolyfill;
 }
-
-debugLogger.info(DebugLogType.POLYFILLS, "[WEBSOCKET-POLYFILL] WebSocket polyfill initialized");

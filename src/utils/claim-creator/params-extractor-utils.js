@@ -3,7 +3,6 @@
  * Shared between network-filter.js and params-extractor.js
  */
 
-import { debugLogger, DebugLogType } from "../logger";
 import { JSONPath } from "jsonpath-plus";
 
 /**
@@ -23,8 +22,7 @@ export const getValueFromJsonPath = (jsonData, jsonPath) => {
     }
     return finalResult;
   } catch (error) {
-    debugLogger.error(
-      DebugLogType.CLAIM,
+    console.error(
       `[PARAMS-EXTRACTOR-UTILS] Error extracting JSON value with path ${jsonPath}:`,
       error,
     );
@@ -54,8 +52,7 @@ export const getValueFromXPath = (htmlString, xPath) => {
 
     return match ? match[1] : undefined;
   } catch (error) {
-    debugLogger.error(
-      DebugLogType.CLAIM,
+    console.error(
       `[PARAMS-EXTRACTOR-UTILS] Error extracting HTML value with XPath ${xPath}:`,
       error,
     );
@@ -83,10 +80,7 @@ export const safeJsonParse = (jsonText) => {
   try {
     return JSON.parse(jsonText);
   } catch (e) {
-    debugLogger.warn(
-      DebugLogType.CLAIM,
-      "[PARAMS-EXTRACTOR-UTILS] Response looks like JSON but couldn't be parsed",
-    );
+    console.warn("[PARAMS-EXTRACTOR-UTILS] Response looks like JSON but couldn't be parsed");
     return null;
   }
 };

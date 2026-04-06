@@ -1,10 +1,9 @@
 // Session management for background script
 // Handles session start, fail, submit, and timer logic
 
-import { LOG_TYPES, EVENT_TYPES, LOG_LEVEL } from "../utils/logger";
+import { loggingHub } from "../utils/logger/LoggingHub";
 
 export async function startVerification(ctx, templateData) {
-  const bgLogger = ctx.bgLogger;
   try {
     // clear all the member variables
     ctx.providerData = null;
@@ -29,18 +28,19 @@ export async function startVerification(ctx, templateData) {
     if (!templateData.providerId) {
       throw new Error("Provider ID not found");
     }
-    bgLogger.setContext({
-      type: LOG_TYPES.BACKGROUND,
-      sessionId: templateData.sessionId || ctx.sessionId || "unknown",
-      providerId: templateData.providerId || ctx.providerId || "unknown",
-      appId: templateData.applicationId || ctx.appId || "unknown",
+
+    // Set session context in the logging hub
+    ctx.loggingHub.setSessionContext({
+      sessionId: templateData.sessionId,
+      providerId: templateData.providerId,
+      appId: templateData.applicationId,
     });
+
     // fetch provider data from the backend
-    bgLogger.info({
-      message: `[BACKGROUND] Fetching provider data from the backend for provider Id ${templateData.providerId}`,
-      logLevel: LOG_LEVEL.INFO,
-      type: LOG_TYPES.BACKGROUND,
-    });
+    loggingHub.info(
+      `[BACKGROUND] Fetching provider data from the backend for provider Id ${templateData.providerId}`,
+      "background.provider",
+    );
 
     const providerData = await ctx.fetchProviderData(
       templateData.providerId,
@@ -90,11 +90,10 @@ export async function startVerification(ctx, templateData) {
     // Use chrome.tabs.create directly and handle the promise explicitly
     chrome.tabs.create({ url: providerUrl }, (tab) => {
       ctx.activeTabId = tab.id;
-      bgLogger.info({
-        message: `[BACKGROUND] New tab created for provider ${templateData.providerId} with tab id ${tab.id}`,
-        logLevel: LOG_LEVEL.INFO,
-        type: LOG_TYPES.BACKGROUND,
-      });
+      loggingHub.info(
+        `[BACKGROUND] New tab created for provider ${templateData.providerId} with tab id ${tab.id}`,
+        "background.tab",
+      );
 
       ctx.managedTabs.add(tab.id);
 
@@ -141,18 +140,16 @@ export async function startVerification(ctx, templateData) {
         // Store the provider data in the providerDataMap for the tab
         ctx.providerDataMessage.set(tab.id, { message: providerDataMessage });
       } else {
-        bgLogger.error({
-          message: `[BACKGROUND] New tab does not have an ID, cannot queue message for popup.`,
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.BACKGROUND,
-        });
+        loggingHub.error(
+          `[BACKGROUND] New tab does not have an ID, cannot queue message for popup.`,
+          "background.tab",
+        );
       }
 
-      bgLogger.info({
-        message: `[BACKGROUND] Starting verification with session id: ${ctx.sessionId}`,
-        logLevel: LOG_LEVEL.INFO,
-        type: LOG_TYPES.BACKGROUND,
-      });
+      loggingHub.info(
+        `[BACKGROUND] Starting verification with session id: ${ctx.sessionId}`,
+        "background.verification",
+      );
 
       // Update session status after tab creation
       ctx
@@ -163,11 +160,10 @@ export async function startVerification(ctx, templateData) {
           templateData.applicationId,
         )
         .catch((error) => {
-          bgLogger.error({
-            message: `[BACKGROUND] Error updating session status: ${error?.message}`,
-            logLevel: LOG_LEVEL.INFO,
-            type: LOG_TYPES.BACKGROUND,
-          });
+          loggingHub.error(
+            `[BACKGROUND] Error updating session status: ${error?.message}`,
+            "background.session",
+          );
         });
     });
 
@@ -176,11 +172,10 @@ export async function startVerification(ctx, templateData) {
       message: "Verification started, redirecting to provider login page",
     };
   } catch (error) {
-    bgLogger.error({
-      message: `[BACKGROUND] Error starting verification: ${error?.message}`,
-      logLevel: LOG_LEVEL.INFO,
-      type: LOG_TYPES.BACKGROUND,
-    });
+    loggingHub.error(
+      `[BACKGROUND] Error starting verification: ${error?.message}`,
+      "background.verification",
+    );
     // Release concurrency guard on immediate failure
     ctx.activeSessionId = null;
     throw error;
@@ -188,21 +183,7 @@ export async function startVerification(ctx, templateData) {
 }
 
 export async function failSession(ctx, errorMessage, requestHash) {
-  const bgLogger = ctx.bgLogger;
-
-  bgLogger.setContext({
-    type: LOG_TYPES.BACKGROUND,
-    sessionId: ctx.sessionId || "unknown",
-    providerId: ctx.providerId || "unknown",
-    appId: ctx.appId || "unknown",
-  });
-
-  bgLogger.log({
-    message: `[BACKGROUND] Failing session: ${errorMessage}`,
-    logLevel: LOG_LEVEL.INFO,
-    type: LOG_TYPES.BACKGROUND,
-    eventType: EVENT_TYPES.VERIFICATION_FLOW_FAILED,
-  });
+  loggingHub.info(`[BACKGROUND] Failing session: ${errorMessage}`, "background.session");
 
   // Clear all timers
   ctx.sessionTimerManager.clearAllTimers();
@@ -220,17 +201,15 @@ export async function failSession(ctx, errorMessage, requestHash) {
         ctx.appId,
       );
 
-      bgLogger.log({
-        message: `[BACKGROUND] Updated session status to failed: ${ctx.sessionId}`,
-        logLevel: LOG_LEVEL.INFO,
-        type: LOG_TYPES.BACKGROUND,
-      });
+      loggingHub.info(
+        `[BACKGROUND] Updated session status to failed: ${ctx.sessionId}`,
+        "background.session",
+      );
     } catch (error) {
-      bgLogger.error({
-        message: `[BACKGROUND] Error updating session status to failed: ${error?.message}`,
-        logLevel: LOG_LEVEL.INFO,
-        type: LOG_TYPES.BACKGROUND,
-      });
+      loggingHub.error(
+        `[BACKGROUND] Error updating session status to failed: ${error?.message}`,
+        "background.session",
+      );
     }
   }
 
@@ -244,11 +223,10 @@ export async function failSession(ctx, errorMessage, requestHash) {
         data: { requestHash: requestHash, sessionId: ctx.sessionId },
       })
       .catch((err) => {
-        bgLogger.error({
-          message: `[BACKGROUND] Error notifying content script of session failure: ${err?.message}`,
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.BACKGROUND,
-        });
+        loggingHub.error(
+          `[BACKGROUND] Error notifying content script of session failure: ${err?.message}`,
+          "background.session",
+        );
       });
   }
 
@@ -262,56 +240,48 @@ export async function failSession(ctx, errorMessage, requestHash) {
         data: { error: errorMessage, sessionId: ctx.sessionId },
       });
     } catch (e) {
-      bgLogger.error({
-        message: `[BACKGROUND] Error notifying original tab of session failure: ${e?.message}`,
-        logLevel: LOG_LEVEL.INFO,
-        type: LOG_TYPES.BACKGROUND,
-      });
+      loggingHub.error(
+        `[BACKGROUND] Error notifying original tab of session failure: ${e?.message}`,
+        "background.session",
+      );
     }
   }
 
   // Broadcast to popup/options pages
   try {
-    bgLogger.info({
-      message: `[BACKGROUND] Proof generation failed, Broadcasting to popup/options pages: ${errorMessage}`,
-      logLevel: LOG_LEVEL.INFO,
-      type: LOG_TYPES.BACKGROUND,
-    });
+    loggingHub.info(
+      `[BACKGROUND] Proof generation failed, Broadcasting to popup/options pages: ${errorMessage}`,
+      "background.proof",
+    );
 
     await chrome.runtime.sendMessage({
       action: ctx.MESSAGE_ACTIONS.PROOF_GENERATION_FAILED,
       data: { error: errorMessage, sessionId: ctx.sessionId },
     });
   } catch (e) {
-    bgLogger.error({
-      message: `[BACKGROUND] Error broadcasting to popup/options pages: ${e?.message}`,
-      logLevel: LOG_LEVEL.INFO,
-      type: LOG_TYPES.BACKGROUND,
-    });
+    loggingHub.error(
+      `[BACKGROUND] Error broadcasting to popup/options pages: ${e?.message}`,
+      "background.session",
+    );
   }
 
   // Clear the queue
   ctx.proofGenerationQueue = [];
   ctx.isProcessingQueue = false;
 
+  // Clear session context from logging hub
+  ctx.loggingHub.clearSessionContext();
+
   // Release concurrency guard
   ctx.activeSessionId = null;
 }
 
 export async function submitProofs(ctx) {
-  const bgLogger = ctx.bgLogger;
   try {
     // Hold if user set canExpectManyClaims(true)
     if (ctx.expectManyClaims) return;
 
     ctx.sessionTimerManager.clearAllTimers();
-
-    bgLogger.setContext({
-      type: LOG_TYPES.BACKGROUND,
-      sessionId: ctx.sessionId || "unknown",
-      providerId: ctx.providerId || "unknown",
-      appId: ctx.appId || "unknown",
-    });
 
     if (ctx.generatedProofs.size === 0) return;
 
@@ -357,23 +327,19 @@ export async function submitProofs(ctx) {
       publicData: ctx.publicData ?? null,
     }));
 
-    bgLogger.info({
-      message: `[BACKGROUND] Submitting proofs ${JSON.stringify(finalProofs)}`,
-      logLevel: LOG_LEVEL.INFO,
-      type: LOG_TYPES.BACKGROUND,
-      eventType: EVENT_TYPES.SUBMITTING_PROOF,
-    });
+    loggingHub.info(
+      `[BACKGROUND] Submitting proofs ${JSON.stringify(finalProofs)}`,
+      "background.proof",
+    );
 
     let submitted = false;
     // If callbackUrl provided, submit; otherwise just signal completion
     if (ctx.callbackUrl && typeof ctx.callbackUrl === "string" && ctx.callbackUrl.length > 0) {
       try {
-        bgLogger.log({
-          message: `[BACKGROUND] Submitting proofs to callback URL: ${ctx.callbackUrl}`,
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.BACKGROUND,
-          eventType: EVENT_TYPES.SUBMITTING_PROOF_TO_CALLBACK_URL,
-        });
+        loggingHub.info(
+          `[BACKGROUND] Submitting proofs to callback URL: ${ctx.callbackUrl}`,
+          "background.proof",
+        );
         await ctx.submitProofOnCallback(
           finalProofs,
           ctx.callbackUrl,
@@ -385,12 +351,10 @@ export async function submitProofs(ctx) {
       } catch (error) {
         // Notify original tab
         try {
-          bgLogger.error({
-            message: `[BACKGROUND] Notifying original tab of proof submission failure: ${error.message}`,
-            logLevel: LOG_LEVEL.INFO,
-            type: LOG_TYPES.BACKGROUND,
-            eventType: EVENT_TYPES.SUBMITTING_PROOF_TO_CALLBACK_URL_FAILED,
-          });
+          loggingHub.error(
+            `[BACKGROUND] Notifying original tab of proof submission failure: ${error.message}`,
+            "background.proof",
+          );
           await chrome.tabs.sendMessage(ctx.originalTabId, {
             action: ctx.MESSAGE_ACTIONS.PROOF_SUBMISSION_FAILED,
             source: ctx.MESSAGE_SOURCES.BACKGROUND,
@@ -398,12 +362,10 @@ export async function submitProofs(ctx) {
             data: { error: error.message, sessionId: ctx.sessionId },
           });
         } catch (e) {
-          bgLogger.error({
-            message: `[BACKGROUND] Error notifying original tab of proof submission failure: ${e?.message}`,
-            logLevel: LOG_LEVEL.INFO,
-            type: LOG_TYPES.BACKGROUND,
-            eventType: EVENT_TYPES.SUBMITTING_PROOF_TO_CALLBACK_URL_FAILED,
-          });
+          loggingHub.error(
+            `[BACKGROUND] Error notifying original tab of proof submission failure: ${e?.message}`,
+            "background.proof",
+          );
         }
 
         chrome.tabs.sendMessage(ctx.activeTabId, {
@@ -413,12 +375,10 @@ export async function submitProofs(ctx) {
           data: { error: error.message, sessionId: ctx.sessionId },
         });
 
-        bgLogger.error({
-          message: `[BACKGROUND] Broadcasting to runtime of proof submission failure: ${error.message}`,
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.BACKGROUND,
-          eventType: EVENT_TYPES.PROOF_SUBMISSION_FAILED,
-        });
+        loggingHub.error(
+          `[BACKGROUND] Broadcasting to runtime of proof submission failure: ${error.message}`,
+          "background.proof",
+        );
         // Broadcast to runtime
         try {
           await chrome.runtime.sendMessage({
@@ -427,23 +387,20 @@ export async function submitProofs(ctx) {
           });
         } catch (e) {}
 
-        bgLogger.error({
-          message: `[BACKGROUND] Error submitting proofs: ${error.message}`,
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.BACKGROUND,
-        });
+        loggingHub.error(
+          `[BACKGROUND] Error submitting proofs: ${error.message}`,
+          "background.proof",
+        );
         throw error;
       }
     } else {
       // No callback: set status to generation success
       if (ctx.sessionId) {
         try {
-          bgLogger.log({
-            message: `[BACKGROUND] Updating status to PROOF_GENERATION_SUCCESS`,
-            logLevel: LOG_LEVEL.INFO,
-            type: LOG_TYPES.BACKGROUND,
-            eventType: EVENT_TYPES.PROOF_SUBMITTED,
-          });
+          loggingHub.info(
+            `[BACKGROUND] Updating status to PROOF_GENERATION_SUCCESS`,
+            "background.proof",
+          );
           await ctx.updateSessionStatus(
             ctx.sessionId,
             ctx.RECLAIM_SESSION_STATUS.PROOF_GENERATION_SUCCESS,
@@ -451,11 +408,10 @@ export async function submitProofs(ctx) {
             ctx.appId,
           );
         } catch (e) {
-          bgLogger.error({
-            message: `[BACKGROUND] Error updating status to PROOF_GENERATION_SUCCESS: ${e?.message}`,
-            logLevel: LOG_LEVEL.INFO,
-            type: LOG_TYPES.BACKGROUND,
-          });
+          loggingHub.error(
+            `[BACKGROUND] Error updating status to PROOF_GENERATION_SUCCESS: ${e?.message}`,
+            "background.session",
+          );
         }
       }
     }
@@ -463,11 +419,10 @@ export async function submitProofs(ctx) {
     // Notify content script with proofs in both cases
     if (ctx.activeTabId) {
       try {
-        bgLogger.log({
-          message: `[BACKGROUND] Proof submitted, Notifying content script with proofs`,
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.BACKGROUND,
-        });
+        loggingHub.info(
+          `[BACKGROUND] Proof submitted, Notifying content script with proofs`,
+          "background.proof",
+        );
         await chrome.tabs.sendMessage(ctx.activeTabId, {
           action: ctx.MESSAGE_ACTIONS.PROOF_SUBMITTED,
           source: ctx.MESSAGE_SOURCES.BACKGROUND,
@@ -475,21 +430,19 @@ export async function submitProofs(ctx) {
           data: { formattedProofs, submitted, sessionId: ctx.sessionId },
         });
       } catch (error) {
-        bgLogger.error({
-          message: `[BACKGROUND] Error notifying content script: ${error?.message}`,
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.BACKGROUND,
-        });
+        loggingHub.error(
+          `[BACKGROUND] Error notifying content script: ${error?.message}`,
+          "background.proof",
+        );
       }
     }
 
     if (ctx.originalTabId) {
       try {
-        bgLogger.log({
-          message: `[BACKGROUND] Proof submitted, Notifying original tab with proofs`,
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.BACKGROUND,
-        });
+        loggingHub.info(
+          `[BACKGROUND] Proof submitted, Notifying original tab with proofs`,
+          "background.proof",
+        );
 
         await chrome.tabs.sendMessage(ctx.originalTabId, {
           action: ctx.MESSAGE_ACTIONS.PROOF_SUBMITTED,
@@ -498,21 +451,16 @@ export async function submitProofs(ctx) {
           data: { formattedProofs, submitted, sessionId: ctx.sessionId },
         });
       } catch (e) {
-        bgLogger.error({
-          message: `[BACKGROUND] Error notifying original tab: ${e?.message}`,
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.BACKGROUND,
-        });
+        loggingHub.error(
+          `[BACKGROUND] Error notifying original tab: ${e?.message}`,
+          "background.proof",
+        );
       }
     }
 
     // Broadcast to runtime (popup/options)
     try {
-      bgLogger.log({
-        message: `[BACKGROUND] Proof submitted, Broadcasting to runtime`,
-        logLevel: LOG_LEVEL.INFO,
-        type: LOG_TYPES.BACKGROUND,
-      });
+      loggingHub.info(`[BACKGROUND] Proof submitted, Broadcasting to runtime`, "background.proof");
       await chrome.runtime.sendMessage({
         action: ctx.MESSAGE_ACTIONS.PROOF_SUBMITTED,
         data: { formattedProofs, submitted, sessionId: ctx.sessionId },
@@ -530,11 +478,10 @@ export async function submitProofs(ctx) {
           ctx.originalTabId = null;
         }, 3000);
       } catch (error) {
-        bgLogger.error({
-          message: `[BACKGROUND] Error navigating back or closing tab: ${error?.message}`,
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.BACKGROUND,
-        });
+        loggingHub.error(
+          `[BACKGROUND] Error navigating back or closing tab: ${error?.message}`,
+          "background.tab",
+        );
       }
     } else if (ctx.activeTabId) {
       // Fallback: started from panel/popup, no original tab to return to
@@ -547,16 +494,15 @@ export async function submitProofs(ctx) {
         /* ignore */
       }
     }
+
+    // Clear session context from logging hub
+    ctx.loggingHub.clearSessionContext();
+
     // Release concurrency guard on success
     ctx.activeSessionId = null;
     return { success: true };
   } catch (error) {
-    bgLogger.error({
-      message: `[BACKGROUND] Error submitting proof: ${error?.message}`,
-      logLevel: LOG_LEVEL.INFO,
-      type: LOG_TYPES.BACKGROUND,
-      eventType: EVENT_TYPES.PROOF_SUBMISSION_FAILED,
-    });
+    loggingHub.error(`[BACKGROUND] Error submitting proof: ${error?.message}`, "background.proof");
     // Release concurrency guard on failure
     ctx.activeSessionId = null;
     throw error;
@@ -564,20 +510,8 @@ export async function submitProofs(ctx) {
 }
 
 export async function cancelSession(ctx) {
-  const bgLogger = ctx.bgLogger;
   try {
-    bgLogger.setContext({
-      type: LOG_TYPES.BACKGROUND,
-      sessionId: ctx.sessionId || "unknown",
-      providerId: ctx.providerId || "unknown",
-      appId: ctx.appId || "unknown",
-    });
-    bgLogger.log({
-      message: `[BACKGROUND] Cancelling session`,
-      logLevel: LOG_LEVEL.INFO,
-      type: LOG_TYPES.BACKGROUND,
-      eventType: EVENT_TYPES.RECLAIM_VERIFICATION_DISMISSED,
-    });
+    loggingHub.info(`[BACKGROUND] Cancelling session`, "background.session");
 
     ctx.sessionTimerManager.clearAllTimers();
 
@@ -587,11 +521,10 @@ export async function cancelSession(ctx) {
     // Update status as failed due to cancellation (no explicit CANCELLED status available)
     if (ctx.sessionId) {
       try {
-        bgLogger.log({
-          message: `[BACKGROUND] Proof generation failed, Updating status on cancel`,
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.BACKGROUND,
-        });
+        loggingHub.info(
+          `[BACKGROUND] Proof generation failed, Updating status on cancel`,
+          "background.session",
+        );
         await ctx.updateSessionStatus(
           ctx.sessionId,
           ctx.RECLAIM_SESSION_STATUS.PROOF_GENERATION_FAILED,
@@ -599,22 +532,20 @@ export async function cancelSession(ctx) {
           ctx.appId,
         );
       } catch (error) {
-        bgLogger.error({
-          message: `[BACKGROUND] Error updating status on cancel: ${error?.message}`,
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.BACKGROUND,
-        });
+        loggingHub.error(
+          `[BACKGROUND] Error updating status on cancel: ${error?.message}`,
+          "background.session",
+        );
       }
     }
 
     // Notify content about failure with error message 'Cancelled by user'
     if (ctx.activeTabId) {
       try {
-        bgLogger.log({
-          message: `[BACKGROUND] Proof generation failed, Notifying content on cancel`,
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.BACKGROUND,
-        });
+        loggingHub.info(
+          `[BACKGROUND] Proof generation failed, Notifying content on cancel`,
+          "background.session",
+        );
         await chrome.tabs.sendMessage(ctx.activeTabId, {
           action: ctx.MESSAGE_ACTIONS.PROOF_GENERATION_FAILED,
           source: ctx.MESSAGE_SOURCES.BACKGROUND,
@@ -622,22 +553,20 @@ export async function cancelSession(ctx) {
           data: { error: "Cancelled by user", sessionId: ctx.sessionId },
         });
       } catch (e) {
-        bgLogger.error({
-          message: `[BACKGROUND] Error notifying content on cancel: ${e?.message}`,
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.BACKGROUND,
-        });
+        loggingHub.error(
+          `[BACKGROUND] Error notifying content on cancel: ${e?.message}`,
+          "background.session",
+        );
       }
     }
 
     // Also forward to the original tab
     if (ctx.originalTabId) {
       try {
-        bgLogger.log({
-          message: `[BACKGROUND] Proof generation failed, Notifying original tab on cancel`,
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.BACKGROUND,
-        });
+        loggingHub.info(
+          `[BACKGROUND] Proof generation failed, Notifying original tab on cancel`,
+          "background.session",
+        );
         await chrome.tabs.sendMessage(ctx.originalTabId, {
           action: ctx.MESSAGE_ACTIONS.PROOF_GENERATION_FAILED,
           source: ctx.MESSAGE_SOURCES.BACKGROUND,
@@ -646,31 +575,28 @@ export async function cancelSession(ctx) {
         });
       } catch (e) {
         /* ignore */
-        bgLogger.error({
-          message: `[BACKGROUND] Error notifying original tab on cancel: ${e?.message}`,
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.BACKGROUND,
-        });
+        loggingHub.error(
+          `[BACKGROUND] Error notifying original tab on cancel: ${e?.message}`,
+          "background.session",
+        );
       }
     }
 
     // Broadcast to runtime
     try {
-      bgLogger.log({
-        message: `[BACKGROUND] Proof generation failed, Broadcasting to runtime on cancel`,
-        logLevel: LOG_LEVEL.INFO,
-        type: LOG_TYPES.BACKGROUND,
-      });
+      loggingHub.info(
+        `[BACKGROUND] Proof generation failed, Broadcasting to runtime on cancel`,
+        "background.session",
+      );
       await chrome.runtime.sendMessage({
         action: ctx.MESSAGE_ACTIONS.PROOF_GENERATION_FAILED,
         data: { error: "Cancelled by user", sessionId: ctx.sessionId },
       });
     } catch (e) {
-      bgLogger.error({
-        message: `[BACKGROUND] Error broadcasting to runtime on cancel: ${e?.message}`,
-        logLevel: LOG_LEVEL.INFO,
-        type: LOG_TYPES.BACKGROUND,
-      });
+      loggingHub.error(
+        `[BACKGROUND] Error broadcasting to runtime on cancel: ${e?.message}`,
+        "background.session",
+      );
     }
 
     // Close managed tab and restore original if available
@@ -685,22 +611,20 @@ export async function cancelSession(ctx) {
           ctx.originalTabId = null;
         }, 200);
       } catch (error) {
-        bgLogger.error({
-          message: `[BACKGROUND] Error closing tab on cancel: ${error?.message}`,
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.BACKGROUND,
-        });
+        loggingHub.error(
+          `[BACKGROUND] Error closing tab on cancel: ${error?.message}`,
+          "background.tab",
+        );
       }
     } else if (ctx.activeTabId) {
       try {
         await chrome.tabs.remove(ctx.activeTabId);
         ctx.activeTabId = null;
       } catch (e) {
-        bgLogger.error({
-          message: `[BACKGROUND] Error closing active tab on cancel: ${e?.message}`,
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.BACKGROUND,
-        });
+        loggingHub.error(
+          `[BACKGROUND] Error closing active tab on cancel: ${e?.message}`,
+          "background.tab",
+        );
       }
     }
 
@@ -717,14 +641,16 @@ export async function cancelSession(ctx) {
     ctx.providerRequestsByHash = new Map();
     ctx.managedTabs.clear();
 
+    // Clear session context from logging hub
+    ctx.loggingHub.clearSessionContext();
+
     // Release guard
     ctx.activeSessionId = null;
   } catch (e) {
     ctx.activeSessionId = null;
-    bgLogger.error({
-      message: `[BACKGROUND] Error during cancelSession: ${e?.message}`,
-      logLevel: LOG_LEVEL.INFO,
-      type: LOG_TYPES.BACKGROUND,
-    });
+    loggingHub.error(
+      `[BACKGROUND] Error during cancelSession: ${e?.message}`,
+      "background.session",
+    );
   }
 }

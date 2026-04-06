@@ -3,7 +3,32 @@ import { reclaimExtensionSDK } from '@reclaimprotocol/browser-extension-sdk';
 import './ReclaimDemo.css';
 
 const PROVIDERS = [
-  { id: 'ff4d7afe-4b78-4795-9429-d20df2deaad7', name: 'test' },
+  {id: '218f590e-d755-44c9-82e3-04e9907d3f44', name: "ChatGpt"},
+  {id: '06667ea1-7367-4f68-906d-98cb2bbadcf9', name: "Trex: YT"},
+  {id: 'b98cf5f0-74b3-49e8-b2c5-6e1d7291a54f', name: "Trex: Instagram"},
+  {id: '5f3b22f7-32e2-4ec3-8ee0-5e70ec79ca66', name: "Trex: Instagram 2"},
+  {id: '47a84ec8-00fa-4628-b6d0-02e26af7f4f1', name: "Trex: OKXX"},
+  {id: 'aea48d15-2ce7-4571-a1c9-d47ab99487a9', name: "Trex Youtube"},
+  {id: '26387e16-6537-4374-8b71-96d68067b28e', name: "Trex Binance New"},
+  {id: '0b212efa-8d96-42b7-82c2-ea69410224b5', name: 'Trex: Asterdex'},
+  {id: "214861a3-191b-427b-9862-75e301f1e63b", name: "Trex: Tiktok"},
+  {id: '2442b69e-a51d-45fe-ace2-1fa3b4e1cba6', name: 'Trex: Apple Music Test'},
+  {id: '6304e87b-b839-414b-b39d-d2a60515df94', name: "Trex: Binance VIP"},
+  {id: 'cf04e4ab-f82e-487a-a93a-ec6c70009c5c', name: "PlayStation Test"},
+  {id: 'ff4a2f11-2ad3-4a0f-b5ff-b6ebc401f418', name: "PlayStation Trex 2"},
+  {id: 'a041d469-a11a-48ca-a1e2-b073332a0705', name: "PlayStation Trex"},
+  {id: 'b3bd406a-cec0-4c91-8c8b-eeb06292cf8e', name: 'Trex: Netflix'},
+  {id: 'fbf83028-fbed-4414-b593-fa5d3e3fa131', name: "Trex: Binance Assets"},
+  {id: '921681c2-3d20-4060-b961-43ae2a0e8dd2', name: 'Gemini Injection Test'},
+  {id: 'cab9bc4e-cca7-4261-8a8c-53e7d8df1f01', name: 'applce music'},
+  {id: '9ab972fc-8aca-4c35-93f5-d1ede32e32b9', name: 'Trex: Instagram' },
+  {id: '50a2286d-8c89-4de0-817b-e577447c531d', name: 'Trex: Grok' },
+  {id: '25a97f94-4c73-4c02-826d-d11504997fec', name: 'Trex: Perplexity' },
+  {id: '3fa453f7-dc93-4150-a51f-c1b88bbcacb8', name: 'Trex: KuCoin' },
+  {id: 'ea308ecf-f59d-4632-990a-ff0e8a6b73e9', name: 'Trex:Twitch' },
+  {id: '32dc2faa-77fa-4af1-a8ed-5df70fdca8dd', name: 'Trex: Claude' },
+  { id: '7a956c12-486a-4d18-a81f-833c62b8b055', name: 'Gamerpay' },
+  { id: '1be4821a-55cb-42b1-a208-6158910c79a0', name: 'Steam Trade History' },
   { id: '7519ad78-208a-425d-9fac-97c13b0f0d4d', name: 'Kaggle' },
 ];
 
@@ -215,12 +240,12 @@ export default function ReclaimDemo() {
       });
 
       reclaimExtensionSDK.setLogConfig({
-        logLevel: "ALL",
+        logLevel: "DEBUG",
         consoleEnabled: true,
       }, EXTENSION_ID);
 
       // request.setAppCallbackUrl("https://6cf90f1e87f7.ngrok-free.app/receive-proofs");
-      // request.setParams({ userProfileLink: "https://steamcommunity.com/id/Sa2199/" });
+      request.setParams({"subscribed_account":"nike"});
 
       request.setContext("0x0", "sample context");
 
