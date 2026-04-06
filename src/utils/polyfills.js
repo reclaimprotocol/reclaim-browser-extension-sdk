@@ -72,13 +72,15 @@ if (typeof global.require !== "function") {
         return global.path;
       case "os":
         return global.os;
-      case "crypto":
-        return global.crypto;
+      // case "crypto":
+      //   const webcrypto = global.crypto;
+      //   global.crypto.webcrypto = webcrypto;
+      //   return global.crypto;
       case "worker_threads":
         return {}; // Empty implementation
       case "koffi":
-      case "re2":
-        return {}; // Empty implementation
+      // case "re2":
+      //   return {}; // Empty implementation
       default:
         console.warn(`Mock require called for module: ${moduleName}`);
         return {};

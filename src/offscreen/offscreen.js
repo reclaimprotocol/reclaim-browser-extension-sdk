@@ -1,7 +1,7 @@
 // Import necessary utilities and interfaces
 import "../utils/polyfills";
 import { MESSAGE_ACTIONS, MESSAGE_SOURCES, RECLAIM_SESSION_STATUS } from "../utils/constants";
-import { createClaimOnAttestor } from "@reclaimprotocol/attestor-core/browser";
+import { createClaimOnAttestor } from "@reclaimprotocol/attestor-core";
 
 // Import our specialized WebSocket implementation for offscreen document
 import { WebSocket } from "../utils/offscreen-websocket";
@@ -204,12 +204,17 @@ class OffscreenProofGenerator {
       });
 
       logger.debug("[OFFSCREEN] Final claimData for attestor", "offscreen.proof");
-
       const attestorPromise = createClaimOnAttestor(claimData);
 
       logger.info("[OFFSCREEN] Attestor promise created", "offscreen.proof");
 
-      const rawResult = await Promise.race([attestorPromise, timeoutPromise]);
+      const rawResult = await Promise.race([
+        attestorPromise.catch((err) => {
+          console.error("ATTESTOR ERROR ", err);
+          throw err;
+        }),
+        timeoutPromise,
+      ]);
 
       logger.info("[OFFSCREEN] Attestor promise result received", "offscreen.proof");
 

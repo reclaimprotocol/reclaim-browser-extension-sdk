@@ -3,6 +3,10 @@ import { Wallet, keccak256, getBytes } from "ethers";
 import initBackground from "./background/background";
 import { BACKEND_URL, API_ENDPOINTS, RECLAIM_SDK_ACTIONS } from "./utils/constants";
 import { LOG_CONFIG_STORAGE_KEY, DEFAULT_LOG_CONFIG } from "./utils/logger/constants";
+import { setCryptoImplementation } from "@reclaimprotocol/tls";
+import { webcryptoCrypto } from "@reclaimprotocol/tls/webcrypto";
+
+setCryptoImplementation(webcryptoCrypto);
 
 // Global verification queue to serialize extension sessions (background is single-session)
 const _verificationQueue = [];
