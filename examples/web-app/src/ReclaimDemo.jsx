@@ -3,6 +3,7 @@ import { reclaimExtensionSDK } from '@reclaimprotocol/browser-extension-sdk';
 import './ReclaimDemo.css';
 
 const PROVIDERS = [
+  { id: '7519ad78-208a-425d-9fac-97c13b0f0d4d', name: 'Kaggle' },
   {id: 'f4722dc7-83ae-44a7-9a6f-e98c274f25f4', name: "Linkedin"},
   {id: '218f590e-d755-44c9-82e3-04e9907d3f44', name: "ChatGpt"},
   {id: '06667ea1-7367-4f68-906d-98cb2bbadcf9', name: "Trex: YT"},
@@ -30,7 +31,7 @@ const PROVIDERS = [
   {id: '32dc2faa-77fa-4af1-a8ed-5df70fdca8dd', name: 'Trex: Claude' },
   { id: '7a956c12-486a-4d18-a81f-833c62b8b055', name: 'Gamerpay' },
   { id: '1be4821a-55cb-42b1-a208-6158910c79a0', name: 'Steam Trade History' },
-  { id: '7519ad78-208a-425d-9fac-97c13b0f0d4d', name: 'Kaggle' },
+  
 ];
 
 const APP_ID = import.meta.env.VITE_RECLAIM_APP_ID;
