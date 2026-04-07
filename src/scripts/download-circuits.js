@@ -7,44 +7,6 @@ const TARGET_DIR = path.join(process.cwd(), "public", "browser-rpc", "resources"
 const TEMP_DIR = path.join(process.cwd(), "zk-resources");
 
 /**
- * Fetch the latest commit hash from the GitHub repository.
- */
-function getLatestCommitHash() {
-  return new Promise((resolve, reject) => {
-    const url = `https://api.github.com/repos/${REPO}/commits/HEAD`;
-    const req = https.get(
-      url,
-      {
-        headers: {
-          "User-Agent": "Node.js",
-        },
-      },
-      (res) => {
-        let data = "";
-        res.on("data", (chunk) => (data += chunk));
-        res.on("end", () => {
-          try {
-            const json = JSON.parse(data);
-            if (json.sha) {
-              resolve(json.sha);
-            } else {
-              reject(new Error("No SHA found in GitHub API response"));
-            }
-          } catch (error) {
-            reject(new Error(`Failed to parse GitHub API response: ${error.message}`));
-          }
-        });
-      },
-    );
-    req.on("error", reject);
-    req.setTimeout(10000, () => {
-      req.destroy();
-      reject(new Error("Timeout fetching latest commit hash"));
-    });
-  });
-}
-
-/**
  * Perform a HEAD request to fetch the file's content-length.
  * Follows redirects if necessary.
  */
@@ -176,10 +138,8 @@ function renderProgress(
 
 async function main() {
   try {
-    // Fetch the latest commit hash
-    console.log("🔄 Fetching latest commit hash...");
-    const COMMIT_HASH = await getLatestCommitHash();
-    console.log(`📝 Using commit: ${COMMIT_HASH}`);
+    const COMMIT_HASH = "80fbbd7";
+    console.log(`📝 Using pinned commit: ${COMMIT_HASH}`);
 
     // Create public/browser-rpc directory if it doesn't exist
     await fs.promises.mkdir(TARGET_DIR, { recursive: true });
