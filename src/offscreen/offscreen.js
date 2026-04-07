@@ -1,7 +1,7 @@
 // Import necessary utilities and interfaces
 import "../utils/polyfills";
 import { MESSAGE_ACTIONS, MESSAGE_SOURCES, RECLAIM_SESSION_STATUS } from "../utils/constants";
-import { createClaimOnAttestor } from "@reclaimprotocol/attestor-core";
+import { createClaimOnAttestor } from "@reclaimprotocol/attestor-core/browser";
 // Import our specialized WebSocket implementation for offscreen document
 import { WebSocket } from "../utils/offscreen-websocket";
 import { updateSessionStatus } from "../utils/fetch-calls";

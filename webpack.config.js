@@ -70,6 +70,7 @@ const commonResolve = {
     re2: false,
     worker_threads: path.resolve(__dirname, "src/utils/mocks/worker-threads-mock.js"),
     "node:url": require.resolve("url/"),
+    module: path.resolve(__dirname, "src/utils/mocks/module-mock.js"),
     "react-native-tcp-socket": false,
     "process/browser": require.resolve("process/browser.js"),
     canvas: false,
@@ -214,6 +215,16 @@ const extensionConfig = {
         {
           from: "src/scripts/install-assets.js",
           to: path.join(__dirname, "build", "scripts"),
+          force: true,
+        },
+        {
+          from: "src/offscreen/load-s2circuits.js",
+          to: path.join(__dirname, "build", "offscreen"),
+          force: true,
+        },
+        {
+          from: "node_modules/snarkjs/build/snarkjs.min.js",
+          to: path.join(__dirname, "build", "browser-rpc", "resources", "snarkjs"),
           force: true,
         },
       ],

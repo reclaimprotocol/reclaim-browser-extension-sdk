@@ -25,7 +25,10 @@
     {
       "resources": [
         "reclaim-browser-extension-sdk/offscreen/offscreen.html",
-        "reclaim-browser-extension-sdk/offscreen/offscreen.bundle.js"
+        "reclaim-browser-extension-sdk/offscreen/offscreen.bundle.js",
+        "reclaim-browser-extension-sdk/offscreen/load-s2circuits.js",
+        "browser-rpc/resources/stwo/*",
+        "browser-rpc/resources/snarkjs/*"
       ],
       "matches": ["<all_urls>"]
     },
