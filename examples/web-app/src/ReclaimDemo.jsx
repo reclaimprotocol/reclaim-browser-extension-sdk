@@ -213,13 +213,8 @@ export default function ReclaimDemo() {
         // callbackUrl: 'https://your.server/receive-proofs' // optional
       });
 
-      reclaimExtensionSDK.setLogConfig({
-        logLevel: "DEBUG",
-        consoleEnabled: true,
-      }, EXTENSION_ID);
-
-      // request.setAppCallbackUrl("https://6cf90f1e87f7.ngrok-free.app/receive-proofs");
-      request.setParams({"subscribed_account":"nike"});
+      // request.setAppCallbackUrl("https://your-server.com/receive-proofs");
+      request.setParams({"key":"value"});
 
       request.setContext("0x0", "sample context");
 
