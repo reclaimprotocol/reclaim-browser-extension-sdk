@@ -2,6 +2,8 @@
 // Handles session start, fail, submit, and timer logic
 
 import { loggingHub } from "../utils/logger/LoggingHub";
+import { addCspStrippingRule, removeCspStrippingRule } from "./cspRuleManager";
+import { CSP_RULE_MAX_LIFETIME_MS, TAB_TRANSITION_DELAY_MS } from "../utils/constants/config";
 
 export async function startVerification(ctx, templateData) {
   try {
@@ -19,6 +21,7 @@ export async function startVerification(ctx, templateData) {
     ctx.providerDataMessage = new Map();
     ctx.providerRequestsByHash = new Map();
     ctx.aborted = false;
+    ctx._cspRuleId = null;
 
     // Reset timers and timer state variables
     ctx.sessionTimerManager.clearAllTimers();
@@ -82,6 +85,31 @@ export async function startVerification(ctx, templateData) {
 
     if (!providerData) {
       throw new Error("Provider data not found");
+    }
+
+    // Strip CSP headers for the provider page if custom injection is needed
+    if (providerData?.extensionConfig?.allowInjectionsViaChromeScripting) {
+      try {
+        const { ruleId } = await addCspStrippingRule(providerData.loginUrl);
+        ctx._cspRuleId = ruleId;
+        // Safety net: auto-remove after max lifetime regardless of cleanup paths
+        setTimeout(() => {
+          if (ctx._cspRuleId) {
+            removeCspStrippingRule().catch(() => {});
+            ctx._cspRuleId = null;
+            loggingHub.info(
+              "[BACKGROUND] CSP rule auto-removed after max lifetime",
+              "background.csp",
+            );
+          }
+        }, CSP_RULE_MAX_LIFETIME_MS);
+      } catch (e) {
+        loggingHub.error(
+          `[BACKGROUND] Failed to add CSP stripping rule: ${e?.message}`,
+          "background.csp",
+        );
+        // Non-fatal: injection may still work on permissive sites
+      }
     }
 
     // Create a new tab with provider URL DIRECTLY - not through an async flow
@@ -176,6 +204,11 @@ export async function startVerification(ctx, templateData) {
       `[BACKGROUND] Error starting verification: ${error?.message}`,
       "background.verification",
     );
+    // Clean up CSP stripping rule if it was added before the error
+    if (ctx._cspRuleId) {
+      await removeCspStrippingRule().catch(() => {});
+      ctx._cspRuleId = null;
+    }
     // Release concurrency guard on immediate failure
     ctx.activeSessionId = null;
     throw error;
@@ -184,6 +217,12 @@ export async function startVerification(ctx, templateData) {
 
 export async function failSession(ctx, errorMessage, requestHash) {
   loggingHub.info(`[BACKGROUND] Failing session: ${errorMessage}`, "background.session");
+
+  // Clean up CSP stripping rule
+  if (ctx._cspRuleId) {
+    await removeCspStrippingRule().catch(() => {});
+    ctx._cspRuleId = null;
+  }
 
   // Clear all timers
   ctx.sessionTimerManager.clearAllTimers();
@@ -476,7 +515,7 @@ export async function submitProofs(ctx) {
             ctx.activeTabId = null;
           }
           ctx.originalTabId = null;
-        }, 3000);
+        }, TAB_TRANSITION_DELAY_MS);
       } catch (error) {
         loggingHub.error(
           `[BACKGROUND] Error navigating back or closing tab: ${error?.message}`,
@@ -489,10 +528,16 @@ export async function submitProofs(ctx) {
         setTimeout(async () => {
           await chrome.tabs.remove(ctx.activeTabId);
           ctx.activeTabId = null;
-        }, 3000);
+        }, TAB_TRANSITION_DELAY_MS);
       } catch (e) {
         /* ignore */
       }
+    }
+
+    // Clean up CSP stripping rule
+    if (ctx._cspRuleId) {
+      await removeCspStrippingRule().catch(() => {});
+      ctx._cspRuleId = null;
     }
 
     // Clear session context from logging hub
@@ -503,6 +548,11 @@ export async function submitProofs(ctx) {
     return { success: true };
   } catch (error) {
     loggingHub.error(`[BACKGROUND] Error submitting proof: ${error?.message}`, "background.proof");
+    // Clean up CSP stripping rule on failure too
+    if (ctx._cspRuleId) {
+      await removeCspStrippingRule().catch(() => {});
+      ctx._cspRuleId = null;
+    }
     // Release concurrency guard on failure
     ctx.activeSessionId = null;
     throw error;
@@ -512,6 +562,12 @@ export async function submitProofs(ctx) {
 export async function cancelSession(ctx) {
   try {
     loggingHub.info(`[BACKGROUND] Cancelling session`, "background.session");
+
+    // Clean up CSP stripping rule
+    if (ctx._cspRuleId) {
+      await removeCspStrippingRule().catch(() => {});
+      ctx._cspRuleId = null;
+    }
 
     ctx.sessionTimerManager.clearAllTimers();
 

@@ -6,6 +6,7 @@ import { createClaimOnAttestor } from "@reclaimprotocol/attestor-core/browser";
 import { WebSocket } from "../utils/offscreen-websocket";
 import { updateSessionStatus } from "../utils/fetch-calls";
 import { createRemoteLogger } from "../utils/logger/RemoteLogger";
+import { PROOF_GENERATION_TIMEOUT_MS } from "../utils/constants/config";
 
 const logger = createRemoteLogger("offscreen");
 
@@ -177,8 +178,12 @@ class OffscreenProofGenerator {
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(() => {
           timeoutOccurred = true;
-          reject(new Error("Proof generation timed out after 2 minutes"));
-        }, 60000 * 2);
+          reject(
+            new Error(
+              "Proof generation timed out after " + PROOF_GENERATION_TIMEOUT_MS / 1000 + " seconds",
+            ),
+          );
+        }, PROOF_GENERATION_TIMEOUT_MS);
       });
 
       logger.debug("[OFFSCREEN] Final claimData for attestor", "offscreen.proof");

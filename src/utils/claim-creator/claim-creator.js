@@ -7,6 +7,7 @@ import {
 import { MESSAGE_ACTIONS, MESSAGE_SOURCES } from "../constants";
 import { ensureOffscreenDocument } from "../offscreen-manager";
 import { getUserLocationBasedOnIp } from "./get-dynamic-geo";
+import { PRIVATE_KEY_TIMEOUT_MS } from "../constants/config";
 
 // Generate Chrome Android user agent (adapted from reference code)
 const generateChromeAndroidUserAgent = (chromeMajorVersion = 135, isMobile = true) => {
@@ -29,7 +30,7 @@ const getPrivateKeyFromOffscreen = (sessionId = "unknown", providerId = "unknown
     const callTimeout = setTimeout(() => {
       chrome.runtime.onMessage.removeListener(messageListener);
       reject(new Error("Timeout: No response from offscreen document for private key request."));
-    }, 10000);
+    }, PRIVATE_KEY_TIMEOUT_MS);
 
     const messageListener = (message, sender) => {
       // Ensure the message is from the offscreen document and is the expected response
@@ -342,7 +343,7 @@ export const createClaimObject = async (
     params,
     secretParams,
     ownerPrivateKey: ownerPrivateKey,
-    zkEngine: "stwo",
+    zkEngine: providerData?.extensionConfig?.zkEngine || "stwo",
     client: {
       url: "wss://attestor.reclaimprotocol.org:444/ws",
     },

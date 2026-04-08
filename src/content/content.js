@@ -6,6 +6,11 @@ import { createProviderVerificationPopup } from "./components/reclaim-provider-v
 import { filterRequest } from "../utils/claim-creator";
 import { createRemoteLogger } from "../utils/logger/RemoteLogger";
 import { LOG_CONFIG_STORAGE_KEY } from "../utils/logger/constants";
+import {
+  NETWORK_FILTERING_TIMEOUT_MS,
+  NETWORK_FILTERING_INTERVAL_MS,
+  INTERCEPTED_DATA_MAX_AGE_MS,
+} from "../utils/constants/config";
 
 const logger = createRemoteLogger("content");
 
@@ -1025,7 +1030,7 @@ class ReclaimContentScript {
   // Clean up old intercepted data
   cleanupInterceptedData() {
     const now = Date.now();
-    const timeout = 2 * 60 * 1000; // 2 minutes
+    const timeout = INTERCEPTED_DATA_MAX_AGE_MS;
 
     // Clean up linked data
     for (const [key, data] of this.interceptedRequestResponses.entries()) {
@@ -1068,10 +1073,10 @@ class ReclaimContentScript {
       this.filterInterceptedRequests();
 
       // Check for timeout (10 minutes)
-      if (Date.now() - this.filteringStartTime > 10 * 60 * 1000) {
+      if (Date.now() - this.filteringStartTime > NETWORK_FILTERING_TIMEOUT_MS) {
         this.stopNetworkFiltering();
       }
-    }, 1000);
+    }, NETWORK_FILTERING_INTERVAL_MS);
   }
 
   // Stop network filtering

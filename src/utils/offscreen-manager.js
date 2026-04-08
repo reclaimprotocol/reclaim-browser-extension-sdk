@@ -1,5 +1,10 @@
 // src/utils/offscreen-manager.js
 import { MESSAGE_ACTIONS, MESSAGE_SOURCES } from "./constants";
+import {
+  OFFSCREEN_READY_TIMEOUT_MS,
+  OFFSCREEN_CONTEXT_EXISTS_TIMEOUT_MS,
+  OFFSCREEN_FINAL_INIT_TIMEOUT_MS,
+} from "./constants/config";
 
 // Lazy import to avoid circular dependency issues at module load time
 const getLoggingHub = () => require("./logger/LoggingHub").loggingHub;
@@ -106,7 +111,7 @@ async function createOffscreenDocumentInternal() {
   }
 }
 
-async function waitForOffscreenReadyInternal(timeoutMs = 15000) {
+async function waitForOffscreenReadyInternal(timeoutMs = OFFSCREEN_READY_TIMEOUT_MS) {
   if (offscreenReady) {
     getLoggingHub().info(
       "[OFFSCREEN-MANAGER] Already ready (waitForOffscreenReadyInternal check)",
@@ -209,7 +214,7 @@ export async function ensureOffscreenDocument(logger) {
         "offscreen.manager",
       );
 
-      return await waitForOffscreenReadyInternal(5000);
+      return await waitForOffscreenReadyInternal(OFFSCREEN_CONTEXT_EXISTS_TIMEOUT_MS);
     }
   }
 
@@ -226,7 +231,7 @@ export async function ensureOffscreenDocument(logger) {
   }
 
   // After ensuring creation was attempted (or awaited), wait for it to become ready.
-  const isReady = await waitForOffscreenReadyInternal(50000);
+  const isReady = await waitForOffscreenReadyInternal(OFFSCREEN_FINAL_INIT_TIMEOUT_MS);
   if (!isReady) {
     throw new Error("Failed to initialize or confirm offscreen document readiness.");
   }

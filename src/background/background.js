@@ -8,6 +8,7 @@ import {
   submitProofOnCallback,
 } from "../utils/fetch-calls";
 import { RECLAIM_SESSION_STATUS, MESSAGE_ACTIONS, MESSAGE_SOURCES } from "../utils/constants";
+import { removeCspStrippingRule } from "./cspRuleManager";
 import { generateProof, formatProof } from "../utils/proof-generator";
 import { createClaimObject } from "../utils/claim-creator";
 import { loggingHub } from "../utils/logger/LoggingHub";
@@ -48,6 +49,7 @@ export default function initBackground() {
     initPopupMessage: new Map(),
     providerDataMessage: new Map(),
     activeSessionId: null,
+    _cspRuleId: null,
     // Timer
     sessionTimerManager: new SessionTimerManager(),
     // Constants and dependencies
@@ -67,6 +69,9 @@ export default function initBackground() {
     failSession: null,
     submitProofs: null,
   };
+
+  // Clean up any orphaned CSP stripping rules from a previous session
+  removeCspStrippingRule().catch(() => {});
 
   loggingHub.info("[BACKGROUND] Background initialized", "background.init");
 
@@ -113,7 +118,11 @@ export default function initBackground() {
 
       let claimData = null;
       try {
-        const criteriaWithGeo = { ...criteria, geoLocation: ctx.providerData?.geoLocation ?? "" };
+        const criteriaWithGeo = {
+          ...criteria,
+          geoLocation: ctx.providerData?.geoLocation ?? "",
+          extensionConfig: ctx.providerData?.extensionConfig,
+        };
         claimData = await ctx.createClaimObject(
           request,
           criteriaWithGeo,
@@ -205,6 +214,13 @@ export default function initBackground() {
         loggingHub.error("[BACKGROUND] Verification tab closed by user", "background.tab");
         await ctx.failSession("Verification tab closed by user");
       } catch {}
+    }
+
+    // Defensive: always clean up CSP rule when managed tab closes,
+    // regardless of which path handled the session termination
+    if ((lostActive || noManagedLeft) && ctx._cspRuleId) {
+      removeCspStrippingRule().catch(() => {});
+      ctx._cspRuleId = null;
     }
 
     if (lostActive) ctx.activeTabId = null;

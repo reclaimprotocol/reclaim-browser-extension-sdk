@@ -543,92 +543,30 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
 
             if (op === "RUN_CUSTOM_INJECTION") {
               const code = String(data?.code || "");
+              if (!code) {
+                sendResponse({ success: true, result: { status: "skipped", reason: "no_code" } });
+                break;
+              }
+
+              // Static func receives code as a serialized string via args.
+              // CSP has been stripped from the page via declarativeNetRequest,
+              // so eval() works in MAIN world without needing unsafe-eval in extension CSP.
               const results = await chrome.scripting.executeScript({
                 target: { tabId: sender.tab.id },
                 world: "MAIN",
-                func: (opts) => {
+                func: (codeStr) => {
                   try {
-                    const code = String(opts?.code || "");
-                    if (!code) return { status: "skipped", reason: "no_code" };
                     if (window.__reclaimCustomInjectionDone__) {
                       return { status: "skipped", reason: "already_injected" };
                     }
-
-                    // 1) Use page nonce if available (CSP-compliant)
-                    const tryWithNonce = () => {
-                      try {
-                        const nonce = (document.querySelector("script[nonce]") || {}).nonce;
-                        if (!nonce) return false;
-                        const s = document.createElement("script");
-                        s.setAttribute("nonce", nonce);
-                        s.textContent = code;
-                        (document.documentElement || document.head || document).appendChild(s);
-                        s.remove();
-                        return true;
-                      } catch {
-                        return false;
-                      }
-                    };
-
-                    // 2) Trusted Types + nonce (still needs nonce on TT-enforced sites)
-                    const tryWithTT = () => {
-                      try {
-                        if (!window.trustedTypes) return false;
-                        const nonce = (document.querySelector("script[nonce]") || {}).nonce || "";
-                        const names = [
-                          "reclaim-extension-sdk",
-                          "reclaim",
-                          "default",
-                          "policy",
-                          "app",
-                        ];
-                        for (const name of names) {
-                          try {
-                            const policy = window.trustedTypes.createPolicy(name, {
-                              createScript: (s) => s,
-                            });
-                            const s = document.createElement("script");
-                            if (nonce) s.setAttribute("nonce", nonce);
-                            s.text = policy.createScript(code);
-                            (document.documentElement || document.head || document).appendChild(s);
-                            s.remove();
-                            return true;
-                          } catch {}
-                        }
-                        return false;
-                      } catch {
-                        return false;
-                      }
-                    };
-
-                    // 3) Plain inline (last resort; typically blocked)
-                    const tryPlain = () => {
-                      try {
-                        const s = document.createElement("script");
-                        s.textContent = code;
-                        (document.documentElement || document.head || document).appendChild(s);
-                        s.remove();
-                        return true;
-                      } catch {
-                        return false;
-                      }
-                    };
-
-                    const ok =
-                      tryWithNonce() || // best chance
-                      tryWithTT() || // TT with nonce when possible
-                      tryPlain(); // may be blocked
-
-                    if (ok) {
-                      window.__reclaimCustomInjectionDone__ = true;
-                      return { status: "executed" };
-                    }
-                    return { status: "error", reason: "all_strategies_failed" };
+                    window.__reclaimCustomInjectionDone__ = true;
+                    (0, eval)(codeStr);
+                    return { status: "executed" };
                   } catch (e) {
                     return { status: "error", reason: String(e?.message || e) };
                   }
                 },
-                args: [{ code }],
+                args: [code],
               });
 
               const result = results?.[0]?.result;

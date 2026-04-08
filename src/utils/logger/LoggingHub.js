@@ -11,6 +11,12 @@ import {
   DEFAULT_LOG_CONFIG,
   LOG_CONFIG_STORAGE_KEY,
 } from "./constants";
+import {
+  LOG_MAX_BATCH_SIZE,
+  LOG_MAX_QUEUE_SIZE,
+  LOG_FLUSH_INTERVAL_MS,
+  LOG_DEDUPE_WINDOW_MS,
+} from "../constants/config";
 
 // Singleton guard to prevent multiple instances
 let singletonInstance = null;
@@ -29,15 +35,15 @@ class LoggingHub {
     };
     this.logs = [];
     this.deviceId = null;
-    this.maxBatchSize = 20;
-    this.maxQueueSize = 500; // Drop oldest logs if queue exceeds this
-    this.flushIntervalMs = 5000;
+    this.maxBatchSize = LOG_MAX_BATCH_SIZE;
+    this.maxQueueSize = LOG_MAX_QUEUE_SIZE;
+    this.flushIntervalMs = LOG_FLUSH_INTERVAL_MS;
     this.flushIntervalId = null;
     this.isFlushing = false;
 
     // Deduplication: Map of logHash -> timestamp (ms)
     this._recentLogHashes = new Map();
-    this._dedupeWindowMs = 100; // Ignore duplicates within 100ms
+    this._dedupeWindowMs = LOG_DEDUPE_WINDOW_MS;
 
     // Stats tracking
     this.stats = {

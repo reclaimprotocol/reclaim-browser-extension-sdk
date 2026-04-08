@@ -3,11 +3,13 @@
  * Handles session timeout management
  */
 
+import { SESSION_TIMER_DURATION_MS } from "./constants/config";
+
 export class SessionTimerManager {
   constructor() {
     // Timer for session
     this.sessionTimer = null;
-    this.sessionTimerDuration = 30000; // 30 seconds in milliseconds
+    this.sessionTimerDuration = SESSION_TIMER_DURATION_MS;
     this.sessionTimerPaused = false;
     this.sessionTimerRemainingTime = 0;
     this.sessionTimerStartTime = 0;

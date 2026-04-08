@@ -3,6 +3,7 @@ import "../polyfills";
 
 import { MESSAGE_ACTIONS, MESSAGE_SOURCES } from "../constants/index";
 import { ensureOffscreenDocument } from "../offscreen-manager";
+import { PROOF_RESPONSE_TIMEOUT_MS } from "../constants/config";
 
 // Main function to generate proof using offscreen document
 export const generateProof = async (claimData, loggingHub) => {
@@ -28,7 +29,7 @@ export const generateProof = async (claimData, loggingHub) => {
           success: false,
           error: "Timeout waiting for offscreen document to generate proof",
         });
-      }, 60000); // 60 second timeout
+      }, PROOF_RESPONSE_TIMEOUT_MS);
 
       // Create a message listener for the offscreen response
       const messageListener = (response) => {
