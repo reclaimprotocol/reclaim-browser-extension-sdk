@@ -5,7 +5,6 @@ import {
   isJsonFormat,
   safeJsonParse,
 } from "./params-extractor-utils.js";
-import { LOG_LEVEL, LOG_TYPES, EVENT_TYPES } from "../logger";
 
 // Escape special regex characters in string
 function escapeSpecialCharacters(input) {
@@ -129,7 +128,7 @@ function matchesResponseCriteria(responseText, matchCriteria, parameters = {}) {
 }
 
 // Function to check if response fields match responseRedactions criteria
-function matchesResponseFields(responseText, responseRedactions, contentLogger) {
+function matchesResponseFields(responseText, responseRedactions, logger) {
   if (!responseRedactions || responseRedactions.length === 0) {
     return true;
   }
@@ -151,12 +150,10 @@ function matchesResponseFields(responseText, responseRedactions, contentLogger) 
         // If we get here but value is undefined, the path doesn't exist
         if (value === undefined) return false;
       } catch (error) {
-        contentLogger.error({
-          message: `[NETWORK-FILTER] Error checking jsonPath ${redaction.jsonPath}:`,
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.CONTENT,
-          eventType: EVENT_TYPES.JSON_PATH_MATCH_REQUIREMENT_FAILED,
-        });
+        logger.error(
+          `[NETWORK-FILTER] Error checking jsonPath ${redaction.jsonPath}: ${error?.message}`,
+          "content.filter",
+        );
         return false;
       }
     }
@@ -166,12 +163,10 @@ function matchesResponseFields(responseText, responseRedactions, contentLogger) 
         const value = getValueFromXPath(responseText, redaction.xPath);
         if (!value) return false;
       } catch (error) {
-        contentLogger.error({
-          message: `[NETWORK-FILTER] Error checking xPath ${redaction.xPath}:`,
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.CONTENT,
-          eventType: EVENT_TYPES.X_PATH_MATCH_REQUIREMENT_FAILED,
-        });
+        logger.error(
+          `[NETWORK-FILTER] Error checking xPath ${redaction.xPath}: ${error?.message}`,
+          "content.filter",
+        );
         return false;
       }
     }
@@ -181,12 +176,10 @@ function matchesResponseFields(responseText, responseRedactions, contentLogger) 
         const regex = new RegExp(redaction.regex);
         if (!regex.test(responseText)) return false;
       } catch (error) {
-        contentLogger.error({
-          message: `[NETWORK-FILTER] Error checking regex ${redaction.regex}:`,
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.CONTENT,
-          eventType: EVENT_TYPES.REGEX_MATCH_REQUIREMENT_FAILED,
-        });
+        logger.error(
+          `[NETWORK-FILTER] Error checking regex ${redaction.regex}: ${error?.message}`,
+          "content.filter",
+        );
         return false;
       }
     }
@@ -197,40 +190,40 @@ function matchesResponseFields(responseText, responseRedactions, contentLogger) 
 }
 
 // Main filtering function
-export const filterRequest = (request, filterCriteria, parameters = {}, contentLogger) => {
+export const filterRequest = (request, filterCriteria, parameters = {}, logger) => {
   try {
     // First check if request matches criteria
     if (!matchesRequestCriteria(request, filterCriteria, parameters)) {
       return false;
     }
 
-    // Then check if response matches (if we have response data)
-    if (
-      request.responseText &&
-      filterCriteria.responseMatches &&
-      !matchesResponseCriteria(request.responseText, filterCriteria.responseMatches, parameters)
-    ) {
-      return false;
+    // If criteria requires response validation but we have no response, reject
+    if (filterCriteria.responseMatches && filterCriteria.responseMatches.length > 0) {
+      if (!request.responseText) {
+        return false;
+      }
+      if (
+        !matchesResponseCriteria(request.responseText, filterCriteria.responseMatches, parameters)
+      ) {
+        return false;
+      }
     }
 
     // Check if the response fields match the responseRedactions criteria
-    if (
-      request.responseText &&
-      filterCriteria.responseRedactions &&
-      !matchesResponseFields(request.responseText, filterCriteria.responseRedactions, contentLogger)
-    ) {
-      return false;
+    if (filterCriteria.responseRedactions && filterCriteria.responseRedactions.length > 0) {
+      if (!request.responseText) {
+        return false;
+      }
+      if (!matchesResponseFields(request.responseText, filterCriteria.responseRedactions, logger)) {
+        return false;
+      }
     }
 
     return true;
   } catch (error) {
-    contentLogger.error({
-      message: "[NETWORK-FILTER] Error filtering request:",
-      logLevel: LOG_LEVEL.ERROR,
-      type: LOG_TYPES.CONTENT,
-      eventType: EVENT_TYPES.FILTER_REQUEST_ERROR,
-      meta: { error },
-    });
+    logger.error("[NETWORK-FILTER] Error filtering request: " + error?.message, "content.filter");
     return false;
   }
 };
+
+//tryWithNonce/tryWithTT/tryPlain

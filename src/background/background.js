@@ -8,12 +8,11 @@ import {
   submitProofOnCallback,
 } from "../utils/fetch-calls";
 import { RECLAIM_SESSION_STATUS, MESSAGE_ACTIONS, MESSAGE_SOURCES } from "../utils/constants";
+import { removeCspStrippingRule } from "./cspRuleManager";
 import { generateProof, formatProof } from "../utils/proof-generator";
 import { createClaimObject } from "../utils/claim-creator";
-import { loggerService, createContextLogger } from "../utils/logger/LoggerService";
-import { EVENT_TYPES, LOG_LEVEL, LOG_TYPES } from "../utils/logger/constants";
+import { loggingHub } from "../utils/logger/LoggingHub";
 import { SessionTimerManager } from "../utils/session-timer";
-import { debugLogger, DebugLogType } from "../utils/logger";
 import { installOffscreenReadyListener } from "../utils/offscreen-manager";
 
 import * as messageRouter from "./messageRouter";
@@ -21,13 +20,6 @@ import * as sessionManager from "./sessionManager";
 import * as tabManager from "./tabManager";
 import * as proofQueue from "./proofQueue";
 import * as cookieUtils from "./cookieUtils";
-
-const bgLogger = createContextLogger({
-  sessionId: "unknown",
-  providerId: "unknown",
-  appId: "unknown",
-  source: "reclaim-extension-sdk",
-});
 
 export default function initBackground() {
   installOffscreenReadyListener();
@@ -57,6 +49,7 @@ export default function initBackground() {
     initPopupMessage: new Map(),
     providerDataMessage: new Map(),
     activeSessionId: null,
+    _cspRuleId: null,
     // Timer
     sessionTimerManager: new SessionTimerManager(),
     // Constants and dependencies
@@ -69,43 +62,18 @@ export default function initBackground() {
     generateProof,
     formatProof,
     createClaimObject,
-    loggerService,
-    bgLogger,
-    debugLogger,
-    DebugLogType,
+    // Logging hub
+    loggingHub,
     // Methods to be set below
     processFilteredRequest: null,
     failSession: null,
     submitProofs: null,
   };
 
-  bgLogger.setContext({
-    sessionId: ctx.sessionId || "unknown",
-    providerId: ctx.providerId || "unknown",
-    appId: ctx.appId || "unknown",
-    type: LOG_TYPES.BACKGROUND,
-  });
+  // Clean up any orphaned CSP stripping rules from a previous session
+  removeCspStrippingRule().catch(() => {});
 
-  // Load and live-sync log config
-  try {
-    const { LOG_CONFIG_STORAGE_KEY } = require("../utils/logger/constants");
-    chrome.storage.local.get([LOG_CONFIG_STORAGE_KEY], (res) => {
-      const cfg = res?.[LOG_CONFIG_STORAGE_KEY];
-      if (cfg && typeof cfg === "object") ctx.loggerService.setConfig(cfg);
-    });
-    chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === "local" && changes[LOG_CONFIG_STORAGE_KEY]) {
-        const newCfg = changes[LOG_CONFIG_STORAGE_KEY].newValue || {};
-        ctx.loggerService.setConfig(newCfg);
-      }
-    });
-  } catch {}
-
-  bgLogger.info({
-    message: "Background initialized INFO",
-    logLevel: LOG_LEVEL.INFO,
-    type: LOG_TYPES.BACKGROUND,
-  });
+  loggingHub.info("[BACKGROUND] Background initialized", "background.init");
 
   // Bind sessionManager methods to context
   ctx.failSession = (...args) => sessionManager.failSession(ctx, ...args);
@@ -124,35 +92,17 @@ export default function initBackground() {
         ctx.sessionTimerManager.startSessionTimer();
       }
 
-      bgLogger.setContext({
-        sessionId: ctx.sessionId || "unknown",
-        providerId: ctx.providerId || "unknown",
-        appId: ctx.appId || "unknown",
-        type: LOG_TYPES.BACKGROUND,
-      });
-      bgLogger.info({
-        message: `[BACKGROUND] Filtering request for request hash: ${criteria.requestHash}`,
-        logLevel: LOG_LEVEL.INFO,
-        type: LOG_TYPES.BACKGROUND,
-      });
+      loggingHub.info(
+        `[BACKGROUND] Filtering request for request hash: ${criteria.requestHash}`,
+        "background.filter",
+      );
 
-      const cookies = await cookieUtils.getCookiesForUrl(request.url, ctx.bgLogger);
+      const cookies = await cookieUtils.getCookiesForUrl(request.url, loggingHub);
       if (cookies) {
         request.cookieStr = cookies;
       }
 
-      bgLogger.log({
-        message: `[BACKGROUND] Cookies for URL: ${request.url}`,
-        logLevel: LOG_LEVEL.ALL,
-        type: LOG_TYPES.BACKGROUND,
-        meta: {
-          request: request,
-          criteria: criteria,
-          sessionId: sessionId,
-          loginUrl: loginUrl,
-          cookies: cookies,
-        },
-      });
+      loggingHub.debug(`[BACKGROUND] Cookies for URL: ${request.url}`, "background.cookies");
 
       chrome.tabs.sendMessage(ctx.activeTabId, {
         action: ctx.MESSAGE_ACTIONS.CLAIM_CREATION_REQUESTED,
@@ -161,31 +111,32 @@ export default function initBackground() {
         data: { requestHash: criteria.requestHash },
       });
 
-      bgLogger.info({
-        message: "[BACKGROUND] Claim creation requested for request hash: " + criteria.requestHash,
-        logLevel: LOG_LEVEL.INFO,
-        type: LOG_TYPES.BACKGROUND,
-        eventType: EVENT_TYPES.STARTING_CLAIM_CREATION,
-      });
+      loggingHub.info(
+        "[BACKGROUND] Claim creation requested for request hash: " + criteria.requestHash,
+        "background.claim",
+      );
 
       let claimData = null;
       try {
-        const criteriaWithGeo = { ...criteria, geoLocation: ctx.providerData?.geoLocation ?? "" };
+        const criteriaWithGeo = {
+          ...criteria,
+          geoLocation: ctx.providerData?.geoLocation ?? "",
+          extensionConfig: ctx.providerData?.extensionConfig,
+        };
         claimData = await ctx.createClaimObject(
           request,
           criteriaWithGeo,
           sessionId,
           ctx.providerId,
           loginUrl,
-          ctx.bgLogger,
+          loggingHub,
           ctx.context,
         );
       } catch (error) {
-        bgLogger.error({
-          message: "[BACKGROUND] Error creating claim object: " + error.message,
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.BACKGROUND,
-        });
+        loggingHub.error(
+          "[BACKGROUND] Error creating claim object: " + error.message,
+          "background.claim",
+        );
         chrome.tabs.sendMessage(ctx.activeTabId, {
           action: ctx.MESSAGE_ACTIONS.CLAIM_CREATION_FAILED,
           source: ctx.MESSAGE_SOURCES.BACKGROUND,
@@ -204,13 +155,10 @@ export default function initBackground() {
           target: ctx.MESSAGE_SOURCES.CONTENT_SCRIPT,
           data: { requestHash: criteria.requestHash },
         });
-        bgLogger.info({
-          message:
-            "[BACKGROUND] Claim Object creation successful for request hash: " +
-            criteria.requestHash,
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.BACKGROUND,
-        });
+        loggingHub.info(
+          "[BACKGROUND] Claim Object creation successful for request hash: " + criteria.requestHash,
+          "background.claim",
+        );
       }
       const providerRequest = {
         url: criteria?.url || request?.url || "",
@@ -227,18 +175,16 @@ export default function initBackground() {
         ctx.providerRequestsByHash.set(providerRequest.requestHash, providerRequest);
       }
       proofQueue.addToProofGenerationQueue(ctx, claimData, criteria.requestHash);
-      bgLogger.info({
-        message: "[BACKGROUND] Proof generation queued for request hash: " + criteria.requestHash,
-        logLevel: LOG_LEVEL.INFO,
-        type: LOG_TYPES.BACKGROUND,
-      });
+      loggingHub.info(
+        "[BACKGROUND] Proof generation queued for request hash: " + criteria.requestHash,
+        "background.proof",
+      );
       return { success: true, message: "Proof generation queued" };
     } catch (error) {
-      bgLogger.error({
-        message: "[BACKGROUND] Error processing filtered request: " + error.message,
-        logLevel: LOG_LEVEL.INFO,
-        type: LOG_TYPES.BACKGROUND,
-      });
+      loggingHub.error(
+        "[BACKGROUND] Error processing filtered request: " + error.message,
+        "background.filter",
+      );
       ctx.failSession("Error processing request: " + error.message, criteria.requestHash);
       return { success: false, error: error.message };
     }
@@ -265,17 +211,16 @@ export default function initBackground() {
     if (ctx.activeSessionId && (lostActive || noManagedLeft) && !ctx.aborted) {
       ctx.aborted = true;
       try {
-        bgLogger.error({
-          message: "[BACKGROUND] Verification tab closed by user",
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.BACKGROUND,
-          sessionId: ctx.activeSessionId || ctx.sessionId || "unknown",
-          providerId: ctx.providerId || "unknown",
-          appId: ctx.appId || "unknown",
-          eventType: EVENT_TYPES.RECLAIM_VERIFICATION_DISMISSED,
-        });
+        loggingHub.error("[BACKGROUND] Verification tab closed by user", "background.tab");
         await ctx.failSession("Verification tab closed by user");
       } catch {}
+    }
+
+    // Defensive: always clean up CSP rule when managed tab closes,
+    // regardless of which path handled the session termination
+    if ((lostActive || noManagedLeft) && ctx._cspRuleId) {
+      removeCspStrippingRule().catch(() => {});
+      ctx._cspRuleId = null;
     }
 
     if (lostActive) ctx.activeTabId = null;
@@ -285,10 +230,6 @@ export default function initBackground() {
     }
   });
 
-  bgLogger.info({
-    message: "[BACKGROUND] 🚀 Background initialization complete",
-    logLevel: LOG_LEVEL.INFO,
-    type: LOG_TYPES.BACKGROUND,
-  });
+  loggingHub.info("[BACKGROUND] Background initialization complete", "background.init");
   return ctx;
 }

@@ -3,8 +3,7 @@ import { reclaimExtensionSDK } from '@reclaimprotocol/browser-extension-sdk';
 import './ReclaimDemo.css';
 
 const PROVIDERS = [
-  { id: 'ff4d7afe-4b78-4795-9429-d20df2deaad7', name: 'test' },
-  { id: '7519ad78-208a-425d-9fac-97c13b0f0d4d', name: 'Kaggle' },
+  { id: '7519ad78-208a-425d-9fac-97c13b0f0d4d', name: 'Kaggle Oprf' },
 ];
 
 const APP_ID = import.meta.env.VITE_RECLAIM_APP_ID;
@@ -214,13 +213,8 @@ export default function ReclaimDemo() {
         // callbackUrl: 'https://your.server/receive-proofs' // optional
       });
 
-      reclaimExtensionSDK.setLogConfig({
-        logLevel: "ALL",
-        consoleEnabled: true,
-      }, EXTENSION_ID);
-
-      // request.setAppCallbackUrl("https://6cf90f1e87f7.ngrok-free.app/receive-proofs");
-      // request.setParams({ userProfileLink: "https://steamcommunity.com/id/Sa2199/" });
+      // request.setAppCallbackUrl("https://your-server.com/receive-proofs");
+      request.setParams({"key":"value"});
 
       request.setContext("0x0", "sample context");
 
@@ -396,5 +390,3 @@ export default function ReclaimDemo() {
     </div>
   );
 }
-
-

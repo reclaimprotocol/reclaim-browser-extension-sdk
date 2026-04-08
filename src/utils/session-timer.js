@@ -3,13 +3,13 @@
  * Handles session timeout management
  */
 
-import { debugLogger, DebugLogType } from "./logger";
+import { SESSION_TIMER_DURATION_MS } from "./constants/config";
 
 export class SessionTimerManager {
   constructor() {
     // Timer for session
     this.sessionTimer = null;
-    this.sessionTimerDuration = 30000; // 30 seconds in milliseconds
+    this.sessionTimerDuration = SESSION_TIMER_DURATION_MS;
     this.sessionTimerPaused = false;
     this.sessionTimerRemainingTime = 0;
     this.sessionTimerStartTime = 0;
@@ -30,7 +30,7 @@ export class SessionTimerManager {
    * Start session timer (default 30 seconds)
    */
   startSessionTimer() {
-    debugLogger.info(DebugLogType.SESSION_TIMER, "[SESSION TIMER] Starting session timer");
+    console.log("[SESSION TIMER] Starting session timer");
     // Clear any existing timer
     this.clearSessionTimer();
 
@@ -38,15 +38,12 @@ export class SessionTimerManager {
     this.sessionTimer = setTimeout(() => {
       // Check if timer is still valid before firing timeout
       if (this.sessionTimer !== null) {
-        debugLogger.error(DebugLogType.SESSION_TIMER, "[SESSION TIMER] Session timer expired");
+        console.error("[SESSION TIMER] Session timer expired");
         if (this.onSessionTimeout) {
           this.onSessionTimeout("Session timeout: No proofs generated within time limit");
         }
       } else {
-        debugLogger.info(
-          DebugLogType.SESSION_TIMER,
-          "[SESSION TIMER] Timer was already cleared, ignoring timeout",
-        );
+        console.log("[SESSION TIMER] Timer was already cleared, ignoring timeout");
       }
     }, this.sessionTimerDuration);
   }
@@ -55,7 +52,7 @@ export class SessionTimerManager {
    * Reset session timer (called after successful proof generation)
    */
   resetSessionTimer() {
-    debugLogger.info(DebugLogType.SESSION_TIMER, "[SESSION TIMER] Resetting session timer");
+    console.log("[SESSION TIMER] Resetting session timer");
     this.clearSessionTimer();
     this.startSessionTimer();
   }
@@ -75,7 +72,7 @@ export class SessionTimerManager {
    */
   pauseSessionTimer() {
     if (this.sessionTimer && !this.sessionTimerPaused) {
-      debugLogger.info(DebugLogType.SESSION_TIMER, "[SESSION TIMER] Pausing session timer");
+      console.log("[SESSION TIMER] Pausing session timer");
       // Calculate remaining time
       const elapsedTime = Date.now() - this.sessionTimerStartTime;
       this.sessionTimerRemainingTime = Math.max(0, this.sessionTimerDuration - elapsedTime);
@@ -91,14 +88,13 @@ export class SessionTimerManager {
    */
   resumeSessionTimer() {
     if (this.sessionTimerPaused) {
-      debugLogger.info(
-        DebugLogType.SESSION_TIMER,
+      console.log(
         "[SESSION TIMER] Resuming session timer with remaining time:",
         this.sessionTimerRemainingTime,
       );
 
       this.sessionTimer = setTimeout(() => {
-        debugLogger.error(DebugLogType.SESSION_TIMER, "[SESSION TIMER] Session timer expired");
+        console.error("[SESSION TIMER] Session timer expired");
         if (this.onSessionTimeout) {
           this.onSessionTimeout("Session timeout: No proofs generated within time limit");
         }
@@ -114,7 +110,7 @@ export class SessionTimerManager {
    * Clear all timers
    */
   clearAllTimers() {
-    debugLogger.info(DebugLogType.SESSION_TIMER, "[SESSION TIMER] Clearing all timers");
+    console.log("[SESSION TIMER] Clearing all timers");
     this.clearSessionTimer();
     this.sessionTimerPaused = false;
     this.sessionTimerRemainingTime = 0;

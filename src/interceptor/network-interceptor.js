@@ -269,75 +269,80 @@
               }
 
               if (this.readyState === 4) {
+                const xhrRef = this;
                 const status = this.status || 500;
                 const statusText = this.statusText || "Request Failed";
 
-                try {
-                  /**
-                   * Helper function to convert any response type to string
-                   * @param {*} response - The XHR response which could be:
-                   * - string (for responseType '' or 'text')
-                   * - object (for responseType 'json')
-                   * - Blob (for responseType 'blob')
-                   * - ArrayBuffer (for responseType 'arraybuffer')
-                   * - Document (for responseType 'document')
-                   * @returns {string} The response as a string
-                   */
-                  const getResponseString = (response) => {
-                    if (response === null || response === undefined) {
-                      return "";
-                    }
+                (async () => {
+                  try {
+                    /**
+                     * Helper function to convert any response type to string
+                     * Handles Blob/ArrayBuffer asynchronously
+                     * @param {*} response - The XHR response
+                     * @returns {Promise<string>} The response as a string
+                     */
+                    const getResponseString = async (response) => {
+                      if (response === null || response === undefined) {
+                        return "";
+                      }
 
-                    // Handle different response types
-                    switch (typeof response) {
-                      case "string":
-                        return response;
-                      case "object":
-                        // Handle special response types
-                        if (response instanceof Blob || response instanceof ArrayBuffer) {
-                          return "[Binary Data]";
-                        }
-                        if (response instanceof Document) {
-                          return response.documentElement.outerHTML;
-                        }
-                        // For plain objects or arrays
-                        try {
-                          return JSON.stringify(response);
-                        } catch (e) {
-                          debug.error("Failed to stringify object response:", e);
+                      // Handle different response types
+                      switch (typeof response) {
+                        case "string":
+                          return response;
+                        case "object":
+                          if (response instanceof ArrayBuffer) {
+                            try {
+                              return new TextDecoder("utf-8").decode(response);
+                            } catch {
+                              return "[Binary Data]";
+                            }
+                          }
+                          if (response instanceof Blob) {
+                            try {
+                              return await response.text();
+                            } catch {
+                              return "[Binary Data]";
+                            }
+                          }
+                          if (response instanceof Document) {
+                            return response.documentElement.outerHTML;
+                          }
+                          try {
+                            return JSON.stringify(response);
+                          } catch (e) {
+                            debug.error("Failed to stringify object response:", e);
+                            return String(response);
+                          }
+                        default:
                           return String(response);
-                        }
-                      default:
-                        return String(response);
-                    }
-                  };
+                      }
+                    };
 
-                  const responseObj = new Response(getResponseString(this.response), {
-                    status: status,
-                    statusText: statusText,
-                    headers: new Headers(
-                      Object.fromEntries(
-                        (this.getAllResponseHeaders() || "")
-                          .split("\r\n")
-                          .filter(Boolean)
-                          .map((line) => line.split(": ")),
+                    const responseObj = new Response(await getResponseString(xhrRef.response), {
+                      status: status,
+                      statusText: statusText,
+                      headers: new Headers(
+                        Object.fromEntries(
+                          (xhrRef.getAllResponseHeaders() || "")
+                            .split("\r\n")
+                            .filter(Boolean)
+                            .map((line) => line.split(": ")),
+                        ),
                       ),
-                    ),
-                  });
+                    });
 
-                  Object.defineProperty(responseObj, "url", {
-                    value: requestInfo.url,
-                    writable: false,
-                  });
+                    Object.defineProperty(responseObj, "url", {
+                      value: requestInfo.url,
+                      writable: false,
+                    });
 
-                  // Process response middlewares
-                  self
-                    .processResponseMiddlewares(responseObj, requestInfo)
-                    .catch((error) => debug.error("Error in response middleware:", error));
-                } catch (error) {
-                  console.log("error", error);
-                  debug.error("Error processing XHR response:", error);
-                }
+                    // Process response middlewares
+                    await self.processResponseMiddlewares(responseObj, requestInfo);
+                  } catch (error) {
+                    debug.error("Error processing XHR response:", error);
+                  }
+                })();
               }
             };
 

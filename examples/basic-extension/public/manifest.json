@@ -12,7 +12,7 @@
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; worker-src 'self';"
   },
   "host_permissions": ["<all_urls>"],
-  "permissions": ["offscreen", "cookies", "scripting", "storage"],
+  "permissions": ["offscreen", "cookies", "scripting", "storage", "declarativeNetRequest"],
   "content_scripts": [
     {
       "js": ["reclaim-browser-extension-sdk/content/content.bundle.js", "extensionContent.js"],
@@ -25,7 +25,10 @@
     {
       "resources": [
         "reclaim-browser-extension-sdk/offscreen/offscreen.html",
-        "reclaim-browser-extension-sdk/offscreen/offscreen.bundle.js"
+        "reclaim-browser-extension-sdk/offscreen/offscreen.bundle.js",
+        "reclaim-browser-extension-sdk/offscreen/load-s2circuits.js",
+        "browser-rpc/resources/stwo/*",
+        "browser-rpc/resources/snarkjs/*"
       ],
       "matches": ["<all_urls>"]
     },

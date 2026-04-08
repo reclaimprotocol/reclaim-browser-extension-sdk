@@ -1,19 +1,29 @@
 // Message router for background script
 // Handles chrome.runtime.onMessage and routes actions to modules
 
-import { LOG_TYPES, LOG_LEVEL, EVENT_TYPES } from "../utils/logger";
+import { loggingHub } from "../utils/logger/LoggingHub";
 import * as sessionManager from "./sessionManager";
 
 export async function handleMessage(ctx, message, sender, sendResponse) {
   const { action, source, target, data } = message;
-  const bgLogger = ctx.bgLogger;
-  bgLogger.setContext({
-    type: LOG_TYPES.BACKGROUND,
-    sessionId: ctx.sessionId || "unknown",
-    providerId: ctx.providerId || "unknown",
-    appId: ctx.appId || "unknown",
-  });
+
   try {
+    // Handle LOG_MESSAGE action from content/offscreen
+    if (action === ctx.MESSAGE_ACTIONS.LOG_MESSAGE) {
+      ctx.loggingHub.handleRemoteLog(data.message, data.type, data.level || "INFO");
+      sendResponse({ success: true });
+      return true;
+    }
+
+    // Handle UPDATE_LOG_CONFIG action - directly update LoggingHub config
+    if (action === ctx.MESSAGE_ACTIONS.UPDATE_LOG_CONFIG) {
+      if (data?.config) {
+        ctx.loggingHub.setConfig(data.config);
+      }
+      sendResponse({ success: true });
+      return true;
+    }
+
     switch (action) {
       case ctx.MESSAGE_ACTIONS.CONTENT_SCRIPT_LOADED:
         if (
@@ -26,14 +36,16 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
               action: ctx.MESSAGE_ACTIONS.SHOULD_INITIALIZE,
               source: ctx.MESSAGE_SOURCES.BACKGROUND,
               target: ctx.MESSAGE_SOURCES.CONTENT_SCRIPT,
-              data: { shouldInitialize: isManaged },
+              data: {
+                shouldInitialize: isManaged,
+                injectionType: ctx.providerData?.injectionType || null,
+              },
             })
             .catch((err) =>
-              bgLogger.error({
-                message: "[BACKGROUND] Error sending initialization status: " + err?.message,
-                logLevel: LOG_LEVEL.INFO,
-                type: LOG_TYPES.BACKGROUND,
-              }),
+              loggingHub.error(
+                "[BACKGROUND] Error sending initialization status: " + err?.message,
+                "background.message",
+              ),
             );
 
           if (isManaged && ctx.initPopupMessage && ctx.initPopupMessage.has(sender.tab.id)) {
@@ -42,21 +54,17 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
               .sendMessage(sender.tab.id, pendingMessage.message)
               .then(() => {
                 if (chrome.runtime.lastError) {
-                  bgLogger.error({
-                    message: `[BACKGROUND] Error sending (pending) SHOW_PROVIDER_VERIFICATION_POPUP to tab ${sender.tab.id}: ${chrome.runtime.lastError.message}`,
-                    logLevel: LOG_LEVEL.INFO,
-                    type: LOG_TYPES.BACKGROUND,
-                    eventType: EVENT_TYPES.VERIFICATION_POPUP_ERROR,
-                  });
+                  loggingHub.error(
+                    `[BACKGROUND] Error sending (pending) SHOW_PROVIDER_VERIFICATION_POPUP to tab ${sender.tab.id}: ${chrome.runtime.lastError.message}`,
+                    "background.popup",
+                  );
                 }
               })
               .catch((error) =>
-                bgLogger.error({
-                  message: `[BACKGROUND] Error sending (pending) SHOW_PROVIDER_VERIFICATION_POPUP to tab ${sender.tab.id} (promise catch): ${error?.message}`,
-                  logLevel: LOG_LEVEL.INFO,
-                  type: LOG_TYPES.BACKGROUND,
-                  eventType: EVENT_TYPES.VERIFICATION_POPUP_ERROR,
-                }),
+                loggingHub.error(
+                  `[BACKGROUND] Error sending (pending) SHOW_PROVIDER_VERIFICATION_POPUP to tab ${sender.tab.id} (promise catch): ${error?.message}`,
+                  "background.popup",
+                ),
               );
           }
 
@@ -66,30 +74,25 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
               .sendMessage(sender.tab.id, pendingMessage.message)
               .then(() => {
                 if (chrome.runtime.lastError) {
-                  bgLogger.error({
-                    message: `[BACKGROUND] Error sending (pending) PROVIDER_DATA_READY to tab ${sender.tab.id}: ${chrome.runtime.lastError.message}`,
-                    logLevel: LOG_LEVEL.INFO,
-                    type: LOG_TYPES.BACKGROUND,
-                    eventType: EVENT_TYPES.RECLAIM_VERIFICATION_PROVIDER_LOAD_EXCEPTION,
-                  });
+                  loggingHub.error(
+                    `[BACKGROUND] Error sending (pending) PROVIDER_DATA_READY to tab ${sender.tab.id}: ${chrome.runtime.lastError.message}`,
+                    "background.provider",
+                  );
                 }
               })
               .catch((error) =>
-                bgLogger.error({
-                  message: `[BACKGROUND] Error sending (pending) PROVIDER_DATA_READY to tab ${sender.tab.id} (promise catch): ${error?.message}`,
-                  logLevel: LOG_LEVEL.INFO,
-                  type: LOG_TYPES.BACKGROUND,
-                  eventType: EVENT_TYPES.RECLAIM_VERIFICATION_PROVIDER_LOAD_EXCEPTION,
-                }),
+                loggingHub.error(
+                  `[BACKGROUND] Error sending (pending) PROVIDER_DATA_READY to tab ${sender.tab.id} (promise catch): ${error?.message}`,
+                  "background.provider",
+                ),
               );
             ctx.providerDataMessage.delete(sender.tab.id);
           }
 
-          bgLogger.info({
-            message: `[BACKGROUND] Successfully sent (pending) SHOW_PROVIDER_VERIFICATION_POPUP and PROVIDER_DATA_READY to tab ${sender.tab.id}`,
-            logLevel: LOG_LEVEL.INFO,
-            type: LOG_TYPES.BACKGROUND,
-          });
+          loggingHub.info(
+            `[BACKGROUND] Successfully sent (pending) SHOW_PROVIDER_VERIFICATION_POPUP and PROVIDER_DATA_READY to tab ${sender.tab.id}`,
+            "background.message",
+          );
           sendResponse({ success: true });
           break;
         }
@@ -99,17 +102,10 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
           source === ctx.MESSAGE_SOURCES.CONTENT_SCRIPT &&
           target === ctx.MESSAGE_SOURCES.BACKGROUND
         ) {
-          bgLogger.setContext({
-            sessionId: ctx.sessionId || "unknown",
-            providerId: ctx.providerId || "unknown",
-            appId: ctx.appId || "unknown",
-            type: LOG_TYPES.BACKGROUND,
-          });
-          bgLogger.info({
-            message: "[BACKGROUND] Content script requested provider data",
-            logLevel: LOG_LEVEL.INFO,
-            type: LOG_TYPES.BACKGROUND,
-          });
+          loggingHub.info(
+            "[BACKGROUND] Content script requested provider data",
+            "background.provider",
+          );
 
           if (
             sender.tab?.id &&
@@ -119,13 +115,11 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
             ctx.sessionId &&
             ctx.callbackUrl !== undefined // allow empty string as optional
           ) {
-            bgLogger.info({
-              message:
-                "[BACKGROUND] Sending the following provider data to content script: " +
+            loggingHub.info(
+              "[BACKGROUND] Sending the following provider data to content script: " +
                 JSON.stringify(ctx.providerData),
-              logLevel: LOG_LEVEL.INFO,
-              type: LOG_TYPES.BACKGROUND,
-            });
+              "background.provider",
+            );
 
             sendResponse({
               success: true,
@@ -139,11 +133,10 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
               },
             });
           } else {
-            bgLogger.error({
-              message: "[BACKGROUND] Provider data not available or tab not managed",
-              logLevel: LOG_LEVEL.INFO,
-              type: LOG_TYPES.BACKGROUND,
-            });
+            loggingHub.error(
+              "[BACKGROUND] Provider data not available or tab not managed",
+              "background.provider",
+            );
             sendResponse({
               success: false,
               error: "Provider data not available or tab not managed",
@@ -157,12 +150,15 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
           target === ctx.MESSAGE_SOURCES.BACKGROUND
         ) {
           const isManaged = sender.tab?.id && ctx.managedTabs.has(sender.tab.id);
-          bgLogger.info({
-            message: "[BACKGROUND] Checking if tab is managed: " + isManaged,
-            logLevel: LOG_LEVEL.INFO,
-            type: LOG_TYPES.BACKGROUND,
+          loggingHub.info(
+            "[BACKGROUND] Checking if tab is managed: " + isManaged,
+            "background.tab",
+          );
+          sendResponse({
+            success: true,
+            isManaged,
+            injectionType: ctx.providerData?.injectionType || null,
           });
-          sendResponse({ success: true, isManaged });
         }
         break;
       case ctx.MESSAGE_ACTIONS.START_VERIFICATION:
@@ -170,29 +166,22 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
           source === ctx.MESSAGE_SOURCES.CONTENT_SCRIPT &&
           target === ctx.MESSAGE_SOURCES.BACKGROUND
         ) {
-          bgLogger.setContext({
-            sessionId: data.sessionId || ctx.sessionId || "unknown",
-            providerId: data.providerId || ctx.providerId || "unknown",
-            appId: data.applicationId || ctx.appId || "unknown",
-            type: LOG_TYPES.BACKGROUND,
+          // Set session context in the logging hub
+          ctx.loggingHub.setSessionContext({
+            sessionId: data.sessionId,
+            providerId: data.providerId,
+            appId: data.applicationId,
           });
 
-          bgLogger.info({
-            message: "Starting new verification using Reclaim Extension SDK",
-            logLevel: LOG_LEVEL.INFO,
-            type: LOG_TYPES.BACKGROUND,
-            eventType: EVENT_TYPES.IS_RECLAIM_EXTENSION_SDK,
-          });
+          loggingHub.info(
+            "Starting new verification using Reclaim Extension SDK",
+            "background.verification",
+          );
 
-          bgLogger.info({
-            message:
-              "[BACKGROUND] Starting new verification flow with data: " + JSON.stringify(data),
-            logLevel: LOG_LEVEL.INFO,
-            type: LOG_TYPES.BACKGROUND,
-            eventType: EVENT_TYPES.VERIFICATION_FLOW_STARTED,
-          });
-
-          ctx.loggerService.startFlushInterval();
+          loggingHub.info(
+            "[BACKGROUND] Starting new verification flow with data: " + JSON.stringify(data),
+            "background.verification",
+          );
 
           // Concurrency guard
           if (ctx.activeSessionId && ctx.activeSessionId !== data.sessionId) {
@@ -200,11 +189,10 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
             if (ctx.managedTabs.size === 0) {
               ctx.activeSessionId = null;
             } else {
-              bgLogger.error({
-                message: "[BACKGROUND] Another verification is in progress",
-                logLevel: LOG_LEVEL.INFO,
-                type: LOG_TYPES.BACKGROUND,
-              });
+              loggingHub.error(
+                "[BACKGROUND] Another verification is in progress",
+                "background.verification",
+              );
               sendResponse({ success: false, error: "Another verification is in progress" });
               // Send terminal failure to original tab so SDK Promise doesn't hang
               if (sender.tab?.id) {
@@ -228,21 +216,19 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
           if (sender.tab && sender.tab.id) {
             ctx.originalTabId = sender.tab.id;
           }
-          bgLogger.info({
-            message: "[BACKGROUND] Starting verification with session id: " + data.sessionId,
-            logLevel: LOG_LEVEL.INFO,
-            type: LOG_TYPES.BACKGROUND,
-          });
+          loggingHub.info(
+            "[BACKGROUND] Starting verification with session id: " + data.sessionId,
+            "background.verification",
+          );
 
           try {
             const result = await sessionManager.startVerification(ctx, data);
             sendResponse({ success: true, result });
           } catch (startError) {
-            bgLogger.error({
-              message: "[BACKGROUND] startVerification failed: " + startError?.message,
-              logLevel: LOG_LEVEL.INFO,
-              type: LOG_TYPES.BACKGROUND,
-            });
+            loggingHub.error(
+              "[BACKGROUND] startVerification failed: " + startError?.message,
+              "background.verification",
+            );
             sendResponse({ success: false, error: startError.message });
             // startVerification clears ctx.sessionId before it can throw,
             // so restore it from the original request data before calling
@@ -265,37 +251,30 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
           source === ctx.MESSAGE_SOURCES.CONTENT_SCRIPT &&
           target === ctx.MESSAGE_SOURCES.BACKGROUND
         ) {
-          bgLogger.info({
-            message: "[BACKGROUND] Cancelling verification with session id: " + data?.sessionId,
-            logLevel: LOG_LEVEL.INFO,
-            type: LOG_TYPES.BACKGROUND,
-          });
+          loggingHub.info(
+            "[BACKGROUND] Cancelling verification with session id: " + data?.sessionId,
+            "background.verification",
+          );
 
           await sessionManager.cancelSession(ctx, data?.sessionId);
           sendResponse({ success: true });
         } else {
-          bgLogger.error({
-            message: "[BACKGROUND] CANCEL_VERIFICATION: Action not supported",
-            logLevel: LOG_LEVEL.INFO,
-            type: LOG_TYPES.BACKGROUND,
-          });
+          loggingHub.error(
+            "[BACKGROUND] CANCEL_VERIFICATION: Action not supported",
+            "background.message",
+          );
           sendResponse({ success: false, error: "Action not supported" });
         }
         break;
       case ctx.MESSAGE_ACTIONS.OFFSCREEN_DOCUMENT_READY:
         if (source === ctx.MESSAGE_SOURCES.OFFSCREEN && target === ctx.MESSAGE_SOURCES.BACKGROUND) {
-          bgLogger.info({
-            message: "[BACKGROUND] Offscreen document ready",
-            logLevel: LOG_LEVEL.INFO,
-            type: LOG_TYPES.BACKGROUND,
-          });
+          loggingHub.info("[BACKGROUND] Offscreen document ready", "background.offscreen");
           sendResponse({ success: true });
         } else {
-          bgLogger.error({
-            message: "[BACKGROUND] OFFSCREEN_DOCUMENT_READY: Action not supported",
-            logLevel: LOG_LEVEL.INFO,
-            type: LOG_TYPES.BACKGROUND,
-          });
+          loggingHub.error(
+            "[BACKGROUND] OFFSCREEN_DOCUMENT_READY: Action not supported",
+            "background.message",
+          );
           sendResponse({ success: false, error: "Action not supported" });
         }
         break;
@@ -307,30 +286,24 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
           if (sender.tab && sender.tab.id) {
             chrome.tabs.remove(sender.tab.id, () => {
               if (chrome.runtime.lastError) {
-                bgLogger.error({
-                  message: "[BACKGROUND] Error closing tab: " + chrome.runtime.lastError.message,
-                  logLevel: LOG_LEVEL.INFO,
-                  type: LOG_TYPES.BACKGROUND,
-                });
+                loggingHub.error(
+                  "[BACKGROUND] Error closing tab: " + chrome.runtime.lastError.message,
+                  "background.tab",
+                );
                 sendResponse({ success: false, error: chrome.runtime.lastError.message });
               } else {
                 if (ctx.managedTabs.has(sender.tab.id)) {
                   ctx.managedTabs.delete(sender.tab.id);
                 }
-                bgLogger.info({
-                  message: "[BACKGROUND] Tab closed",
-                  logLevel: LOG_LEVEL.INFO,
-                  type: LOG_TYPES.BACKGROUND,
-                });
+                loggingHub.info("[BACKGROUND] Tab closed", "background.tab");
                 sendResponse({ success: true });
               }
             });
           } else {
-            bgLogger.error({
-              message: "[BACKGROUND] CLOSE_CURRENT_TAB: No tab ID provided by sender.",
-              logLevel: LOG_LEVEL.INFO,
-              type: LOG_TYPES.BACKGROUND,
-            });
+            loggingHub.error(
+              "[BACKGROUND] CLOSE_CURRENT_TAB: No tab ID provided by sender.",
+              "background.tab",
+            );
             sendResponse({ success: false, error: "No tab ID found to close." });
           }
         } else {
@@ -343,13 +316,10 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
           target === ctx.MESSAGE_SOURCES.BACKGROUND
         ) {
           if (ctx.filteredRequests.has(data.criteria.requestHash)) {
-            bgLogger.info({
-              message:
-                "[BACKGROUND] Filtered request found with hash: " + data.criteria.requestHash,
-              logLevel: LOG_LEVEL.INFO,
-              type: LOG_TYPES.BACKGROUND,
-              eventType: EVENT_TYPES.FILTERED_REQUEST_FOUND,
-            });
+            loggingHub.info(
+              "[BACKGROUND] Filtered request found with hash: " + data.criteria.requestHash,
+              "background.filter",
+            );
             sendResponse({
               success: true,
               result: ctx.filteredRequests.get(data.criteria.requestHash),
@@ -362,20 +332,17 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
               data.sessionId,
               data.loginUrl,
             );
-            bgLogger.info({
-              message:
-                "[BACKGROUND] Filtered request processed with hash: " + data.criteria.requestHash,
-              logLevel: LOG_LEVEL.INFO,
-              type: LOG_TYPES.BACKGROUND,
-            });
+            loggingHub.info(
+              "[BACKGROUND] Filtered request processed with hash: " + data.criteria.requestHash,
+              "background.filter",
+            );
             sendResponse({ success: true, result });
           }
         } else {
-          bgLogger.error({
-            message: "[BACKGROUND] FILTERED_REQUEST_FOUND: Action not supported",
-            logLevel: LOG_LEVEL.INFO,
-            type: LOG_TYPES.BACKGROUND,
-          });
+          loggingHub.error(
+            "[BACKGROUND] FILTERED_REQUEST_FOUND: Action not supported",
+            "background.message",
+          );
           sendResponse({ success: false, error: "Action not supported" });
         }
         break;
@@ -384,36 +351,32 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
           source === ctx.MESSAGE_SOURCES.CONTENT_SCRIPT &&
           target === ctx.MESSAGE_SOURCES.BACKGROUND
         ) {
-          bgLogger.info({
-            message: "[BACKGROUND] Getting current tab id: " + sender.tab?.id,
-            logLevel: LOG_LEVEL.INFO,
-            type: LOG_TYPES.BACKGROUND,
-          });
+          loggingHub.info(
+            "[BACKGROUND] Getting current tab id: " + sender.tab?.id,
+            "background.tab",
+          );
           sendResponse({ success: true, tabId: sender.tab?.id });
         } else {
-          bgLogger.error({
-            message: "[BACKGROUND] GET_CURRENT_TAB_ID: Action not supported",
-            logLevel: LOG_LEVEL.INFO,
-            type: LOG_TYPES.BACKGROUND,
-          });
+          loggingHub.error(
+            "[BACKGROUND] GET_CURRENT_TAB_ID: Action not supported",
+            "background.message",
+          );
           sendResponse({ success: false, error: "Action not supported" });
         }
         break;
       case ctx.MESSAGE_ACTIONS.UPDATE_PUBLIC_DATA:
         if (sender.tab?.id && ctx.managedTabs.has(sender.tab.id)) {
-          bgLogger.info({
-            message: "[BACKGROUND] Updating public data: " + data?.publicData,
-            logLevel: LOG_LEVEL.INFO,
-            type: LOG_TYPES.BACKGROUND,
-          });
+          loggingHub.info(
+            "[BACKGROUND] Updating public data: " + data?.publicData,
+            "background.data",
+          );
           ctx.publicData = typeof data?.publicData === "string" ? data.publicData : null;
           sendResponse({ success: true });
         } else {
-          bgLogger.error({
-            message: "[BACKGROUND] UPDATE_PUBLIC_DATA: Tab is not managed by extension",
-            logLevel: LOG_LEVEL.INFO,
-            type: LOG_TYPES.BACKGROUND,
-          });
+          loggingHub.error(
+            "[BACKGROUND] UPDATE_PUBLIC_DATA: Tab is not managed by extension",
+            "background.data",
+          );
           sendResponse({ success: false, error: "Tab is not managed by extension" });
         }
         break;
@@ -422,48 +385,40 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
           const turningOff = ctx.expectManyClaims && !data?.expectMany;
           ctx.expectManyClaims = !!data?.expectMany;
 
-          bgLogger.info({
-            message: "[BACKGROUND] Updating expect many claims: " + data?.expectMany,
-            logLevel: LOG_LEVEL.INFO,
-            type: LOG_TYPES.BACKGROUND,
-          });
+          loggingHub.info(
+            "[BACKGROUND] Updating expect many claims: " + data?.expectMany,
+            "background.claim",
+          );
 
           // If turning OFF and proofs are already ready, finish now
           if (turningOff && ctx.generatedProofs.size > 0) {
             try {
-              bgLogger.info({
-                message: "[BACKGROUND] Turning off expect many claims, Submitting proofs",
-                logLevel: LOG_LEVEL.INFO,
-                type: LOG_TYPES.BACKGROUND,
-              });
+              loggingHub.info(
+                "[BACKGROUND] Turning off expect many claims, Submitting proofs",
+                "background.proof",
+              );
               await ctx.submitProofs();
             } catch {}
           }
           sendResponse({ success: true });
         } else {
-          bgLogger.error({
-            message: "[BACKGROUND] UPDATE_EXPECT_MANY_CLAIMS: Tab is not managed by extension",
-            logLevel: LOG_LEVEL.INFO,
-            type: LOG_TYPES.BACKGROUND,
-          });
+          loggingHub.error(
+            "[BACKGROUND] UPDATE_EXPECT_MANY_CLAIMS: Tab is not managed by extension",
+            "background.claim",
+          );
           sendResponse({ success: false, error: "Tab is not managed by extension" });
         }
         break;
       }
       case ctx.MESSAGE_ACTIONS.GET_PARAMETERS:
         if (sender.tab?.id && ctx.managedTabs.has(sender.tab.id)) {
-          bgLogger.info({
-            message: "[BACKGROUND] Getting parameters: " + ctx.parameters,
-            logLevel: LOG_LEVEL.INFO,
-            type: LOG_TYPES.BACKGROUND,
-          });
+          loggingHub.info("[BACKGROUND] Getting parameters: " + ctx.parameters, "background.data");
           sendResponse({ success: true, parameters: ctx.parameters || {} });
         } else {
-          bgLogger.error({
-            message: "[BACKGROUND] UPDATE_EXPECT_MANY_CLAIMS: Tab is not managed by extension",
-            logLevel: LOG_LEVEL.INFO,
-            type: LOG_TYPES.BACKGROUND,
-          });
+          loggingHub.error(
+            "[BACKGROUND] GET_PARAMETERS: Tab is not managed by extension",
+            "background.data",
+          );
           sendResponse({ success: false, error: "Tab is not managed by extension" });
         }
         break;
@@ -471,18 +426,16 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
         if (sender.tab?.id && ctx.managedTabs.has(sender.tab.id)) {
           ctx.aborted = true;
           await ctx.failSession(data?.message || "Provider error");
-          bgLogger.info({
-            message: "[BACKGROUND] Provider error reported: " + data?.message,
-            logLevel: LOG_LEVEL.INFO,
-            type: LOG_TYPES.BACKGROUND,
-          });
+          loggingHub.info(
+            "[BACKGROUND] Provider error reported: " + data?.message,
+            "background.provider",
+          );
           sendResponse({ success: true });
         } else {
-          bgLogger.error({
-            message: "[BACKGROUND] REPORT_PROVIDER_ERROR: Tab is not managed by extension",
-            logLevel: LOG_LEVEL.INFO,
-            type: LOG_TYPES.BACKGROUND,
-          });
+          loggingHub.error(
+            "[BACKGROUND] REPORT_PROVIDER_ERROR: Tab is not managed by extension",
+            "background.provider",
+          );
           sendResponse({ success: false, error: "Tab is not managed by extension" });
         }
         break;
@@ -507,27 +460,24 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
               data.loginUrl || "",
             );
 
-            bgLogger.info({
-              message: "[BACKGROUND] Request claim processed: " + data.requestHash,
-              logLevel: LOG_LEVEL.INFO,
-              type: LOG_TYPES.BACKGROUND,
-            });
+            loggingHub.info(
+              "[BACKGROUND] Request claim processed: " + data.requestHash,
+              "background.claim",
+            );
 
             sendResponse({ success: true, result });
           } catch (e) {
-            bgLogger.error({
-              message: "[BACKGROUND] Request claim processing failed: " + e?.message,
-              logLevel: LOG_LEVEL.INFO,
-              type: LOG_TYPES.BACKGROUND,
-            });
+            loggingHub.error(
+              "[BACKGROUND] Request claim processing failed: " + e?.message,
+              "background.claim",
+            );
             sendResponse({ success: false, error: e?.message || String(e) });
           }
         } else {
-          bgLogger.error({
-            message: "[BACKGROUND] REQUEST_CLAIM: Tab is not managed by extension",
-            logLevel: LOG_LEVEL.INFO,
-            type: LOG_TYPES.BACKGROUND,
-          });
+          loggingHub.error(
+            "[BACKGROUND] REQUEST_CLAIM: Tab is not managed by extension",
+            "background.claim",
+          );
           sendResponse({ success: false, error: "Tab is not managed by extension" });
         }
         break;
@@ -544,11 +494,10 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
 
           try {
             if (op === "REPLAY_PAGE_FETCH") {
-              bgLogger.info({
-                message: "[BACKGROUND] REPLAY_PAGE_FETCH: Executing script",
-                logLevel: LOG_LEVEL.INFO,
-                type: LOG_TYPES.BACKGROUND,
-              });
+              loggingHub.info(
+                "[BACKGROUND] REPLAY_PAGE_FETCH: Executing script",
+                "background.injection",
+              );
               await chrome.scripting.executeScript({
                 target: { tabId },
                 world: "MAIN",
@@ -584,122 +533,55 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
                 args: [{ showAlert: !!data?.showAlert }],
               });
 
-              bgLogger.info({
-                message: "[BACKGROUND] REPLAY_PAGE_FETCH executed in MAIN world (XHR)",
-                logLevel: LOG_LEVEL.INFO,
-                type: LOG_TYPES.BACKGROUND,
-              });
+              loggingHub.info(
+                "[BACKGROUND] REPLAY_PAGE_FETCH executed in MAIN world (XHR)",
+                "background.injection",
+              );
               sendResponse({ success: true });
               break;
             }
 
             if (op === "RUN_CUSTOM_INJECTION") {
               const code = String(data?.code || "");
+              if (!code) {
+                sendResponse({ success: true, result: { status: "skipped", reason: "no_code" } });
+                break;
+              }
+
+              // Static func receives code as a serialized string via args.
+              // CSP has been stripped from the page via declarativeNetRequest,
+              // so eval() works in MAIN world without needing unsafe-eval in extension CSP.
               const results = await chrome.scripting.executeScript({
                 target: { tabId: sender.tab.id },
                 world: "MAIN",
-                func: (opts) => {
+                func: (codeStr) => {
                   try {
-                    const code = String(opts?.code || "");
-                    if (!code) return { status: "skipped", reason: "no_code" };
                     if (window.__reclaimCustomInjectionDone__) {
                       return { status: "skipped", reason: "already_injected" };
                     }
-
-                    // 1) Use page nonce if available (CSP-compliant)
-                    const tryWithNonce = () => {
-                      try {
-                        const nonce = (document.querySelector("script[nonce]") || {}).nonce;
-                        if (!nonce) return false;
-                        const s = document.createElement("script");
-                        s.setAttribute("nonce", nonce);
-                        s.textContent = code;
-                        (document.documentElement || document.head || document).appendChild(s);
-                        s.remove();
-                        return true;
-                      } catch {
-                        return false;
-                      }
-                    };
-
-                    // 2) Trusted Types + nonce (still needs nonce on TT-enforced sites)
-                    const tryWithTT = () => {
-                      try {
-                        if (!window.trustedTypes) return false;
-                        const nonce = (document.querySelector("script[nonce]") || {}).nonce || "";
-                        const names = [
-                          "reclaim-extension-sdk",
-                          "reclaim",
-                          "default",
-                          "policy",
-                          "app",
-                        ];
-                        for (const name of names) {
-                          try {
-                            const policy = window.trustedTypes.createPolicy(name, {
-                              createScript: (s) => s,
-                            });
-                            const s = document.createElement("script");
-                            if (nonce) s.setAttribute("nonce", nonce);
-                            s.text = policy.createScript(code);
-                            (document.documentElement || document.head || document).appendChild(s);
-                            s.remove();
-                            return true;
-                          } catch {}
-                        }
-                        return false;
-                      } catch {
-                        return false;
-                      }
-                    };
-
-                    // 3) Plain inline (last resort; typically blocked)
-                    const tryPlain = () => {
-                      try {
-                        const s = document.createElement("script");
-                        s.textContent = code;
-                        (document.documentElement || document.head || document).appendChild(s);
-                        s.remove();
-                        return true;
-                      } catch {
-                        return false;
-                      }
-                    };
-
-                    const ok =
-                      tryWithNonce() || // best chance
-                      tryWithTT() || // TT with nonce when possible
-                      tryPlain(); // may be blocked
-
-                    if (ok) {
-                      window.__reclaimCustomInjectionDone__ = true;
-                      return { status: "executed" };
-                    }
-                    return { status: "error", reason: "all_strategies_failed" };
+                    window.__reclaimCustomInjectionDone__ = true;
+                    (0, eval)(codeStr);
+                    return { status: "executed" };
                   } catch (e) {
                     return { status: "error", reason: String(e?.message || e) };
                   }
                 },
-                args: [{ code }],
+                args: [code],
               });
 
               const result = results?.[0]?.result;
-              bgLogger.info({
-                message: "[BACKGROUND] RUN_CUSTOM_INJECTION result: " + JSON.stringify(result),
-                logLevel: LOG_LEVEL.INFO,
-                type: LOG_TYPES.BACKGROUND,
-                meta: { result },
-              });
+              loggingHub.info(
+                "[BACKGROUND] RUN_CUSTOM_INJECTION result: " + JSON.stringify(result),
+                "background.injection",
+              );
               sendResponse({ success: true, result });
               break;
             }
           } catch (e) {
-            bgLogger.error({
-              message: "[BACKGROUND] INJECT_VIA_SCRIPTING failed: " + e?.message,
-              logLevel: LOG_LEVEL.INFO,
-              type: LOG_TYPES.BACKGROUND,
-              meta: { e },
-            });
+            loggingHub.error(
+              "[BACKGROUND] INJECT_VIA_SCRIPTING failed: " + e?.message,
+              "background.injection",
+            );
             sendResponse({ success: false, error: e?.message || String(e) });
           }
         } else {
@@ -708,21 +590,15 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
         break;
       }
       default: {
-        bgLogger.error({
-          message: "[BACKGROUND] DEFAULT: Action not supported",
-          logLevel: LOG_LEVEL.INFO,
-          type: LOG_TYPES.BACKGROUND,
-        });
+        loggingHub.error("[BACKGROUND] DEFAULT: Action not supported", "background.message");
         sendResponse({ success: false, error: "Action not supported" });
       }
     }
   } catch (error) {
-    bgLogger.error({
-      message: "[BACKGROUND] Error handling " + action + ": " + error?.message,
-      logLevel: LOG_LEVEL.INFO,
-      type: LOG_TYPES.BACKGROUND,
-      meta: { error },
-    });
+    loggingHub.error(
+      "[BACKGROUND] Error handling " + action + ": " + error?.message,
+      "background.message",
+    );
     sendResponse({ success: false, error: error.message });
   }
   // Required for async response

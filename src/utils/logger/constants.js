@@ -2,21 +2,6 @@ export const LOGGING_ENDPOINTS = {
   DIAGNOSTIC_LOGGING: "https://logs.reclaimprotocol.org/api/business-logs/logDump",
 };
 
-export const LOG_TYPES = {
-  BACKGROUND: "reclaim_browser_extension.BackgroundProcess",
-  CONTENT: "reclaim_browser_extension.ContentScript",
-  POPUP: "reclaim_browser_extension.Popup",
-  INIT: "reclaim_browser_extension.Initialization",
-  VERIFICATION: "reclaim_browser_extension.Verification",
-  FETCH_DATA: "reclaim_browser_extension.FetchData",
-  PROVIDER_DATA: "reclaim_browser_extension.ProviderData",
-  CLAIM_CREATION: "reclaim_browser_extension.ClaimCreation",
-  PROOF_GENERATION: "reclaim_browser_extension.ProofGeneration",
-  PROOF_SUBMISSION: "reclaim_browser_extension.ProofSubmission",
-  PROOF_VERIFICATION: "reclaim_browser_extension.ProofVerification",
-  OFFSCREEN: "reclaim_browser_extension.Offscreen",
-};
-
 export const LOG_SOURCES = {
   BACKGROUND: "background",
   CONTENT: "content",
@@ -62,23 +47,21 @@ export const EVENT_TYPES = {
   UPDATE_SESSION_STATUS_ERROR: "UPDATE_SESSION_STATUS_ERROR",
 };
 
-// Numeric levels for easy threshold checks
+// Log levels for filtering (lower number = higher severity)
+// ERROR: Only .error() calls
+// WARN: .error() + .warn() calls
+// INFO: .error() + .warn() + .info() calls
+// DEBUG: All logs including .debug() calls
 export const LOG_LEVEL = {
-  INFO: 10,
-  DEBUG: 20,
-  ALL: 30,
-};
-
-export const LOG_LEVEL_MAP = {
-  INFO: LOG_LEVEL.INFO,
-  DEBUG: LOG_LEVEL.DEBUG,
-  ALL: LOG_LEVEL.ALL,
+  ERROR: 1,
+  WARN: 2,
+  INFO: 3,
+  DEBUG: 4,
 };
 
 export const DEFAULT_LOG_CONFIG = {
-  logLevel: "INFO", // "INFO" | "DEBUG" | "ALL" - applies to both console and backend
+  logLevel: "DEBUG", // "ERROR" | "WARN" | "INFO" | "DEBUG" - filter threshold
   consoleEnabled: false, // Enable/disable console logging
-  source: "reclaim-extension-sdk",
 };
 
 export const LOG_CONFIG_STORAGE_KEY = "reclaim_extension_sdk_log_config";

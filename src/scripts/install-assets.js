@@ -72,6 +72,15 @@ async function main() {
   // offscreen
   copyDir(path.join(sdkBuild, "offscreen"), path.join(targetBase, "offscreen"));
 
+  // snarkjs runtime
+  const snarkjsSrc = path.join(sdkBuild, "browser-rpc", "resources", "snarkjs", "snarkjs.min.js");
+  if (fs.existsSync(snarkjsSrc)) {
+    copyFile(
+      snarkjsSrc,
+      path.join(publicDir, "browser-rpc", "resources", "snarkjs", "snarkjs.min.js"),
+    );
+  }
+
   // optional bundle
   const b343 = path.join(sdkBuild, "343.bundle.js");
   if (fs.existsSync(b343)) copyFile(b343, path.join(publicDir, "343.bundle.js"));
