@@ -5,7 +5,7 @@ import './ReclaimDemo.css';
 const PROVIDERS = [
   { id: '7519ad78-208a-425d-9fac-97c13b0f0d4d', name: 'Kaggle' },
   {id: '218f590e-d755-44c9-82e3-04e9907d3f44', name: "ChatGpt"},
-  {id: '06667ea1-7367-4f68-906d-98cb2bbadcf9', name: "Trex: YT"},
+  {id: 'f4722dc7-83ae-44a7-9a6f-e98c274f25f4', name: "Trex: Linkedin"},
   {id: 'b98cf5f0-74b3-49e8-b2c5-6e1d7291a54f', name: "Trex: Instagram"},
   {id: '5f3b22f7-32e2-4ec3-8ee0-5e70ec79ca66', name: "Trex: Instagram 2"},
   {id: '47a84ec8-00fa-4628-b6d0-02e26af7f4f1', name: "Trex: OKXX"},
@@ -422,5 +422,3 @@ export default function ReclaimDemo() {
     </div>
   );
 }
-
-

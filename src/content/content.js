@@ -200,8 +200,8 @@ try {
 
             if (resp.injectionType !== "NONE") {
               injectNetworkInterceptor();
-              injectDynamicInjectionScript();
             }
+            injectDynamicInjectionScript();
           }
         },
       );
@@ -227,8 +227,8 @@ try {
         if (shouldInitialize) {
           if (data.injectionType !== "NONE") {
             injectNetworkInterceptor();
-            injectDynamicInjectionScript();
           }
+          injectDynamicInjectionScript();
 
           window.reclaimContentScript = new ReclaimContentScript();
         }
@@ -370,10 +370,22 @@ class ReclaimContentScript {
               this.setProviderIdInLocalStorage(this.providerId);
 
               // Store injection script in website's localStorage for injection script access
-              if (
-                this.providerData?.customInjection?.length &&
-                this.providerData?.extensionConfig?.allowInjectionsViaChromeScritpting
-              ) {
+              const hasCustomInjection = !!this.providerData?.customInjection?.length;
+              const useChromeScripting =
+                !!this.providerData?.extensionConfig?.allowInjectionsViaChromeScripting;
+              logger.info(
+                `[Content] customInjection: hasScript=${hasCustomInjection}, allowInjectionsViaChromeScripting=${useChromeScripting}, providerId=${this.providerId}`,
+                "content.injection",
+              );
+              if (hasCustomInjection && useChromeScripting) {
+                // Clear any stale localStorage value so injection-scripts.js doesn't double-inject
+                localStorage.removeItem(
+                  `reclaimBrowserExtensionInjectionScript:${this.providerId}`,
+                );
+                logger.info(
+                  `[Content] Injecting via chrome.scripting.executeScript | providerId=${this.providerId}`,
+                  "content.injection",
+                );
                 chrome.runtime.sendMessage({
                   action: MESSAGE_ACTIONS.INJECT_VIA_SCRIPTING,
                   source: MESSAGE_SOURCES.CONTENT_SCRIPT,
@@ -381,6 +393,10 @@ class ReclaimContentScript {
                   data: { op: "RUN_CUSTOM_INJECTION", code: this.providerData.customInjection },
                 });
               } else {
+                logger.info(
+                  `[Content] Injecting via localStorage | hasScript=${hasCustomInjection}, providerId=${this.providerId}`,
+                  "content.injection",
+                );
                 this.setProviderInjectionScriptInLocalStorage(
                   this.providerId,
                   this.providerData?.customInjection,
@@ -436,7 +452,16 @@ class ReclaimContentScript {
         this.setProviderIdInLocalStorage(this.providerId);
 
         // Store injection script in website's localStorage for injection script access
-        this.setProviderInjectionScriptInLocalStorage(this.providerId, data?.customInjection);
+        // Skip localStorage if chrome.scripting path is enabled (avoids duplicate injection via injection-scripts.js)
+        const useChromeScriptingPDR =
+          !!this.providerData?.extensionConfig?.allowInjectionsViaChromeScripting;
+        logger.info(
+          `[Content] PROVIDER_DATA_READY injection: allowInjectionsViaChromeScripting=${useChromeScriptingPDR}, hasScript=${!!data?.customInjection?.length}, providerId=${this.providerId}`,
+          "content.injection",
+        );
+        if (!useChromeScriptingPDR) {
+          this.setProviderInjectionScriptInLocalStorage(this.providerId, data?.customInjection);
+        }
 
         if (!this.isFiltering) {
           this.startNetworkFiltering();

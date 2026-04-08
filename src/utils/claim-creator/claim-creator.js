@@ -342,7 +342,7 @@ export const createClaimObject = async (
     params,
     secretParams,
     ownerPrivateKey: ownerPrivateKey,
-    zkEngine: "snarkjs",
+    zkEngine: "stwo",
     client: {
       url: "wss://attestor.reclaimprotocol.org:444/ws",
     },
