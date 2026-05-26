@@ -42,15 +42,39 @@ async function main() {
 
   const publicDir = path.resolve(projectRoot, args["public-dir"] || "public");
 
-  // 1) Download circuits into public/browser-rpc/resources
-  console.log("[reclaim] downloading circuits...");
-  const dlScript = path.join(sdkBuild, "scripts", "download-circuits.js");
-  try {
-    cp.execFileSync(process.execPath, [dlScript], { stdio: "inherit", cwd: projectRoot });
-  } catch (e) {
-    console.error("[reclaim] circuits download failed", e.message);
-    process.exit(1);
+  // 1) Download circuits via upstream zk-symmetric-crypto script, then copy
+  //    node_modules/@reclaimprotocol/zk-symmetric-crypto/resources -> <public>/browser-rpc/resources
+  // Resolve via main entry then walk up — the package's `exports` field blocks `/package.json` access.
+  const zkMainEntry = require.resolve("@reclaimprotocol/zk-symmetric-crypto", {
+    paths: [projectRoot],
+  });
+  let zkPkgDir = path.dirname(zkMainEntry);
+  while (
+    zkPkgDir !== path.dirname(zkPkgDir) &&
+    !fs.existsSync(path.join(zkPkgDir, "package.json"))
+  ) {
+    zkPkgDir = path.dirname(zkPkgDir);
   }
+  const zkResourcesDir = path.join(zkPkgDir, "resources");
+  const zkDownloadScript = path.join(zkPkgDir, "lib", "scripts", "download-files.js");
+
+  if (!fs.existsSync(zkResourcesDir)) {
+    console.log("[reclaim] downloading circuits via @reclaimprotocol/zk-symmetric-crypto...");
+    try {
+      cp.execFileSync(process.execPath, [zkDownloadScript], {
+        stdio: "inherit",
+        cwd: projectRoot,
+      });
+    } catch (e) {
+      console.error("[reclaim] circuits download failed:", e.message);
+      process.exit(1);
+    }
+  } else {
+    console.log("[reclaim] circuits already present in node_modules, skipping download");
+  }
+
+  console.log("[reclaim] copying circuits to public/browser-rpc/resources...");
+  copyDir(zkResourcesDir, path.join(publicDir, "browser-rpc", "resources"));
 
   // 2) Copy SDK assets into public/reclaim-browser-extension-sdk
   console.log("[reclaim] copying assets...");
