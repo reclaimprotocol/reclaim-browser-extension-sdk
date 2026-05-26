@@ -73,13 +73,13 @@ Add these to your `manifest.json`:
 
 **Why these permissions:**
 
-| Permission | Reason |
-|---|---|
-| `wasm-unsafe-eval` | WebAssembly for ZK proof generation |
-| `offscreen` | Background proof generation via offscreen document |
-| `cookies` | Access provider auth cookies |
-| `scripting` | Content script registration and custom injection |
-| `storage` | SDK config and session state |
+| Permission              | Reason                                                                     |
+| ----------------------- | -------------------------------------------------------------------------- |
+| `wasm-unsafe-eval`      | WebAssembly for ZK proof generation                                        |
+| `offscreen`             | Background proof generation via offscreen document                         |
+| `cookies`               | Access provider auth cookies                                               |
+| `scripting`             | Content script registration and custom injection                           |
+| `storage`               | SDK config and session state                                               |
 | `declarativeNetRequest` | Temporary CSP header modification for custom injection on strict-CSP sites |
 
 ### 4. Initialize Background
@@ -143,14 +143,35 @@ const request = await reclaimExtensionSDK.fromJsonString(config, {
 
 ---
 
+## How Circuit Assets Are Fetched
+
+The SDK relies on Zero-Knowledge circuit binaries (~280MB) provided by [`@reclaimprotocol/zk-symmetric-crypto`](https://www.npmjs.com/package/@reclaimprotocol/zk-symmetric-crypto), pulled in as a transitive dependency.
+
+When you run `npm run reclaim-extension-setup`:
+
+1. If `node_modules/@reclaimprotocol/zk-symmetric-crypto/resources/` is missing, the setup script invokes the upstream package's downloader to populate it (one-time; cached across re-runs).
+2. That `resources/` folder is then copied into `<your-extension>/public/browser-rpc/resources/`, which is what the manifest's `web_accessible_resources` points at.
+
+**CI / Docker tip:** Run `npm run reclaim-extension-setup` *after* `npm install`. If your pipeline prunes `node_modules` between steps, the circuits will be re-downloaded the next time setup runs.
+
+---
+
+## Custom Injections & CSP
+
+Some providers ship a small `customInjection` script that must run on the provider's page to extract data. On strict-CSP sites (e.g. LinkedIn), inline execution is blocked, so the SDK uses `chrome.scripting.executeScript` to inject into the MAIN world and temporarily strips the page's CSP header via a `chrome.declarativeNetRequest` **session rule**.
+
+**This is safe:** the rule is scoped to a single provider hostname, only active for the duration of an in-progress verification, and auto-removed on session end, failure, or after a max lifetime. This is why the manifest needs `declarativeNetRequest` and `scripting` permissions.
+
+---
+
 ## Troubleshooting
 
-| Issue | Fix |
-|---|---|
-| `Unexpected token 'export'` | Load `content.bundle.js` (classic), not an ESM file |
-| `must specify Extension ID` | Pass `{ extensionID }` when calling from a web page |
-| Provider tab doesn't open | Check assets, permissions, background init, and content script registration |
-| Proof generation fails with snarkjs | Ensure `browser-rpc/resources/snarkjs/*` is in `web_accessible_resources` |
+| Issue                               | Fix                                                                         |
+| ----------------------------------- | --------------------------------------------------------------------------- |
+| `Unexpected token 'export'`         | Load `content.bundle.js` (classic), not an ESM file                         |
+| `must specify Extension ID`         | Pass `{ extensionID }` when calling from a web page                         |
+| Provider tab doesn't open           | Check assets, permissions, background init, and content script registration |
+| Proof generation fails with snarkjs | Ensure `browser-rpc/resources/snarkjs/*` is in `web_accessible_resources`   |
 
 ---
 

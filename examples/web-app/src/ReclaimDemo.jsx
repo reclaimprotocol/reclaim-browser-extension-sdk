@@ -4,6 +4,7 @@ import './ReclaimDemo.css';
 
 const PROVIDERS = [
   { id: '7519ad78-208a-425d-9fac-97c13b0f0d4d', name: 'Kaggle Oprf' },
+  {id: '33c5d558-ad53-4c4b-b500-a9f41f7ff1f7', name: 'Reclaim Test Provider'},
 ];
 
 const APP_ID = import.meta.env.VITE_RECLAIM_APP_ID;

@@ -208,11 +208,6 @@ const extensionConfig = {
           force: true,
         },
         {
-          from: "src/scripts/download-circuits.js",
-          to: path.join(__dirname, "build", "scripts"),
-          force: true,
-        },
-        {
           from: "src/scripts/install-assets.js",
           to: path.join(__dirname, "build", "scripts"),
           force: true,
