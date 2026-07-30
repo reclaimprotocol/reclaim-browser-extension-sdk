@@ -258,11 +258,18 @@ export const createClaimObject = async (
 
   // Process response redactions if available
   if (providerData.responseRedactions) {
+    const EXCLUDED_REDACTION_FIELDS = ["order", "description", "id"];
+
     params.responseRedactions = providerData.responseRedactions.map((redaction) => {
       // Create a new object without hash field and empty jsonPath/xPath
       const cleanedRedaction = {};
 
       Object.entries(redaction).forEach(([key, value]) => {
+        // Skip fields the attestor does not read
+        if (EXCLUDED_REDACTION_FIELDS.includes(key)) {
+          return;
+        }
+
         // Skip empty jsonPath and xPath
         if ((key === "jsonPath" || key === "xPath") && (!value || value === "")) {
           return;
