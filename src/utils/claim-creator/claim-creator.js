@@ -258,7 +258,7 @@ export const createClaimObject = async (
 
   // Process response redactions if available
   if (providerData.responseRedactions) {
-    const EXCLUDED_REDACTION_FIELDS = ["order","id"];
+    const EXCLUDED_REDACTION_FIELDS = ["order", "id"];
 
     params.responseRedactions = providerData.responseRedactions.map((redaction) => {
       // Create a new object without hash field and empty jsonPath/xPath
