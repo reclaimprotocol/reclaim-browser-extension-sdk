@@ -11,6 +11,29 @@ function escapeSpecialCharacters(input) {
   return input.replace(/[[\]()*+?.,\\^$|#]/g, "\\$&");
 }
 
+// Check that every field in `template` exists with an equal value in `actual`,
+// ignoring any extra fields `actual` may have (sites routinely append new
+// fields to a request payload over time). Arrays must match exactly.
+function isJsonSubset(template, actual) {
+  if (template === actual) return true;
+  if (
+    typeof template !== "object" ||
+    typeof actual !== "object" ||
+    template === null ||
+    actual === null
+  ) {
+    return false;
+  }
+  if (Array.isArray(template) !== Array.isArray(actual)) return false;
+  if (Array.isArray(template)) {
+    return (
+      template.length === actual.length &&
+      template.every((item, i) => isJsonSubset(item, actual[i]))
+    );
+  }
+  return Object.keys(template).every((key) => isJsonSubset(template[key], actual[key]));
+}
+
 // Extract template variables from a string
 function getTemplateVariables(template) {
   const paramRegex = /{{(\w+)}}/g;
@@ -93,6 +116,21 @@ function matchesRequestCriteria(request, filterCriteria, parameters = {}) {
 
     // exact body equality satisfies body criterion
     if (bodyTemplate === requestBody) return true;
+
+    // A literal (var-free) JSON template only needs to be a structural subset
+    // of the real body — a strict string/regex match breaks the moment the
+    // site appends a new field to the payload.
+    if (
+      getTemplateVariables(bodyTemplate).length === 0 &&
+      isJsonFormat(bodyTemplate) &&
+      isJsonFormat(requestBody)
+    ) {
+      const templateJson = safeJsonParse(bodyTemplate);
+      const requestJson = safeJsonParse(requestBody);
+      if (templateJson && requestJson && isJsonSubset(templateJson, requestJson)) {
+        return true;
+      }
+    }
 
     // template/regex body match
     const { pattern } = convertTemplateToRegex(bodyTemplate, parameters);

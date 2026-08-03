@@ -1,4 +1,4 @@
-export async function getCookiesForUrl(url, loggingHub) {
+export async function getCookiesForUrl(url, loggingHub, topLevelUrl) {
   try {
     if (!chrome.cookies || !chrome.cookies.getAll) {
       loggingHub.info("[BACKGROUND] Chrome cookies API not available", "background.cookies");
@@ -35,10 +35,21 @@ export async function getCookiesForUrl(url, loggingHub) {
       return parts.slice(-2).join(".");
     };
 
-    const makeTopLevelSiteCandidates = (host) => {
+    const makeTopLevelSiteCandidates = (host, embeddingUrl) => {
       // schemeful site strings for partitioned cookies
       const base = guessETLDPlusOne(host);
       const set = new Set();
+      // The actual top-level page that embedded this request is the real CHIPS
+      // partition key when the request is cross-site (e.g. a third-party auth
+      // widget's XHR from within a host site's tab) — try it first.
+      if (embeddingUrl) {
+        try {
+          const embeddingOrigin = new URL(embeddingUrl).origin;
+          set.add(embeddingOrigin);
+        } catch {
+          // ignore malformed embeddingUrl
+        }
+      }
       set.add(`https://${host}`);
       set.add(`https://${base}`);
       // a common variant (helps when host is bare apex)
@@ -148,7 +159,7 @@ export async function getCookiesForUrl(url, loggingHub) {
     };
 
     const dVariants = domainVariants(domain);
-    const topLevelSites = makeTopLevelSiteCandidates(domain);
+    const topLevelSites = makeTopLevelSiteCandidates(domain, topLevelUrl);
 
     for (const { id: storeId } of stores) {
       // Domain-based

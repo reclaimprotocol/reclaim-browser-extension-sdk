@@ -3,6 +3,7 @@ import {
   extractParamsFromBody,
   extractParamsFromResponse,
   separateParams,
+  getHashedParamNames,
 } from "./params-extractor";
 import { MESSAGE_ACTIONS, MESSAGE_SOURCES } from "../constants";
 import { ensureOffscreenDocument } from "../offscreen-manager";
@@ -162,6 +163,18 @@ export const createClaimObject = async (
       Referer: (request.referer && String(request.referer)) || loginUrl || origin || "",
     };
 
+    // Cross-origin (and modern same-origin, non-GET/HEAD) fetch/XHR requests always
+    // carry a browser-set Origin header, but it's forbidden for page JS to read or
+    // set, so the interceptor never captures it — reconstruct it from the page URL.
+    const pageOriginSource = request.pageOrigin || loginUrl;
+    if (pageOriginSource) {
+      try {
+        publicHeaders["Origin"] = new URL(pageOriginSource).origin;
+      } catch {
+        // ignore malformed page URL
+      }
+    }
+
     Object.entries(request.headers).forEach(([key, value]) => {
       const lowerKey = key.toLowerCase();
       if (PUBLIC_HEADERS.includes(lowerKey)) {
@@ -230,8 +243,26 @@ export const createClaimObject = async (
     };
   }
 
-  // 5. Separate parameters into public and secret
-  const { publicParams, secretParams: secretParamValues } = separateParams(allParamValues);
+  // 4. Explicit extractedParams (e.g. from a customInjection request
+  // middleware) take precedence over anything auto-derived above — a
+  // declared URL/body template regex can't express e.g. a fixed-length
+  // split of a path segment, so an injected script's precise value must win.
+  if (request?.extractedParams && typeof request.extractedParams === "object") {
+    allParamValues = { ...allParamValues, ...request.extractedParams };
+  }
+
+  // 5. Separate parameters into public and secret. Any param whose
+  // responseRedaction has a hash (oprf, etc.) must stay out of the public
+  // claim regardless of naming — extractParamsFromResponse extracts it
+  // independently of hash, so naming alone can't be trusted to keep it secret.
+  const hashedParamNames = getHashedParamNames(
+    providerData.responseMatches,
+    providerData.responseRedactions,
+  );
+  const { publicParams, secretParams: secretParamValues } = separateParams(
+    allParamValues,
+    hashedParamNames,
+  );
 
   // Add parameter values to respective objects
   if (Object.keys(publicParams).length > 0) {
@@ -258,7 +289,7 @@ export const createClaimObject = async (
 
   // Process response redactions if available
   if (providerData.responseRedactions) {
-    const EXCLUDED_REDACTION_FIELDS = ["order","id"];
+    const EXCLUDED_REDACTION_FIELDS = ["order", "id"];
 
     params.responseRedactions = providerData.responseRedactions.map((redaction) => {
       // Create a new object without hash field and empty jsonPath/xPath

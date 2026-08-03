@@ -152,7 +152,7 @@ When you run `npm run reclaim-extension-setup`:
 1. If `node_modules/@reclaimprotocol/zk-symmetric-crypto/resources/` is missing, the setup script invokes the upstream package's downloader to populate it (one-time; cached across re-runs).
 2. That `resources/` folder is then copied into `<your-extension>/public/browser-rpc/resources/`, which is what the manifest's `web_accessible_resources` points at.
 
-**CI / Docker tip:** Run `npm run reclaim-extension-setup` *after* `npm install`. If your pipeline prunes `node_modules` between steps, the circuits will be re-downloaded the next time setup runs.
+**CI / Docker tip:** Run `npm run reclaim-extension-setup` _after_ `npm install`. If your pipeline prunes `node_modules` between steps, the circuits will be re-downloaded the next time setup runs.
 
 ---
 

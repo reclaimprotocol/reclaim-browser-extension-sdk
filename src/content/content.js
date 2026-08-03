@@ -1123,6 +1123,7 @@ class ReclaimContentScript {
         body: requestValue.body || null,
         headers: requestValue.headers || {},
         responseText: responseBody,
+        extractedParams: requestValue.extractedParams || {},
       };
 
       // Check against each criteria in provider data
