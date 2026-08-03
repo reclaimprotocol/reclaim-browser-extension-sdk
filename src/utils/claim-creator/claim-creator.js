@@ -242,6 +242,14 @@ export const createClaimObject = async (
     };
   }
 
+  // 4. Explicit extractedParams (e.g. from a customInjection request
+  // middleware) take precedence over anything auto-derived above — a
+  // declared URL/body template regex can't express e.g. a fixed-length
+  // split of a path segment, so an injected script's precise value must win.
+  if (request?.extractedParams && typeof request.extractedParams === "object") {
+    allParamValues = { ...allParamValues, ...request.extractedParams };
+  }
+
   // 5. Separate parameters into public and secret
   const { publicParams, secretParams: secretParamValues } = separateParams(allParamValues);
 

@@ -489,6 +489,14 @@
                 : "GET",
             headers: extractHeaders(request.options.headers),
             body: extractBody(request.options.body),
+            // Populated by a custom-injection request middleware (e.g. via
+            // window.reclaimInterceptor.addRequestMiddleware) when it derives
+            // param values a declared URL/body template can't express, such
+            // as a fixed-length split of a path segment.
+            extractedParams:
+              request.extractedParams && typeof request.extractedParams === "object"
+                ? request.extractedParams
+                : {},
           },
           response: {
             url: url,
