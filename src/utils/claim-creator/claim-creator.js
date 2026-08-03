@@ -3,6 +3,7 @@ import {
   extractParamsFromBody,
   extractParamsFromResponse,
   separateParams,
+  getHashedParamNames,
 } from "./params-extractor";
 import { MESSAGE_ACTIONS, MESSAGE_SOURCES } from "../constants";
 import { ensureOffscreenDocument } from "../offscreen-manager";
@@ -250,8 +251,18 @@ export const createClaimObject = async (
     allParamValues = { ...allParamValues, ...request.extractedParams };
   }
 
-  // 5. Separate parameters into public and secret
-  const { publicParams, secretParams: secretParamValues } = separateParams(allParamValues);
+  // 5. Separate parameters into public and secret. Any param whose
+  // responseRedaction has a hash (oprf, etc.) must stay out of the public
+  // claim regardless of naming — extractParamsFromResponse extracts it
+  // independently of hash, so naming alone can't be trusted to keep it secret.
+  const hashedParamNames = getHashedParamNames(
+    providerData.responseMatches,
+    providerData.responseRedactions,
+  );
+  const { publicParams, secretParams: secretParamValues } = separateParams(
+    allParamValues,
+    hashedParamNames,
+  );
 
   // Add parameter values to respective objects
   if (Object.keys(publicParams).length > 0) {

@@ -169,16 +169,44 @@ export const extractParamsFromResponse = (
 };
 
 /**
+ * Names of params whose responseRedaction has a hash set (oprf, etc.) — these
+ * must be routed to secretParams regardless of naming, since a hashed
+ * redaction signals the provider wants this value kept out of the public
+ * claim, and extractParamsFromResponse extracts it independently of hash.
+ * @param {Array} responseMatches
+ * @param {Array} responseRedactions
+ * @returns {Set<string>}
+ */
+export const getHashedParamNames = (responseMatches, responseRedactions) => {
+  const hashed = new Set();
+  if (!responseMatches || !responseRedactions) return hashed;
+
+  for (let i = 0; i < responseMatches.length; i++) {
+    const match = responseMatches[i];
+    const redaction = responseRedactions[i];
+    if (!match?.value || !redaction?.hash) continue;
+
+    const paramNames = extractDynamicParamNames(match.value);
+    if (paramNames.length > 0) hashed.add(paramNames[0]);
+  }
+
+  return hashed;
+};
+
+/**
  * Separate parameters into public and secret based on names
  * @param {Object} paramValues - All parameter values
+ * @param {Set<string>|string[]} [forceSecretNames] - Names to always treat as secret (e.g. from getHashedParamNames)
  * @returns {Object} Object with publicParams and secretParams
  */
-export const separateParams = (paramValues) => {
+export const separateParams = (paramValues, forceSecretNames) => {
   const publicParams = {};
   const secretParams = {};
+  const forceSecret =
+    forceSecretNames instanceof Set ? forceSecretNames : new Set(forceSecretNames || []);
 
   Object.entries(paramValues || {}).forEach(([key, value]) => {
-    if (key.toLowerCase().includes("secret")) {
+    if (key.toLowerCase().includes("secret") || forceSecret.has(key)) {
       secretParams[key] = value;
     } else {
       publicParams[key] = value;
