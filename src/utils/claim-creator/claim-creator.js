@@ -162,6 +162,18 @@ export const createClaimObject = async (
       Referer: (request.referer && String(request.referer)) || loginUrl || origin || "",
     };
 
+    // Cross-origin (and modern same-origin, non-GET/HEAD) fetch/XHR requests always
+    // carry a browser-set Origin header, but it's forbidden for page JS to read or
+    // set, so the interceptor never captures it — reconstruct it from the page URL.
+    const pageOriginSource = request.pageOrigin || loginUrl;
+    if (pageOriginSource) {
+      try {
+        publicHeaders["Origin"] = new URL(pageOriginSource).origin;
+      } catch {
+        // ignore malformed page URL
+      }
+    }
+
     Object.entries(request.headers).forEach(([key, value]) => {
       const lowerKey = key.toLowerCase();
       if (PUBLIC_HEADERS.includes(lowerKey)) {

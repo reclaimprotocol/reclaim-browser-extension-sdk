@@ -237,7 +237,17 @@
         XMLHttpRequest.prototype.setRequestHeader = function (header, value) {
           const requestInfo = requestInfoMap.get(this);
           if (requestInfo && header && value) {
-            requestInfo.options.headers[header] = value;
+            const headers = requestInfo.options.headers;
+            // Header names are case-insensitive; the browser combines repeated
+            // values for the same header with ", " rather than overwriting it.
+            const existingKey = Object.keys(headers).find(
+              (key) => key.toLowerCase() === String(header).toLowerCase(),
+            );
+            if (existingKey) {
+              headers[existingKey] = `${headers[existingKey]}, ${value}`;
+            } else {
+              headers[header] = value;
+            }
           }
           return originalSetRequestHeader.apply(this, arguments);
         };
@@ -397,6 +407,20 @@
             if (headers) {
               if (headers instanceof Headers) {
                 headersObj = Object.fromEntries(headers.entries());
+              } else if (Array.isArray(headers)) {
+                // HeadersInit also allows an array of [key, value] pairs
+                headers.forEach((pair) => {
+                  if (!Array.isArray(pair) || pair.length !== 2) {
+                    return;
+                  }
+                  const [key, val] = pair;
+                  if (
+                    typeof key === "string" &&
+                    (typeof val === "string" || typeof val === "number")
+                  ) {
+                    headersObj[key] = String(val);
+                  }
+                });
               } else if (typeof headers === "object") {
                 Object.keys(headers).forEach((key) => {
                   const val = headers[key];

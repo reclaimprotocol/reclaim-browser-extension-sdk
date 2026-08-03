@@ -97,9 +97,34 @@ export default function initBackground() {
         "background.filter",
       );
 
-      const cookies = await cookieUtils.getCookiesForUrl(request.url, loggingHub);
+      let topLevelUrl;
+      try {
+        const activeTab = await chrome.tabs.get(ctx.activeTabId);
+        topLevelUrl = activeTab?.url;
+      } catch (error) {
+        loggingHub.info(
+          "[BACKGROUND] Could not read active tab URL for cookie lookup: " + error?.message,
+          "background.cookies",
+        );
+      }
+
+      const cookies = await cookieUtils.getCookiesForUrl(request.url, loggingHub, topLevelUrl);
       if (cookies) {
         request.cookieStr = cookies;
+      }
+
+      // Real fetch/XHR calls always carry a browser-set Origin header that page JS
+      // can neither read nor override, so the interceptor never captures it. Pass
+      // the page's origin through so the claim can reconstruct it.
+      if (topLevelUrl) {
+        try {
+          request.pageOrigin = new URL(topLevelUrl).origin;
+        } catch (error) {
+          loggingHub.info(
+            "[BACKGROUND] Could not derive page origin from tab URL: " + error?.message,
+            "background.claim",
+          );
+        }
       }
 
       loggingHub.debug(`[BACKGROUND] Cookies for URL: ${request.url}`, "background.cookies");
