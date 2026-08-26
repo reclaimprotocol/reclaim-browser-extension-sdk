@@ -6,9 +6,27 @@ import { EVENT_TYPES } from "../utils/logger/constants";
 import { normalizeInjectionType } from "../utils/provider-normalization";
 import { addCspStrippingRule, removeCspStrippingRule } from "./cspRuleManager";
 import { CSP_RULE_MAX_LIFETIME_MS, TAB_TRANSITION_DELAY_MS } from "../utils/constants/config";
+import {
+  BUILDER_EVENTS,
+  builderProblem,
+  builderRecipeToProviderData,
+  builderTemplateParameters,
+} from "../utils/builder";
+
+const BUILDER_CLAIMANT_ID_STORAGE_KEY = "reclaim_builder_claimant_client_id";
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export async function startVerification(ctx, templateData) {
   try {
+    const isBuilderRequest = templateData?.builder?.apiVersion === "2";
+    // A later legacy request must not inherit a failed Builder request's mode.
+    // During a Builder multi-provider transition `ctx.builder` remains set,
+    // so preserve the established Builder state for the internally-started next provider.
+    if (!ctx.builder) ctx.isBuilderMode = isBuilderRequest;
+    if (isBuilderRequest) {
+      templateData = await prepareBuilderProvider(ctx, templateData);
+    }
+
     // clear all the member variables
     ctx.providerData = null;
     ctx.parameters = {};
@@ -45,11 +63,13 @@ export async function startVerification(ctx, templateData) {
       "background.provider",
     );
 
-    const providerData = await ctx.fetchProviderData(
-      templateData.providerId,
-      templateData.sessionId,
-      templateData.applicationId,
-    );
+    const providerData = ctx.builder?.currentProvider?.providerData
+      ? ctx.builder.currentProvider.providerData
+      : await ctx.fetchProviderData(
+          templateData.providerId,
+          templateData.sessionId,
+          templateData.applicationId,
+        );
 
     // Coerce injectionType before anything reads it. The router hands it to
     // the content script, which only distinguishes NONE from "inject the
@@ -129,6 +149,19 @@ export async function startVerification(ctx, templateData) {
     // Create a new tab with provider URL DIRECTLY - not through an async flow
     const providerUrl = providerData.loginUrl;
 
+    if (ctx.builder) {
+      await ctx.builder.client.reportEventBestEffort(
+        ctx.builder.sessionId,
+        BUILDER_EVENTS.BROWSER_STARTED,
+        {
+          providerId: ctx.builder.currentProvider.recipe.providerId,
+          resolvedVersion: ctx.builder.currentProvider.recipe.resolvedVersion,
+          ordinal: ctx.builder.providerOrdinal,
+        },
+      );
+    }
+
+    // Use chrome.tabs.create directly and handle the promise explicitly
     chrome.tabs.create({ url: providerUrl }, (tab) => {
       ctx.activeTabId = tab.id;
       loggingHub.info(
@@ -194,20 +227,22 @@ export async function startVerification(ctx, templateData) {
       );
 
       // Update session status after tab creation
-      ctx
-        .updateSessionStatus(
-          templateData.sessionId,
-          ctx.RECLAIM_SESSION_STATUS.USER_STARTED_VERIFICATION,
-          templateData.providerId,
-          templateData.applicationId,
-        )
-        .catch((error) => {
-          loggingHub.error(
-            `[BACKGROUND] Error updating session status: ${error?.message}`,
-            "background.session",
-            { eventType: EVENT_TYPES.UPDATE_SESSION_STATUS_ERROR },
-          );
-        });
+      if (!ctx.builder) {
+        ctx
+          .updateSessionStatus(
+            templateData.sessionId,
+            ctx.RECLAIM_SESSION_STATUS.USER_STARTED_VERIFICATION,
+            templateData.providerId,
+            templateData.applicationId,
+          )
+          .catch((error) => {
+            loggingHub.error(
+              `[BACKGROUND] Error updating session status: ${error?.message}`,
+              "background.session",
+              { eventType: EVENT_TYPES.UPDATE_SESSION_STATUS_ERROR },
+            );
+          });
+      }
     });
 
     return {
@@ -246,8 +281,11 @@ export async function failSession(ctx, errorMessage, requestHash, eventType) {
   // abort immediately to stop queue/offscreen processing
   ctx.aborted = true;
 
-  // Update session status to failed
-  if (ctx.sessionId) {
+  // Builder reports terminal state through its bridge. Legacy sessions retain
+  // their existing status update behaviour.
+  if (ctx.builder) {
+    await submitBuilderFailure(ctx, "PROOF_ENGINE_ERROR", "Proof generation failed");
+  } else if (!ctx.isBuilderMode && ctx.sessionId) {
     try {
       await ctx.updateSessionStatus(
         ctx.sessionId,
@@ -329,6 +367,8 @@ export async function failSession(ctx, errorMessage, requestHash, eventType) {
 
   // Release concurrency guard
   ctx.activeSessionId = null;
+  ctx.builder = null;
+  ctx.isBuilderMode = false;
 }
 
 export async function submitProofs(ctx) {
@@ -357,7 +397,9 @@ export async function submitProofs(ctx) {
       for (const rd of ctx.providerData.requestData) {
         if (ctx.generatedProofs.has(rd.requestHash)) {
           const proof = ctx.generatedProofs.get(rd.requestHash);
-          formattedProofs.push(ctx.formatProof(proof, rd));
+          formattedProofs.push(
+            ctx.builder ? ctx.formatBuilderProof(proof, rd) : ctx.formatProof(proof, rd),
+          );
           templateHashes.add(rd.requestHash);
         }
       }
@@ -374,7 +416,11 @@ export async function submitProofs(ctx) {
         responseRedactions: [],
         requestHash: hash,
       };
-      formattedProofs.push(ctx.formatProof(proof, providerRequest));
+      formattedProofs.push(
+        ctx.builder
+          ? ctx.formatBuilderProof(proof, providerRequest)
+          : ctx.formatProof(proof, providerRequest),
+      );
     }
 
     const finalProofs = formattedProofs.map((fp) => ({
@@ -393,6 +439,11 @@ export async function submitProofs(ctx) {
     });
 
     let submitted = false;
+    if (ctx.builder) {
+      await completeBuilderProvider(ctx, finalProofs);
+      return { success: true };
+    }
+
     // If callbackUrl provided, submit; otherwise just signal completion
     if (ctx.callbackUrl && typeof ctx.callbackUrl === "string" && ctx.callbackUrl.length > 0) {
       try {
@@ -607,8 +658,14 @@ export async function cancelSession(ctx) {
     // abort immediately to stop queue/offscreen processing
     ctx.aborted = true;
 
-    // Update status as failed due to cancellation (no explicit CANCELLED status available)
-    if (ctx.sessionId) {
+    // Builder reports cancellation through the bridge. Legacy sessions keep
+    // their status update because its protocol has no cancellation state.
+    if (ctx.builder) {
+      await ctx.builder.client.reportEventBestEffort(ctx.sessionId, BUILDER_EVENTS.CANCELLED, {
+        initiator: "USER",
+        cancellationReason: "USER_CANCELLED",
+      });
+    } else if (!ctx.isBuilderMode && ctx.sessionId) {
       try {
         loggingHub.info(
           `[BACKGROUND] Proof generation failed, Updating status on cancel`,
@@ -727,6 +784,8 @@ export async function cancelSession(ctx) {
     ctx.callbackUrl = null;
     ctx.providerRequestsByHash = new Map();
     ctx.managedTabs.clear();
+    ctx.builder = null;
+    ctx.isBuilderMode = false;
 
     await ctx.loggingHub.clearSessionContext();
 
@@ -738,5 +797,284 @@ export async function cancelSession(ctx) {
       `[BACKGROUND] Error during cancelSession: ${e?.message}`,
       "background.session",
     );
+  }
+}
+
+async function prepareBuilderProvider(ctx, templateData) {
+  const config = templateData.builder;
+  if (!ctx.builder) {
+    const claimantClientId = await resolveClaimantClientId(config.claimantClientId);
+    const client = ctx.createBuilderBridgeClient({
+      backendUrl: config.backendUrl,
+      verificationClientId: config.verificationClientId,
+    });
+    const bootstrap = await client.bootstrap(config.sessionId);
+    assertBuilderBootstrap(bootstrap, config.sessionId);
+
+    ctx.builder = {
+      client,
+      sessionId: config.sessionId,
+      session: bootstrap.session,
+      recipes: bootstrap.recipes,
+      results: [],
+      proofs: [],
+      providerOrdinal: 0,
+      claimantClientId,
+      claimantDetails: config.claimantDetails || {},
+      terminal: false,
+    };
+
+    await client.reportEventBestEffort(config.sessionId, BUILDER_EVENTS.CLIENT_OPENED, {
+      claimantClientId,
+    });
+    try {
+      await client.patchClaimant(config.sessionId, {
+        ...config.claimantDetails,
+        claimantClientId,
+      });
+    } catch {
+      // Claimant diagnostics are optional and must not block verification.
+    }
+    await client.reportEventBestEffort(config.sessionId, BUILDER_EVENTS.CLIENT_READY, {
+      claimantClientId,
+      providerCount: bootstrap.recipes.length,
+    });
+  }
+
+  const builder = ctx.builder;
+  const recipe = builder.recipes[builder.providerOrdinal];
+  if (!recipe) throw new Error("Builder session has no remaining provider recipes");
+  const providerData = builderRecipeToProviderData(recipe, builder.providerOrdinal);
+  const attestorAuthRequest = await builder.client.getAttestorAuth(builder.sessionId);
+  builder.currentProvider = { recipe, providerData, attestorAuthRequest };
+
+  await builder.client.reportEventBestEffort(builder.sessionId, BUILDER_EVENTS.PROVIDER_STARTED, {
+    providerId: recipe.providerId,
+    resolvedVersion: recipe.resolvedVersion,
+    ordinal: builder.providerOrdinal,
+    expectedRequestCount: providerData.requestData.length,
+  });
+
+  return {
+    ...templateData,
+    sessionId: builder.sessionId,
+    providerId: recipe.providerId,
+    applicationId: builderApplicationId(builder.session),
+    context: builder.session.context,
+    parameters: builderTemplateParameters(templateData.parameters, builder.session.context, recipe),
+    callbackUrl: "",
+  };
+}
+
+async function completeBuilderProvider(ctx, proofs) {
+  const builder = ctx.builder;
+  const { recipe, providerData } = builder.currentProvider;
+  const requestsByHash = new Map(
+    providerData.requestData.map((request) => [request.requestHash, request]),
+  );
+  const requests = proofs.map((proof) => {
+    const providerRequest =
+      requestsByHash.get(proof.providerRequest?.requestHash) || proof.providerRequest || {};
+    const extractedParameters = proof?.claimData?.params?.paramValues;
+    return {
+      ...(providerRequest.builderRequestId ? { requestId: providerRequest.builderRequestId } : {}),
+      ...(providerRequest.url ? { url: providerRequest.url } : {}),
+      ...(providerRequest.method ? { method: providerRequest.method } : {}),
+      // The bridge receives the extension's exact legacy proof output. Do not
+      // deserialize, normalize, or verify nested attestation material here.
+      proof,
+      ...(extractedParameters && typeof extractedParameters === "object"
+        ? { extractedParameters }
+        : {}),
+    };
+  });
+  builder.results.push({
+    providerId: recipe.providerId,
+    resolvedVersion: recipe.resolvedVersion,
+    requests,
+  });
+  builder.proofs.push(...proofs);
+
+  for (const [requestOrdinal, request] of requests.entries()) {
+    await builder.client.reportEventBestEffort(builder.sessionId, BUILDER_EVENTS.CLAIM_COMPLETED, {
+      providerId: recipe.providerId,
+      resolvedVersion: recipe.resolvedVersion,
+      ordinal: builder.providerOrdinal,
+      requestOrdinal,
+      ...(request.requestId ? { requestId: request.requestId } : {}),
+      attempt: 1,
+    });
+  }
+  await builder.client.reportEventBestEffort(builder.sessionId, BUILDER_EVENTS.PROVIDER_COMPLETED, {
+    providerId: recipe.providerId,
+    resolvedVersion: recipe.resolvedVersion,
+    ordinal: builder.providerOrdinal,
+    expectedRequestCount: providerData.requestData.length,
+    completedRequestCount: requests.length,
+    completedProofCount: requests.length,
+  });
+
+  builder.providerOrdinal += 1;
+  if (builder.providerOrdinal < builder.recipes.length) {
+    await startNextBuilderProvider(ctx);
+    return;
+  }
+
+  const totals = builderTotals(builder);
+  await builder.client.reportEventBestEffort(
+    builder.sessionId,
+    BUILDER_EVENTS.PROOFS_COMPLETED,
+    totals,
+  );
+  await builder.client.reportEventBestEffort(builder.sessionId, BUILDER_EVENTS.RESULT_SUBMITTING, {
+    ...totals,
+    attempt: 1,
+  });
+  try {
+    await builder.client.submitResult(builder.sessionId, {
+      status: "success",
+      results: builder.results,
+    });
+    builder.terminal = true;
+  } catch (error) {
+    await builder.client.reportEventBestEffort(
+      builder.sessionId,
+      BUILDER_EVENTS.RESULT_SUBMISSION_FAILED,
+      {
+        attempt: 1,
+        problem: builderProblem("RESULT_SUBMISSION_FAILED", "Result submission failed", true),
+      },
+    );
+    throw error;
+  }
+
+  await notifyBuilderCompleted(ctx, builder.proofs);
+  await finishBuilderSession(ctx);
+}
+
+async function startNextBuilderProvider(ctx) {
+  const activeTabId = ctx.activeTabId;
+  ctx.isBuilderTransition = true;
+  try {
+    if (activeTabId) {
+      ctx.managedTabs.delete(activeTabId);
+      await chrome.tabs.remove(activeTabId);
+      ctx.activeTabId = null;
+    }
+    await startVerification(ctx, {
+      sessionId: ctx.builder.sessionId,
+      builder: { apiVersion: "2" },
+    });
+  } finally {
+    ctx.isBuilderTransition = false;
+  }
+}
+
+async function submitBuilderFailure(ctx, reasonCode, title) {
+  const builder = ctx.builder;
+  if (!builder || builder.terminal) return;
+  const problem = builderProblem(reasonCode, title, true);
+  try {
+    await builder.client.submitResult(builder.sessionId, {
+      status: "error",
+      results: builder.results,
+      problem,
+    });
+    builder.terminal = true;
+  } catch {
+    await builder.client.reportEventBestEffort(
+      builder.sessionId,
+      BUILDER_EVENTS.RESULT_SUBMISSION_FAILED,
+      {
+        attempt: 1,
+        problem: builderProblem("RESULT_SUBMISSION_FAILED", "Result submission failed", true),
+      },
+    );
+  }
+}
+
+async function notifyBuilderCompleted(ctx, proofs) {
+  const data = { formattedProofs: proofs, submitted: true, sessionId: ctx.sessionId };
+  const message = {
+    action: ctx.MESSAGE_ACTIONS.PROOF_SUBMITTED,
+    source: ctx.MESSAGE_SOURCES.BACKGROUND,
+    target: ctx.MESSAGE_SOURCES.CONTENT_SCRIPT,
+    data,
+  };
+  if (ctx.activeTabId) await chrome.tabs.sendMessage(ctx.activeTabId, message).catch(() => {});
+  if (ctx.originalTabId) await chrome.tabs.sendMessage(ctx.originalTabId, message).catch(() => {});
+  await chrome.runtime
+    .sendMessage({ action: ctx.MESSAGE_ACTIONS.PROOF_SUBMITTED, data })
+    .catch(() => {});
+}
+
+async function finishBuilderSession(ctx) {
+  const activeTabId = ctx.activeTabId;
+  if (ctx.originalTabId)
+    await chrome.tabs.update(ctx.originalTabId, { active: true }).catch(() => {});
+  if (activeTabId) await chrome.tabs.remove(activeTabId).catch(() => {});
+  if (ctx._cspRuleId) await removeCspStrippingRule().catch(() => {});
+  ctx._cspRuleId = null;
+  ctx.activeTabId = null;
+  ctx.originalTabId = null;
+  ctx.activeSessionId = null;
+  ctx.loggingHub.clearSessionContext();
+  ctx.builder = null;
+  ctx.isBuilderMode = false;
+}
+
+function assertBuilderBootstrap(bootstrap, sessionId) {
+  if (
+    !bootstrap ||
+    typeof bootstrap !== "object" ||
+    !bootstrap.session ||
+    !Array.isArray(bootstrap.recipes)
+  ) {
+    throw new Error("Builder bootstrap must contain a session and recipes");
+  }
+  if (bootstrap.session.id && bootstrap.session.id !== sessionId) {
+    throw new Error("Builder bootstrap returned a mismatched session");
+  }
+  if (!bootstrap.recipes.length) throw new Error("Builder session has no recipes");
+}
+
+function builderApplicationId(session) {
+  const nonceData = session?.context?.attestationNonceData;
+  return nonceData?.applicationId || session?.applicationId || session?.appId || "builder";
+}
+
+function builderTotals(builder) {
+  return {
+    expectedProviderCount: builder.recipes.length,
+    completedProviderCount: builder.results.length,
+    expectedRequestCount: builder.recipes.reduce(
+      (count, recipe) => count + (Array.isArray(recipe.requests) ? recipe.requests.length : 0),
+      0,
+    ),
+    completedRequestCount: builder.proofs.length,
+    completedProofCount: builder.proofs.length,
+  };
+}
+
+async function resolveClaimantClientId(value) {
+  if (value != null) {
+    if (typeof value !== "string" || !UUID_PATTERN.test(value.trim())) {
+      throw new Error("claimantClientId must be a UUID");
+    }
+    return value.trim().toLowerCase();
+  }
+
+  try {
+    const stored = await chrome.storage.local.get(BUILDER_CLAIMANT_ID_STORAGE_KEY);
+    const existing = stored?.[BUILDER_CLAIMANT_ID_STORAGE_KEY];
+    if (typeof existing === "string" && UUID_PATTERN.test(existing)) return existing;
+
+    const generated = crypto.randomUUID();
+    await chrome.storage.local.set({ [BUILDER_CLAIMANT_ID_STORAGE_KEY]: generated });
+    return generated;
+  } catch {
+    // Storage is part of the documented extension permissions. This fallback
+    // only covers environments that do not expose it, such as test harnesses.
+    return crypto.randomUUID();
   }
 }

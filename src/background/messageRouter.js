@@ -4,6 +4,7 @@
 import { loggingHub } from "../utils/logger/LoggingHub";
 import { EVENT_TYPES } from "../utils/logger/constants";
 import { DEFAULT_INJECTION_TYPE } from "../utils/provider-normalization";
+import { BUILDER_EVENTS } from "../utils/builder";
 import * as sessionManager from "./sessionManager";
 import { MESSAGE_ACTIONS } from "../utils/constants/interfaces";
 
@@ -115,6 +116,28 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
             `[BACKGROUND] Successfully sent (pending) SHOW_PROVIDER_VERIFICATION_POPUP and PROVIDER_DATA_READY to tab ${sender.tab.id}`,
             "background.message",
           );
+          if (isManaged && ctx.builder) {
+            const eventData = {
+              providerId: ctx.builder.currentProvider.recipe.providerId,
+              resolvedVersion: ctx.builder.currentProvider.recipe.resolvedVersion,
+              ordinal: ctx.builder.providerOrdinal,
+            };
+            await ctx.builder.client.reportEventBestEffort(
+              ctx.builder.sessionId,
+              BUILDER_EVENTS.BROWSER_READY,
+              eventData,
+            );
+            await ctx.builder.client.reportEventBestEffort(
+              ctx.builder.sessionId,
+              BUILDER_EVENTS.PAGE_READY,
+              eventData,
+            );
+            await ctx.builder.client.reportEventBestEffort(
+              ctx.builder.sessionId,
+              BUILDER_EVENTS.INTERCEPTOR_READY,
+              eventData,
+            );
+          }
           sendResponse({ success: true });
           break;
         }

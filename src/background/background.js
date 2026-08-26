@@ -10,6 +10,7 @@ import { RECLAIM_SESSION_STATUS, MESSAGE_ACTIONS, MESSAGE_SOURCES } from "../uti
 import { removeCspStrippingRule } from "./cspRuleManager";
 import { generateProof, formatProof } from "../utils/proof-generator";
 import { createClaimObject } from "../utils/claim-creator";
+import { BUILDER_EVENTS, createBuilderBridgeClient } from "../utils/builder";
 import { loggingHub } from "../utils/logger/LoggingHub";
 import { EVENT_TYPES } from "../utils/logger/constants";
 import { SessionTimerManager } from "../utils/session-timer";
@@ -119,6 +120,9 @@ export default function initBackground() {
     providerDataMessage: new Map(),
     activeSessionId: null,
     _cspRuleId: null,
+    builder: null,
+    isBuilderMode: false,
+    isBuilderTransition: false,
     sessionTimerManager: new SessionTimerManager(),
     // Constants and dependencies
     fetchProviderData,
@@ -130,7 +134,18 @@ export default function initBackground() {
     EVENT_TYPES,
     generateProof,
     formatProof,
+    formatBuilderProof: (proof, requestData) => {
+      const formatted = formatProof(proof, requestData);
+      for (const [key, value] of Object.entries(proof || {})) {
+        if (["claim", "signatures", "witnesses", "publicData"].includes(key)) continue;
+        formatted[key] = value;
+      }
+      if (Array.isArray(proof?.witnesses)) formatted.witnesses = proof.witnesses;
+      if (proof?.taskId != null) formatted.taskId = proof.taskId;
+      return formatted;
+    },
     createClaimObject,
+    createBuilderBridgeClient,
     loggingHub,
     // Methods to be set below
     processFilteredRequest: null,
@@ -216,12 +231,24 @@ export default function initBackground() {
         { eventType: EVENT_TYPES.STARTING_CLAIM_CREATION },
       );
 
+      if (ctx.builder) {
+        await ctx.builder.client.reportEventBestEffort(
+          ctx.builder.sessionId,
+          BUILDER_EVENTS.REQUEST_MATCHED,
+          builderRequestEventData(ctx, criteria),
+        );
+      }
+
       let claimData = null;
       try {
         const criteriaWithGeo = {
           ...criteria,
           geoLocation: ctx.providerData?.geoLocation ?? "",
           extensionConfig: ctx.providerData?.extensionConfig,
+          templateParameters: ctx.parameters,
+          ...(ctx.builder?.currentProvider?.attestorAuthRequest
+            ? { attestorAuthRequest: ctx.builder.currentProvider.attestorAuthRequest }
+            : {}),
         };
         claimData = await ctx.createClaimObject(
           request,
@@ -258,6 +285,22 @@ export default function initBackground() {
           data: { requestHash: criteria.requestHash },
         });
 
+        if (ctx.builder) {
+          await ctx.builder.client.reportEventBestEffort(
+            ctx.builder.sessionId,
+            BUILDER_EVENTS.CLAIM_FAILED,
+            {
+              ...builderRequestEventData(ctx, criteria),
+              attempt: 1,
+              problem: {
+                title: "Claim creation failed",
+                reasonCode: "CLAIM_CREATION_FAILED",
+                retryable: false,
+              },
+            },
+          );
+        }
+
         ctx.failSession("Claim creation failed: " + error.message, criteria.requestHash);
         return { success: false, error: error.message };
       }
@@ -274,6 +317,13 @@ export default function initBackground() {
           "background.claim",
           { eventType: EVENT_TYPES.CLAIM_CREATION_STARTED },
         );
+        if (ctx.builder) {
+          await ctx.builder.client.reportEventBestEffort(
+            ctx.builder.sessionId,
+            BUILDER_EVENTS.CLAIM_CREATED,
+            { ...builderRequestEventData(ctx, criteria), attempt: 1 },
+          );
+        }
       }
       const providerRequest = {
         url: criteria?.url || request?.url || "",
@@ -306,6 +356,23 @@ export default function initBackground() {
     }
   };
 
+  function builderRequestEventData(context, criteria) {
+    const current = context.builder?.currentProvider;
+    const requests = current?.providerData?.requestData || [];
+    const requestOrdinal = requests.findIndex(
+      (request) => request.requestHash === criteria?.requestHash,
+    );
+    const request = requestOrdinal >= 0 ? requests[requestOrdinal] : undefined;
+    return {
+      providerId: current?.recipe?.providerId,
+      resolvedVersion: current?.recipe?.resolvedVersion,
+      ordinal: context.builder?.providerOrdinal,
+      ...(requestOrdinal >= 0 ? { requestOrdinal } : {}),
+      ...(request?.builderRequestId ? { requestId: request.builderRequestId } : {}),
+    };
+  }
+
+  // Set up session timer callbacks
   ctx.sessionTimerManager.setCallbacks((message, requestHash) =>
     ctx.failSession(message, requestHash, EVENT_TYPES.CLAIM_CREATION_TIMED_OUT_EXCEPTION),
   );
@@ -325,7 +392,12 @@ export default function initBackground() {
     const noManagedLeft = ctx.managedTabs.size === 0;
 
     // If there is an active session and we lost its tab(s), fail immediately.
-    if (ctx.activeSessionId && (lostActive || noManagedLeft) && !ctx.aborted) {
+    if (
+      ctx.activeSessionId &&
+      (lostActive || noManagedLeft) &&
+      !ctx.aborted &&
+      !ctx.isBuilderTransition
+    ) {
       ctx.aborted = true;
       try {
         loggingHub.error("[BACKGROUND] Verification tab closed by user", "background.tab", {

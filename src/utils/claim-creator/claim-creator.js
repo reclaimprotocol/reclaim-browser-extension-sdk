@@ -2,8 +2,10 @@ import {
   extractParamsFromUrl,
   extractParamsFromBody,
   extractParamsFromResponse,
+  extractParamsFromBuilderResponse,
   separateParams,
 } from "./params-extractor";
+import { effectiveResponseMatches } from "./network-filter";
 import { MESSAGE_ACTIONS, MESSAGE_SOURCES } from "../constants";
 import { ensureOffscreenDocument } from "../offscreen-manager";
 import { getUserLocationBasedOnIp } from "./get-dynamic-geo";
@@ -242,13 +244,21 @@ export const createClaimObject = async (
   // means the response doesn't carry the data yet, and the caller treats that
   // as retryable rather than failing the session.
   if (request.responseText && providerData.responseMatches) {
-    allParamValues = extractParamsFromResponse(
-      request.responseText,
-      providerData.responseMatches,
-      providerData.responseRedactions || [],
-      allParamValues,
-      loggingHub,
-    );
+    allParamValues = providerData.builderMode
+      ? extractParamsFromBuilderResponse(
+          request.responseText,
+          providerData.responseMatches,
+          providerData.responseRedactions || [],
+          allParamValues,
+          loggingHub,
+        )
+      : extractParamsFromResponse(
+          request.responseText,
+          providerData.responseMatches,
+          providerData.responseRedactions || [],
+          allParamValues,
+          loggingHub,
+        );
   }
 
   // 4. Explicit extractedParams (e.g. from a customInjection request
@@ -289,7 +299,12 @@ export const createClaimObject = async (
   }
 
   if (providerData.responseMatches) {
-    params.responseMatches = providerData.responseMatches.map((match) => {
+    const responseMatches = effectiveResponseMatches(
+      request.responseText || "",
+      providerData.responseMatches,
+      providerData.templateParameters || {},
+    );
+    params.responseMatches = responseMatches.map((match) => {
       // Create a clean object with only the required fields
       const cleanMatch = {
         value: match.value,
@@ -383,6 +398,9 @@ export const createClaimObject = async (
     zkEngine: providerData?.extensionConfig?.zkEngine || DEFAULT_ZK_ENGINE,
     client: {
       url: "wss://attestor.reclaimprotocol.org:444/ws",
+      ...(providerData?.attestorAuthRequest
+        ? { authRequest: providerData.attestorAuthRequest }
+        : {}),
     },
   };
 

@@ -4,6 +4,9 @@ Trigger Reclaim zero-knowledge proof verification from your browser extension or
 
 > Chrome **Manifest V3**. MV2/Firefox bundles are also included.
 
+> **Builder mode:** URLs with the exact `api=2` query use the Builder v2 bridge;
+> URLs without it, or with an unknown API version, keep the legacy flow.
+
 ## Install
 
 ```bash
@@ -99,6 +102,80 @@ request.on("error", (err) => console.error(err));
 
 await request.startVerification();
 ```
+
+### Builder mode (`api=2`)
+
+Create a Builder session with `verificationClientUrl` set to the registered
+extension URL. The session response includes `verificationUrl` and
+`verificationClientId`. Pass both values to the extension:
+
+```js
+import { reclaimExtensionSDK } from "@reclaimprotocol/browser-extension-sdk";
+
+// `session` is the response from your session-creation call:
+// { verificationUrl: string, verificationClientId: string }
+async function startBuilderVerification(session) {
+  const request = reclaimExtensionSDK.fromVerificationUrl(session.verificationUrl, {
+    verificationClientId: session.verificationClientId,
+    extensionID: "your-chrome-extension-id", // omit inside the extension itself
+  });
+
+  request.on("completed", (proofs) => console.log(proofs));
+  request.on("error", (err) => console.error(err));
+
+  await request.startVerification();
+}
+```
+
+Use `initBuilder(verificationUrl, options)` when an asynchronous entry point is
+more convenient. Both entry points require a registered
+`verificationClientId`, reject URLs without an exact `api=2` query, and require
+a non-empty `sessionId`. They accept an optional HTTPS `backendUrl` and bounded
+`claimantDetails`. If `claimantClientId` is omitted, the extension generates a
+UUID and persists it in extension storage.
+
+Builder mode calls these routes with the `x-reclaim-vc-id` header. The bridge
+validates the session and Verification Client binding before it returns data:
+
+- `GET /api/sdk/builder/v2/sessions/{sessionId}/bootstrap`
+- `PATCH /api/sdk/builder/v2/sessions/{sessionId}/claimant`
+- `POST /api/sdk/builder/v2/sessions/{sessionId}/events`
+- `POST /api/sdk/builder/v2/sessions/{sessionId}/attestor-auth`
+- `POST /api/sdk/builder/v2/sessions/{sessionId}/results`
+
+The extension sends no legacy app secret or provider signature to the
+`attestor-auth` route. The route returns session-bound attestor authorization.
+The extension resolves the bootstrap recipes, passes the session context and
+TEE nonce/application data into each legacy claim, obtains session-bound
+attestor authentication before each provider, and runs providers sequentially.
+Builder recipes support dotted `{{context.key}}` templates and fill a missing
+`{{key}}` parameter from the same session-context key; explicit parameters win.
+Builder-owned `reclaimSessionId` and `attestationNonce` remain context-only.
+Builder mode skips legacy
+offscreen session-status calls and uses the Builder bridge for session lifecycle
+updates. It emits applicable canonical browser, page, interceptor, request,
+claim, provider, proof, result-submission, and cancellation events, including
+`verification_result_submitting` and `verification_result_submission_failed`
+when applicable. It does not send terminal success or error as a separate
+best-effort event: the `results` request makes the bridge record the matching
+terminal event strongly before signing and storing result deliveries. It does
+not claim consent, authentication, or user-input events it cannot observe. It
+submits raw legacy `Proof` objects inside the Builder result envelope. The
+extension does not validate `allowedJsRequests` or verify proofs client-side;
+consumers verify Builder deliveries with `verifyResultFull` and `verifyProof`.
+When an optional response-match expectation isn't met, the extension omits only
+that match from the attestor request. It preserves Builder's independent
+`responseRedactions` list unchanged.
+Builder owns event storage, callback delivery, retries, and encryption. Treat
+`claimantDetails` as diagnostics only; do not put cookies, credentials, URLs,
+form values, provider responses, or proof contents in it.
+If result submission fails, the extension reports
+`verification_result_submission_failed` when it can and does not signal a
+completed Builder result.
+
+When the URL has no exact `api=2` query, or has an unknown API version, keep
+using `init`, `fromJsonString`, and the existing direct callback flow. Legacy
+`oprf-raw` behavior is unchanged.
 
 From a web page — same thing, but pass your extension ID:
 

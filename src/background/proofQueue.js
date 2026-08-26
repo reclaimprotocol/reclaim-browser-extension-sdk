@@ -78,6 +78,7 @@ export async function processNextQueueItem(ctx) {
         publicData: ctx.publicData ?? null,
       },
       loggingHub,
+      { skipLegacyStatus: Boolean(ctx.builder) },
     );
 
     if (ctx.aborted) {

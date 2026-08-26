@@ -81,7 +81,9 @@ class OffscreenProofGenerator {
             // claim data before handing it to the attestor.
             const sessionId = data?.sessionId;
 
-            const proof = await this.generateProof(data);
+            const proof = await this.generateProof(data?.claimData || data, {
+              skipLegacyStatus: data?.skipLegacyStatus === true,
+            });
 
             // Edge case: proof object contains an error
             const embeddedErr =
@@ -182,7 +184,7 @@ class OffscreenProofGenerator {
     return true;
   }
 
-  async generateProof(claimData) {
+  async generateProof(claimData, options = {}) {
     if (!claimData) {
       throw new Error("No claim data provided for proof generation");
     }
@@ -200,7 +202,9 @@ class OffscreenProofGenerator {
         "offscreen.proof",
       );
 
-      await updateSessionStatus(sessionId, RECLAIM_SESSION_STATUS.PROOF_GENERATION_STARTED);
+      if (!options.skipLegacyStatus) {
+        await updateSessionStatus(sessionId, RECLAIM_SESSION_STATUS.PROOF_GENERATION_STARTED);
+      }
 
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(() => {
@@ -261,7 +265,9 @@ class OffscreenProofGenerator {
             : EVENT_TYPES.PROOF_GENERATION_FAILED_EXCEPTION,
         },
       );
-      await updateSessionStatus(sessionId, RECLAIM_SESSION_STATUS.PROOF_GENERATION_FAILED);
+      if (!options.skipLegacyStatus) {
+        await updateSessionStatus(sessionId, RECLAIM_SESSION_STATUS.PROOF_GENERATION_FAILED);
+      }
       throw error;
     }
   }

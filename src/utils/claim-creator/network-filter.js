@@ -33,7 +33,7 @@ function isJsonSubset(template, actual) {
 }
 
 function getTemplateVariables(template) {
-  const paramRegex = /{{(\w+)}}/g;
+  const paramRegex = /{{([^{}]+)}}/g;
   const variables = [];
   let match;
 
@@ -52,15 +52,19 @@ export function convertTemplateToRegex(template, parameters = {}) {
 
   // Replace template variables with actual values or regex patterns
   for (const param of allVars) {
-    if (parameters[param]) {
+    const escapedPlaceholder = escapeSpecialCharacters(`{{${param}}}`);
+    if (Object.prototype.hasOwnProperty.call(parameters, param)) {
       // Substitute known parameter
-      escapedTemplate = escapedTemplate.replace(`{{${param}}}`, parameters[param]);
+      escapedTemplate = escapedTemplate.replace(
+        escapedPlaceholder,
+        escapeSpecialCharacters(String(parameters[param])),
+      );
     } else {
       // Track unsubstituted variables
       unsubstitutedVars.push(param);
       // Use appropriate regex pattern based on variable name
       const replacement = param.endsWith("GRD") ? "(.*)" : "(.*?)";
-      escapedTemplate = escapedTemplate.replace(`{{${param}}}`, replacement);
+      escapedTemplate = escapedTemplate.replace(escapedPlaceholder, replacement);
     }
   }
 
@@ -190,6 +194,7 @@ function describeResponseCriteria(responseText, matchCriteria, parameters = {}) 
     const regex = makeRegex(pattern);
     const matches = regex.test(responseText);
     const matchExpectation = match.invert ? !matches : matches;
+    if (match.isOptional && !matchExpectation) continue;
     if (!matchExpectation) {
       // `match.value` is provider-authored (a template with {{param}}
       // placeholders), so it is safe in the message; the response is not, and
@@ -202,6 +207,24 @@ function describeResponseCriteria(responseText, matchCriteria, parameters = {}) 
   }
 
   return matched();
+}
+
+export function responsePatternMatches(responseText, match, parameters = {}) {
+  const pattern =
+    match.type === "regex" ? match.value : convertTemplateToRegex(match.value, parameters).pattern;
+  return makeRegex(pattern).test(responseText);
+}
+
+function responseMatchIsSatisfied(responseText, match, parameters = {}) {
+  const matches = responsePatternMatches(responseText, match, parameters);
+  return match.invert ? !matches : matches;
+}
+
+export function effectiveResponseMatches(responseText, matchCriteria, parameters = {}) {
+  if (!Array.isArray(matchCriteria)) return [];
+  return matchCriteria.filter(
+    (match) => !match.isOptional || responseMatchIsSatisfied(responseText, match, parameters),
+  );
 }
 
 // Cheap pre-gate over responseRedactions.
@@ -284,7 +307,8 @@ export const describeRequestMatch = (request, filterCriteria, parameters = {}, l
 
     // If criteria requires response validation but we have no response, reject
     const needsResponse =
-      filterCriteria.responseMatches?.length > 0 || filterCriteria.responseRedactions?.length > 0;
+      filterCriteria.responseRedactions?.length > 0 ||
+      filterCriteria.responseMatches?.some((match) => !match.isOptional || match.invert);
     if (needsResponse && !request.responseText) {
       // Routine rather than fatal: the content script pairs a request with its
       // response asynchronously, so this is the normal state on the tick

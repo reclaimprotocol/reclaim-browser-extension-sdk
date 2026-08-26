@@ -22,7 +22,7 @@
   "scripts": {
     "prebuild": "prettier --write .",
     "build": "NODE_ENV=production node webpack-build-utils/build.js",
-    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test \"src/**/*.test.js\"",
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test \"src/**/*.test.js\" test/builder.test.js",
     "postinstall1": "./script.sh",
     "format": "prettier --write .",
     "prepublishOnly": "npm run build"

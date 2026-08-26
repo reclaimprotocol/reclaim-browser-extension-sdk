@@ -4,6 +4,39 @@ export interface InitOptions {
   callbackUrl?: string;
 }
 
+export interface BuilderClaimantDetails {
+  /** Keep this string to 64 characters or fewer. */
+  locale?: string;
+  /** Keep this string to 64 characters or fewer. */
+  timezone?: string;
+  /** Keep this string to 64 characters or fewer. */
+  platform?: string;
+  /** Keep this string to 256 characters or fewer. */
+  userAgent?: string;
+  /** Use integer CSS-pixel dimensions from 0 through 10,000. */
+  viewport?: { width: number; height: number };
+}
+
+/** Builder-specific options. Legacy provider and callback options are ignored. */
+export interface BuilderInitOptions extends InitOptions {
+  /** Registered Builder Verification Client UUID. */
+  verificationClientId: string;
+  /** Stable per-installation claimant UUID; generated and stored when omitted. */
+  claimantClientId?: string;
+  /** HTTPS origin exposing `/api/sdk/builder/v2`; defaults to Reclaim's API. */
+  backendUrl?: string;
+  /** Optional bounded claimant diagnostics sent to the Builder bridge. */
+  claimantDetails?: BuilderClaimantDetails;
+}
+
+export interface VerificationUrl {
+  /** Missing or unknown API versions return `legacy`; only exact `api=2` is Builder. */
+  mode: "legacy" | "builder";
+  /** Present only for a Builder URL with a non-empty sessionId. */
+  sessionId?: string;
+  url: URL;
+}
+
 export interface Proofs {
   [key: string]: unknown;
 }
@@ -26,6 +59,11 @@ export class ReclaimExtensionProofRequest {
     config: Record<string, unknown>,
     options?: InitOptions,
   ): ReclaimExtensionProofRequest;
+  /** Rejects legacy URLs instead of reinterpreting their legacy parameters. */
+  static fromVerificationUrl(
+    url: string | URL,
+    options: BuilderInitOptions,
+  ): ReclaimExtensionProofRequest;
 
   setAppCallbackUrl(url: string, jsonProofResponse?: boolean): void;
   setRedirectUrl(url: string): void;
@@ -46,6 +84,7 @@ export class ReclaimExtensionSDK {
   initializeBackground(): unknown;
   isExtensionInstalled(opts?: { extensionID?: string; timeout?: number }): Promise<boolean>;
   getVersion(): string;
+  parseVerificationUrl(verificationUrl: string | URL): VerificationUrl;
   init(
     applicationId: string,
     appSecret: string,
@@ -58,6 +97,16 @@ export class ReclaimExtensionSDK {
     json: string | Record<string, unknown>,
     options?: InitOptions,
   ): ReclaimExtensionProofRequest;
+  /** Parses only an exact `api=2` URL with a non-empty sessionId. */
+  fromVerificationUrl(
+    verificationUrl: string | URL,
+    options: BuilderInitOptions,
+  ): ReclaimExtensionProofRequest;
+  /** Convenience async entry point for Builder `api=2` launch URLs. */
+  initBuilder(
+    verificationUrl: string | URL,
+    options: BuilderInitOptions,
+  ): Promise<ReclaimExtensionProofRequest>;
 }
 
 export const reclaimExtensionSDK: ReclaimExtensionSDK;

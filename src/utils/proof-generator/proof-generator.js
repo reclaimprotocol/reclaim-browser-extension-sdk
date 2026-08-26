@@ -20,7 +20,8 @@ const rejection = (message) => {
   return error;
 };
 
-export const generateProof = async (claimData, loggingHub) => {
+// Main function to generate proof using offscreen document
+export const generateProof = async (claimData, loggingHub, options = {}) => {
   try {
     if (!claimData) {
       loggingHub.error(
@@ -100,7 +101,10 @@ export const generateProof = async (claimData, loggingHub) => {
           action: MESSAGE_ACTIONS.GENERATE_PROOF,
           source: MESSAGE_SOURCES.BACKGROUND,
           target: MESSAGE_SOURCES.OFFSCREEN,
-          data: claimData,
+          data: {
+            claimData,
+            skipLegacyStatus: options.skipLegacyStatus === true,
+          },
         },
         () => {
           if (chrome.runtime.lastError) {
