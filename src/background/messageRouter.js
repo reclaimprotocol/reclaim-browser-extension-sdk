@@ -124,17 +124,17 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
             };
             await ctx.builder.client.reportEventBestEffort(
               ctx.builder.sessionId,
-              BUILDER_EVENTS.BROWSER_READY,
+              BUILDER_EVENTS.VERIFICATION_BROWSER_READY,
               eventData,
             );
             await ctx.builder.client.reportEventBestEffort(
               ctx.builder.sessionId,
-              BUILDER_EVENTS.PAGE_READY,
+              BUILDER_EVENTS.VERIFICATION_PAGE_READY,
               eventData,
             );
             await ctx.builder.client.reportEventBestEffort(
               ctx.builder.sessionId,
-              BUILDER_EVENTS.INTERCEPTOR_READY,
+              BUILDER_EVENTS.VERIFICATION_REQUEST_INTERCEPTOR_READY,
               eventData,
             );
           }

@@ -1,26 +1,17 @@
 import { BACKEND_URL } from "./constants/constants.js";
+import {
+  ClientVerificationEvent as BUILDER_EVENTS,
+  bootstrapBuilderSession,
+  client as generatedBuilderBridgeClient,
+  createBuilderAttestorAuth,
+  patchBuilderClaimant,
+  reportBuilderEvent,
+  submitBuilderResults,
+} from "../generated/builder-bridge.gen.js";
 
-const BUILDER_BRIDGE_PATH = "/api/sdk/builder/v2/sessions";
+export { BUILDER_EVENTS };
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-export const BUILDER_EVENTS = {
-  CLIENT_OPENED: "verification_client_opened",
-  CLIENT_READY: "verification_client_ready",
-  BROWSER_STARTED: "verification_browser_started",
-  BROWSER_READY: "verification_browser_ready",
-  PAGE_READY: "verification_page_ready",
-  INTERCEPTOR_READY: "verification_request_interceptor_ready",
-  PROVIDER_STARTED: "verification_provider_started",
-  PROVIDER_COMPLETED: "verification_provider_completed",
-  REQUEST_MATCHED: "request_matched",
-  CLAIM_CREATED: "request_claim_created",
-  CLAIM_COMPLETED: "request_claim_completed",
-  CLAIM_FAILED: "request_claim_failed",
-  PROOFS_COMPLETED: "verification_proofs_completed",
-  RESULT_SUBMITTING: "verification_result_submitting",
-  RESULT_SUBMISSION_FAILED: "verification_result_submission_failed",
-  CANCELLED: "verification_cancelled",
-};
 
 /**
  * Adds missing Builder template parameters from the session context.
@@ -105,19 +96,15 @@ export function createBuilderBridgeClient({ backendUrl = BACKEND_URL, verificati
 
   return {
     async bootstrap(sessionId) {
-      return request(sessionId, "/bootstrap");
+      const { data } = await bootstrapBuilderSession(requestOptions(sessionId));
+      return data;
     },
 
     async getAttestorAuth(sessionId) {
-      const response = await fetch(sessionUrl(sessionId, "/attestor-auth"), {
-        method: "POST",
-        headers: headers(),
-        body: "{}",
+      const { data: body } = await createBuilderAttestorAuth({
+        ...requestOptions(sessionId),
+        body: {},
       });
-      const body = await response.text();
-      if (!response.ok) {
-        throw new Error(`Builder attestor authorization failed (${response.status})`);
-      }
       if (!body) return null;
 
       const encoded = decodeAuthorizationEnvelope(body);
@@ -132,14 +119,15 @@ export function createBuilderBridgeClient({ backendUrl = BACKEND_URL, verificati
     },
 
     async reportEvent(sessionId, event, eventData) {
-      return request(sessionId, "/events", {
-        method: "POST",
-        body: JSON.stringify({
+      const { data } = await reportBuilderEvent({
+        ...requestOptions(sessionId),
+        body: {
           event,
           ...(eventData ? { eventData } : {}),
           occurredAt: new Date().toISOString(),
-        }),
+        },
       });
+      return data;
     },
 
     async reportEventBestEffort(sessionId, event, eventData) {
@@ -152,44 +140,35 @@ export function createBuilderBridgeClient({ backendUrl = BACKEND_URL, verificati
     },
 
     async patchClaimant(sessionId, details) {
-      return request(sessionId, "/claimant", {
-        method: "PATCH",
-        body: JSON.stringify(details),
+      const { data } = await patchBuilderClaimant({
+        ...requestOptions(sessionId),
+        body: details,
       });
+      return data;
     },
 
     async submitResult(sessionId, result) {
-      return request(sessionId, "/results", {
-        method: "POST",
-        body: JSON.stringify(result),
+      const { data } = await submitBuilderResults({
+        ...requestOptions(sessionId),
+        body: result,
       });
+      return data;
     },
   };
 
-  function sessionUrl(sessionId, suffix) {
+  function requestOptions(sessionId) {
     const normalized = String(sessionId || "").trim();
     if (!normalized) throw new Error("Builder sessionId must be a non-empty string");
-    return `${baseUrl}${BUILDER_BRIDGE_PATH}/${encodeURIComponent(normalized)}${suffix}`;
-  }
-
-  function headers() {
+    const generatedBaseUrl = generatedBuilderBridgeClient.getConfig().baseUrl;
+    if (!generatedBaseUrl) throw new Error("Generated Builder bridge client has no server URL");
     return {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      "x-reclaim-vc-id": vcId,
+      baseUrl: new URL(generatedBaseUrl, `${baseUrl}/`)
+        .toString()
+        .replace(/\/+$/, ""),
+      path: { sessionId: normalized },
+      headers: { "x-reclaim-vc-id": vcId },
+      throwOnError: true,
     };
-  }
-
-  async function request(sessionId, suffix, init = {}) {
-    const response = await fetch(sessionUrl(sessionId, suffix), {
-      ...init,
-      headers: headers(),
-    });
-    const body = await response.json().catch(() => null);
-    if (!response.ok) {
-      throw new Error(`Builder bridge request failed (${response.status})`);
-    }
-    return body;
   }
 }
 

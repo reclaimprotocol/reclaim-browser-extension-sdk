@@ -288,7 +288,7 @@ export default function initBackground() {
         if (ctx.builder) {
           await ctx.builder.client.reportEventBestEffort(
             ctx.builder.sessionId,
-            BUILDER_EVENTS.CLAIM_FAILED,
+            BUILDER_EVENTS.REQUEST_CLAIM_FAILED,
             {
               ...builderRequestEventData(ctx, criteria),
               attempt: 1,
@@ -320,7 +320,7 @@ export default function initBackground() {
         if (ctx.builder) {
           await ctx.builder.client.reportEventBestEffort(
             ctx.builder.sessionId,
-            BUILDER_EVENTS.CLAIM_CREATED,
+            BUILDER_EVENTS.REQUEST_CLAIM_CREATED,
             { ...builderRequestEventData(ctx, criteria), attempt: 1 },
           );
         }

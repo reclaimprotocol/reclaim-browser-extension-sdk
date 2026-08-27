@@ -40,8 +40,9 @@ test("uses only Builder bridge routes and sends the Verification Client header",
   const requests = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, init = {}) => {
-    requests.push({ url: String(url), init });
-    if (String(url).endsWith("/attestor-auth")) {
+    const request = url instanceof Request ? url : new Request(url, init);
+    requests.push(request);
+    if (request.url.endsWith("/attestor-auth")) {
       const authorization = Buffer.from(
         JSON.stringify({ data: { id: "session-1" }, signature: "AQI=" }),
       ).toString("base64");
@@ -66,10 +67,10 @@ test("uses only Builder bridge routes and sends the Verification Client header",
       signature: new Uint8Array([1, 2]),
     });
     assert.deepEqual(
-      requests.map(({ url, init }) => ({
-        path: new URL(url).pathname,
-        method: init.method || "GET",
-        vcId: init.headers["x-reclaim-vc-id"],
+      requests.map((request) => ({
+        path: new URL(request.url).pathname,
+        method: request.method,
+        vcId: request.headers.get("x-reclaim-vc-id"),
       })),
       [
         {

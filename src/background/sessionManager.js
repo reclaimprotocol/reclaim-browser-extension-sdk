@@ -152,7 +152,7 @@ export async function startVerification(ctx, templateData) {
     if (ctx.builder) {
       await ctx.builder.client.reportEventBestEffort(
         ctx.builder.sessionId,
-        BUILDER_EVENTS.BROWSER_STARTED,
+        BUILDER_EVENTS.VERIFICATION_BROWSER_STARTED,
         {
           providerId: ctx.builder.currentProvider.recipe.providerId,
           resolvedVersion: ctx.builder.currentProvider.recipe.resolvedVersion,
@@ -661,7 +661,7 @@ export async function cancelSession(ctx) {
     // Builder reports cancellation through the bridge. Legacy sessions keep
     // their status update because its protocol has no cancellation state.
     if (ctx.builder) {
-      await ctx.builder.client.reportEventBestEffort(ctx.sessionId, BUILDER_EVENTS.CANCELLED, {
+      await ctx.builder.client.reportEventBestEffort(ctx.sessionId, BUILDER_EVENTS.VERIFICATION_CANCELLED, {
         initiator: "USER",
         cancellationReason: "USER_CANCELLED",
       });
@@ -824,7 +824,7 @@ async function prepareBuilderProvider(ctx, templateData) {
       terminal: false,
     };
 
-    await client.reportEventBestEffort(config.sessionId, BUILDER_EVENTS.CLIENT_OPENED, {
+    await client.reportEventBestEffort(config.sessionId, BUILDER_EVENTS.VERIFICATION_CLIENT_OPENED, {
       claimantClientId,
     });
     try {
@@ -835,7 +835,7 @@ async function prepareBuilderProvider(ctx, templateData) {
     } catch {
       // Claimant diagnostics are optional and must not block verification.
     }
-    await client.reportEventBestEffort(config.sessionId, BUILDER_EVENTS.CLIENT_READY, {
+    await client.reportEventBestEffort(config.sessionId, BUILDER_EVENTS.VERIFICATION_CLIENT_READY, {
       claimantClientId,
       providerCount: bootstrap.recipes.length,
     });
@@ -848,7 +848,7 @@ async function prepareBuilderProvider(ctx, templateData) {
   const attestorAuthRequest = await builder.client.getAttestorAuth(builder.sessionId);
   builder.currentProvider = { recipe, providerData, attestorAuthRequest };
 
-  await builder.client.reportEventBestEffort(builder.sessionId, BUILDER_EVENTS.PROVIDER_STARTED, {
+  await builder.client.reportEventBestEffort(builder.sessionId, BUILDER_EVENTS.VERIFICATION_PROVIDER_STARTED, {
     providerId: recipe.providerId,
     resolvedVersion: recipe.resolvedVersion,
     ordinal: builder.providerOrdinal,
@@ -896,7 +896,7 @@ async function completeBuilderProvider(ctx, proofs) {
   builder.proofs.push(...proofs);
 
   for (const [requestOrdinal, request] of requests.entries()) {
-    await builder.client.reportEventBestEffort(builder.sessionId, BUILDER_EVENTS.CLAIM_COMPLETED, {
+    await builder.client.reportEventBestEffort(builder.sessionId, BUILDER_EVENTS.REQUEST_CLAIM_COMPLETED, {
       providerId: recipe.providerId,
       resolvedVersion: recipe.resolvedVersion,
       ordinal: builder.providerOrdinal,
@@ -905,7 +905,7 @@ async function completeBuilderProvider(ctx, proofs) {
       attempt: 1,
     });
   }
-  await builder.client.reportEventBestEffort(builder.sessionId, BUILDER_EVENTS.PROVIDER_COMPLETED, {
+  await builder.client.reportEventBestEffort(builder.sessionId, BUILDER_EVENTS.VERIFICATION_PROVIDER_COMPLETED, {
     providerId: recipe.providerId,
     resolvedVersion: recipe.resolvedVersion,
     ordinal: builder.providerOrdinal,
@@ -923,10 +923,10 @@ async function completeBuilderProvider(ctx, proofs) {
   const totals = builderTotals(builder);
   await builder.client.reportEventBestEffort(
     builder.sessionId,
-    BUILDER_EVENTS.PROOFS_COMPLETED,
+    BUILDER_EVENTS.VERIFICATION_PROOFS_COMPLETED,
     totals,
   );
-  await builder.client.reportEventBestEffort(builder.sessionId, BUILDER_EVENTS.RESULT_SUBMITTING, {
+  await builder.client.reportEventBestEffort(builder.sessionId, BUILDER_EVENTS.VERIFICATION_RESULT_SUBMITTING, {
     ...totals,
     attempt: 1,
   });
@@ -939,7 +939,7 @@ async function completeBuilderProvider(ctx, proofs) {
   } catch (error) {
     await builder.client.reportEventBestEffort(
       builder.sessionId,
-      BUILDER_EVENTS.RESULT_SUBMISSION_FAILED,
+      BUILDER_EVENTS.VERIFICATION_RESULT_SUBMISSION_FAILED,
       {
         attempt: 1,
         problem: builderProblem("RESULT_SUBMISSION_FAILED", "Result submission failed", true),
@@ -984,7 +984,7 @@ async function submitBuilderFailure(ctx, reasonCode, title) {
   } catch {
     await builder.client.reportEventBestEffort(
       builder.sessionId,
-      BUILDER_EVENTS.RESULT_SUBMISSION_FAILED,
+      BUILDER_EVENTS.VERIFICATION_RESULT_SUBMISSION_FAILED,
       {
         attempt: 1,
         problem: builderProblem("RESULT_SUBMISSION_FAILED", "Result submission failed", true),

@@ -134,14 +134,29 @@ a non-empty `sessionId`. They accept an optional HTTPS `backendUrl` and bounded
 `claimantDetails`. If `claimantClientId` is omitted, the extension generates a
 UUID and persists it in extension storage.
 
-Builder mode calls these routes with the `x-reclaim-vc-id` header. The bridge
-validates the session and Verification Client binding before it returns data:
+Builder mode uses the generated client for the bridge OpenAPI contract at
+`/api/sdk/builder/v2/openapi.yaml`. The contract defines paths, models, and the
+event enum. Every session request includes `x-reclaim-vc-id`; the bridge
+validates the session and Verification Client binding before it returns data.
 
-- `GET /api/sdk/builder/v2/sessions/{sessionId}/bootstrap`
-- `PATCH /api/sdk/builder/v2/sessions/{sessionId}/claimant`
-- `POST /api/sdk/builder/v2/sessions/{sessionId}/events`
-- `POST /api/sdk/builder/v2/sessions/{sessionId}/attestor-auth`
-- `POST /api/sdk/builder/v2/sessions/{sessionId}/results`
+Don't edit `src/generated/builder-bridge` or
+`src/generated/builder-bridge.gen.js`. The generator prefers the adjacent
+reclaim-sdk-backend checkout and falls back to the deployed contract.
+Regenerate both after an API change:
+
+```sh
+npm run generate:builder-bridge
+```
+
+To test an unpublished backend contract, set `BRIDGE_OPENAPI`:
+
+```sh
+BRIDGE_OPENAPI=/absolute/path/to/builder-bridge.openapi.yaml \
+  npm run generate:builder-bridge
+```
+
+Commit the regenerated files with the consuming code. Review the OpenAPI
+change instead of editing generated paths, models, or enums.
 
 The extension sends no legacy app secret or provider signature to the
 `attestor-auth` route. The route returns session-bound attestor authorization.
