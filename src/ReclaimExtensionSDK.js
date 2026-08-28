@@ -3,6 +3,7 @@ import { Wallet, keccak256, getBytes } from "ethers";
 import initBackground from "./background/background";
 import { BACKEND_URL, API_ENDPOINTS, RECLAIM_SDK_ACTIONS } from "./utils/constants";
 import { LOG_CONFIG_STORAGE_KEY, DEFAULT_LOG_CONFIG } from "./utils/logger/constants";
+import { withClientSource, getClientSource } from "./utils/logger/client-source";
 
 // Global verification queue to serialize extension sessions (background is single-session)
 const _verificationQueue = [];
@@ -106,7 +107,6 @@ class ReclaimExtensionProofRequest {
     const signature = await wallet.signMessage(getBytes(hash));
     instance.signature = signature;
 
-    // Init session on backend
     const initRes = await instance._initSession({
       providerId,
       appId: applicationId,
@@ -205,7 +205,6 @@ class ReclaimExtensionProofRequest {
     this._listeners[event].delete(cb);
   }
 
-  // Public API: start verification
   async startVerification() {
     return _enqueueVerification(() => this._startVerificationInternal());
   }
@@ -335,7 +334,7 @@ class ReclaimExtensionProofRequest {
   async _initSession(payload) {
     const res = await fetch(`${BACKEND_URL}/api/sdk/init/session/`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: withClientSource({ "Content-Type": "application/json" }),
       body: JSON.stringify(payload),
     });
     const data = await res.json().catch(() => ({}));
@@ -397,7 +396,6 @@ class ReclaimExtensionSDK {
     }
   }
 
-  // Check if extension is installed and matches extensionID
   isExtensionInstalled({ extensionID, timeout = 500 } = {}) {
     return new Promise((resolve) => {
       const messageId = `reclaim-check-${Date.now()}`;
@@ -427,6 +425,20 @@ class ReclaimExtensionSDK {
     return SDK_VERSION;
   }
 
+  /**
+   * The SDK's `reclaim-api-client` identity string, e.g.
+   * `browser-extension-sdk sdk/v0.4.2 (chrome/141,<ext-id>/v1.0.0)`.
+   *
+   * This is the same value sent as the `reclaim-api-client` request header and
+   * as `source` on every log entry — exposed so a consumer can quote it in a
+   * bug report, and so support can match a report to a log stream.
+   *
+   * @returns {string}
+   */
+  getClientSource() {
+    return getClientSource();
+  }
+
   // Primary API: create a per-request instance
   async init(applicationId, appSecret, providerId, options = {}) {
     // If logConfig is provided, apply it FIRST before any other operations
@@ -449,8 +461,25 @@ class ReclaimExtensionSDK {
   }
 
   /**
-   * Set log configuration
-   * @param {Object} config - Log config { logLevel: "INFO"|"DEBUG", consoleEnabled: boolean }
+   * Set log configuration.
+   *
+   * @param {Object} config - `{ logLevel, consoleEnabled }`
+   *
+   *   `logLevel` is the single threshold, governing the console and the remote
+   *   endpoint together:
+   *     "SEVERE" | "WARNING" | "INFO" (default) — values are REDACTED
+   *     "FINE"                                  — values are RAW
+   *
+   *   FINE sends response bodies, extracted parameter values, the full claim
+   *   (owner private key, session cookies) and the full proof to Reclaim's
+   *   logging endpoint. Turn it on for a specific debugging session, with the
+   *   user's knowledge — not as a standing setting.
+   *
+   *   The pre-rename spellings ERROR / WARN / DEBUG are still accepted.
+   *
+   *   `consoleEnabled` is independent and only mirrors lines to this context's
+   *   console; it never changes what is collected.
+   *
    * @param {string} extensionID - Required in web mode to route config to extension
    * @param {number} timeout - Timeout in ms (default 2000)
    * @returns {Promise<boolean>} Resolves true when config is applied, false on timeout

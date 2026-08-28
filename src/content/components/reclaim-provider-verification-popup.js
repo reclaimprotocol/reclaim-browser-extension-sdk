@@ -25,9 +25,7 @@ export function createProviderVerificationPopup(
   let isDragging = false;
   let dragOffset = { x: 0, y: 0 };
 
-  // Create initial HTML content
   renderInitialContent().then(() => {
-    // Initialize drag and copy functionality after content is rendered
     initializeDragFunctionality();
     initializeCopyFunctionality();
     initializeTooltipFunctionality();
@@ -35,7 +33,6 @@ export function createProviderVerificationPopup(
 
   // Drag and copy functionality will be initialized after content is rendered
 
-  // Function to load CSS from external file
   async function loadCSS() {
     // Check if styles are already injected
     if (document.getElementById("reclaim-popup-styles")) {
@@ -71,7 +68,6 @@ export function createProviderVerificationPopup(
     }
   }
 
-  // Function to load HTML template from external file
   async function loadHTMLTemplate() {
     try {
       const htmlUrl = chrome.runtime.getURL(
@@ -86,12 +82,10 @@ export function createProviderVerificationPopup(
     }
   }
 
-  // Function to inject CSS styles
   function injectStyles() {
     loadCSS();
   }
 
-  // Function to render the initial content
   async function renderInitialContent() {
     const htmlTemplate = await loadHTMLTemplate();
 
@@ -100,18 +94,21 @@ export function createProviderVerificationPopup(
       return;
     }
 
-    // Replace template placeholders with actual values
+    // Replace template placeholders with actual values.
+    //
+    // `description` and `dataRequired` no longer appear in the template — the
+    // popup shows the session id and the verification status only. They stay in
+    // the function signature because the background still sends them in
+    // SHOW_PROVIDER_VERIFICATION_POPUP, and `providerName` is still used by the
+    // "How it works" steps.
     const renderedHTML = htmlTemplate
       // .replace(/\{\{logoUrl\}\}/g, chrome.runtime.getURL("assets/img/logo.png"))
       .replace(/\{\{providerName\}\}/g, providerName)
-      .replace(/\{\{description\}\}/g, description)
-      .replace(/\{\{dataRequired\}\}/g, dataRequired)
       .replace(/\{\{sessionId\}\}/g, sessionId);
 
     popup.innerHTML = renderedHTML;
   }
 
-  // Function to initialize drag functionality
   function initializeDragFunctionality() {
     const header = popup.querySelector(".reclaim-popup-header");
 
@@ -130,7 +127,6 @@ export function createProviderVerificationPopup(
       // Prevent text selection while dragging
       e.preventDefault();
 
-      // Add global mouse event listeners
       document.addEventListener("mousemove", handleMouseMove);
       document.addEventListener("mouseup", handleMouseUp);
     }
@@ -150,7 +146,6 @@ export function createProviderVerificationPopup(
       const popupWidth = popup.offsetWidth;
       const popupHeight = popup.offsetHeight;
 
-      // Keep popup within viewport bounds
       newX = Math.max(0, Math.min(newX, viewportWidth - popupWidth));
       newY = Math.max(0, Math.min(newY, viewportHeight - popupHeight));
 
@@ -167,12 +162,10 @@ export function createProviderVerificationPopup(
       isDragging = false;
       popup.classList.remove("dragging");
 
-      // Remove global mouse event listeners
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
     }
 
-    // Add mousedown listener to header
     header.addEventListener("mousedown", handleMouseDown);
 
     // Prevent context menu on header to avoid interference
@@ -181,7 +174,6 @@ export function createProviderVerificationPopup(
     });
   }
 
-  // Function to initialize copy functionality
   function initializeCopyFunctionality() {
     const copyButton = popup.querySelector(".reclaim-copy-icon");
     const copyFeedback = popup.querySelector("#reclaim-copy-feedback");
@@ -198,7 +190,6 @@ export function createProviderVerificationPopup(
           try {
             const textToCopy = targetElement.textContent.trim();
 
-            // Use the Clipboard API if available
             if (navigator.clipboard && navigator.clipboard.writeText) {
               await navigator.clipboard.writeText(textToCopy);
               showCopyFeedback("Copied!");
@@ -250,7 +241,6 @@ export function createProviderVerificationPopup(
     }
   }
 
-  // Function to initialize tooltip functionality for long text
   function initializeTooltipFunctionality() {
     const infoValues = popup.querySelectorAll(".reclaim-info-value[data-tooltip]");
 
@@ -311,7 +301,6 @@ export function createProviderVerificationPopup(
     });
   }
 
-  // Function to show loader
   function showLoader(message = "Generating verification proof...") {
     const stepsContainer = popup.querySelector("#reclaim-steps-container");
     const statusContainer = popup.querySelector("#reclaim-status-container");
@@ -335,7 +324,6 @@ export function createProviderVerificationPopup(
       errorIcon.style.display = "none";
     }
 
-    // Show the status container using CSS classes
     statusContainer.classList.add("visible");
     contentContainer.classList.add("status-active");
     circularLoader.style.display = "flex";
@@ -346,16 +334,19 @@ export function createProviderVerificationPopup(
     updateProgressBar();
   }
 
-  // Function to update the progress bar
   function updateProgressBar() {
     const progressBar = popup.querySelector("#reclaim-progress-bar");
     const progressCounter = popup.querySelector("#reclaim-progress-counter");
 
     if (state.totalClaims > 0) {
-      const percentage = state.completedClaims / state.totalClaims;
+      // Clamped: the fallback increment path has no session-wide total to check
+      // against, and a bar scaled past 1 (or a counter reading 4/3) is worse
+      // than one that saturates.
+      const completed = Math.min(state.completedClaims, state.totalClaims);
+      const percentage = completed / state.totalClaims;
       // Use transform instead of width to avoid layout recalculations
       progressBar.style.transform = `scaleX(${percentage})`;
-      progressCounter.textContent = `${state.completedClaims}/${state.totalClaims}`;
+      progressCounter.textContent = `${completed}/${state.totalClaims}`;
     } else {
       progressBar.style.transform = "scaleX(1)";
       progressBar.style.animation = "reclaim-progress-pulse 2s infinite";
@@ -363,14 +354,12 @@ export function createProviderVerificationPopup(
     }
   }
 
-  // Function to update status message
   function updateStatusMessage(message, isError = false) {
     const statusMessage = popup.querySelector("#reclaim-status-message");
     statusMessage.textContent = message;
     statusMessage.style.color = isError ? "#ef4444" : "rgba(255, 255, 255, 0.8)";
   }
 
-  // Function to show success state
   function showSuccess() {
     const stepsContainer = popup.querySelector("#reclaim-steps-container");
     const statusContainer = popup.querySelector("#reclaim-status-container");
@@ -386,7 +375,6 @@ export function createProviderVerificationPopup(
       stepsContainer.classList.add("hidden");
     }
 
-    // Hide circular loader
     circularLoader.style.display = "none";
 
     // Show success UI
@@ -412,7 +400,6 @@ export function createProviderVerificationPopup(
 
     updateStatusMessage("You will be redirected to the original page shortly.");
 
-    // Show success icon
     const successIcon = popup.querySelector("#reclaim-success-icon");
     const errorIcon = popup.querySelector("#reclaim-error-icon");
     if (successIcon) {
@@ -423,7 +410,6 @@ export function createProviderVerificationPopup(
     }
   }
 
-  // Function to show error state
   function showError(errorMessage) {
     const stepsContainer = popup.querySelector("#reclaim-steps-container");
     const statusContainer = popup.querySelector("#reclaim-status-container");
@@ -438,7 +424,6 @@ export function createProviderVerificationPopup(
       stepsContainer.classList.add("hidden");
     }
 
-    // Hide circular loader
     circularLoader.style.display = "none";
 
     // Show error UI
@@ -452,7 +437,6 @@ export function createProviderVerificationPopup(
 
     updateStatusMessage(errorMessage, true);
 
-    // Show error icon
     const errorIcon = popup.querySelector("#reclaim-error-icon");
     const successIcon = popup.querySelector("#reclaim-success-icon");
     if (errorIcon) {
@@ -463,15 +447,37 @@ export function createProviderVerificationPopup(
     }
   }
 
-  // Function to increment the total claims count
   function incrementTotalClaims() {
     state.totalClaims += 1;
     updateProgressBar();
   }
 
-  // Function to increment the completed claims count
   function incrementCompletedClaims() {
     state.completedClaims += 1;
+    updateProgressBar();
+  }
+
+  /**
+   * Adopt the background's session-wide counts, when it sends them.
+   *
+   * This popup is rebuilt from zero on every navigation, and a multi-request
+   * provider spans several origins — so the local counters only ever describe
+   * the current page. The background's numbers span the whole session.
+   *
+   * Falls back to the local increment when `progress` is absent, so an older
+   * message shape (or a path that has not been given the counts) still moves
+   * the bar rather than freezing it.
+   *
+   * @param {{completed: number, total: number}|undefined} progress
+   * @param {() => void} fallback
+   */
+  function applyProgress(progress, fallback) {
+    if (!progress || typeof progress.total !== "number") {
+      fallback();
+      return;
+    }
+    state.totalClaims = progress.total;
+    state.completedClaims = Math.min(progress.completed ?? 0, progress.total);
     updateProgressBar();
   }
 
@@ -486,8 +492,8 @@ export function createProviderVerificationPopup(
     incrementCompletedClaims,
 
     // Handle various status updates from background
-    handleClaimCreationRequested: (requestHash) => {
-      incrementTotalClaims();
+    handleClaimCreationRequested: (requestHash, progress) => {
+      applyProgress(progress, incrementTotalClaims);
       showLoader("Creating verification claim...");
     },
 
@@ -503,8 +509,8 @@ export function createProviderVerificationPopup(
       updateStatusMessage("Generating cryptographic proof...");
     },
 
-    handleProofGenerationSuccess: (requestHash) => {
-      incrementCompletedClaims();
+    handleProofGenerationSuccess: (requestHash, progress) => {
+      applyProgress(progress, incrementCompletedClaims);
       updateStatusMessage(`Proof generated (${state.completedClaims}/${state.totalClaims})`);
     },
 

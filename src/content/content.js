@@ -1,20 +1,28 @@
-// Import polyfills
 import "../utils/polyfills";
 
 import { RECLAIM_SDK_ACTIONS, MESSAGE_ACTIONS, MESSAGE_SOURCES } from "../utils/constants";
 import { createProviderVerificationPopup } from "./components/reclaim-provider-verification-popup";
-import { filterRequest } from "../utils/claim-creator";
+// Imported from the module directly, not the ../utils/claim-creator barrel: the
+// barrel also re-exports params-extractor, which pulls in the vendored attestor
+// parsers (xpath/parse5/esprima). Those have import-time side effects
+// (patch-parse5-tree mutates domhandler prototypes), so webpack cannot shake
+// them out — and this bundle is injected at document_start on every page.
+import {
+  describeRequestMatch,
+  MATCH_STAGES,
+  MATCH_STAGE_ORDER,
+} from "../utils/claim-creator/network-filter";
 import { createRemoteLogger } from "../utils/logger/RemoteLogger";
-import { LOG_CONFIG_STORAGE_KEY } from "../utils/logger/constants";
+import { LOG_CONFIG_STORAGE_KEY, EVENT_TYPES } from "../utils/logger/constants";
 import {
   NETWORK_FILTERING_TIMEOUT_MS,
   NETWORK_FILTERING_INTERVAL_MS,
   INTERCEPTED_DATA_MAX_AGE_MS,
+  SESSION_TIMER_DURATION_MS,
 } from "../utils/constants/config";
 
 const logger = createRemoteLogger("content");
 
-// Create a flag to track if we should initialize
 let shouldInitialize = false;
 let interceptorInjected = false;
 let injectionScriptInjected = false;
@@ -260,7 +268,6 @@ class ReclaimContentScript {
     this.credentialType = null;
     this.dataRequired = null;
 
-    // Storage for intercepted requests and responses
     this.interceptedRequestResponses = new Map();
 
     // Filtering state
@@ -274,6 +281,14 @@ class ReclaimContentScript {
     this.filteredRequests = [];
     this.isFiltering = false;
     this.stopStoringInterceptions = false;
+
+    // Match diagnostics. `matchProgress` maps "<matcherIndex>|<requestKey>" to
+    // the furthest MATCH_STAGE_ORDER index that pair ever reached; filtering
+    // re-runs every NETWORK_FILTERING_INTERVAL_MS over the same request map, so
+    // logging on every evaluation would repeat each verdict for the life of the
+    // session. Only an *advance* is reported.
+    this.matchProgress = new Map();
+    this.noMatchTimer = null;
 
     // Flag to track if this is a managed tab (will be set during init)
     this.isManagedTab = false;
@@ -303,12 +318,49 @@ class ReclaimContentScript {
     }
   }
 
+  /**
+   * Push the log config down into the page world.
+   *
+   * The MAIN-world bridge cannot read chrome.storage, so without this its
+   * console mirroring would ignore `consoleEnabled` entirely — which is how the
+   * interceptor ended up logging on every page regardless of configuration.
+   * Called once at init and again whenever the stored config changes.
+   */
+  pushLogConfigToPage(config) {
+    if (config) this._lastLogConfig = config;
+    try {
+      window.postMessage({ action: RECLAIM_SDK_ACTIONS.LOG_CONFIG, data: { config } }, "*");
+    } catch {
+      // Nothing to do: the bridge falls back to its permissive defaults.
+    }
+  }
+
+  /**
+   * Keep the page world in sync with the stored log config.
+   */
+  watchLogConfig() {
+    try {
+      chrome.storage.local.get(LOG_CONFIG_STORAGE_KEY, (stored) => {
+        const config = stored?.[LOG_CONFIG_STORAGE_KEY];
+        if (config) this.pushLogConfigToPage(config);
+      });
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === "local" && changes[LOG_CONFIG_STORAGE_KEY]?.newValue) {
+          this.pushLogConfigToPage(changes[LOG_CONFIG_STORAGE_KEY].newValue);
+        }
+      });
+    } catch {
+      // Storage unavailable in this context.
+    }
+  }
+
   init() {
     if (!shouldInitialize) {
       return;
     }
 
     chrome.runtime.onMessage.addListener(this.handleMessage.bind(this));
+    this.watchLogConfig();
 
     // First verify this is a managed tab before proceeding with initialization
     chrome.runtime.sendMessage(
@@ -325,7 +377,6 @@ class ReclaimContentScript {
           return;
         }
 
-        // Mark this as a managed tab
         this.isManagedTab = true;
 
         // Only proceed with provider data request if this is a managed tab
@@ -349,7 +400,6 @@ class ReclaimContentScript {
                 "content.provider",
               );
 
-              // Trigger one-time page fetch if replay is allowed
               if (!this.providerData?.disableRequestReplay) {
                 chrome.runtime.sendMessage({
                   action: MESSAGE_ACTIONS.INJECT_VIA_SCRIPTING,
@@ -430,7 +480,12 @@ class ReclaimContentScript {
       case MESSAGE_ACTIONS.PROVIDER_DATA_READY:
         // Only process provider data if this is a managed tab
         if (!this.isManagedTab) {
-          logger.info("[Content] Tab is not managed by extension", "content.tab");
+          // Not an exception: PROVIDER_DATA_READY is broadcast, so the content
+          // script in the *originating* tab correctly declines it. Tagging this
+          // TAB_NOT_MANAGED_BY_EXTENSION_EXCEPTION put an exception event in
+          // every healthy session. The event stays on the real failure, where
+          // messageRouter rejects a request from an unmanaged tab.
+          logger.debug("[Content] Ignoring provider data: tab is not managed", "content.tab");
           sendResponse({ success: false, message: "Tab is not managed by extension" });
           break;
         }
@@ -494,7 +549,9 @@ class ReclaimContentScript {
           (response) => {
             if (!response.success || !response.isManaged) {
               // This tab is not managed by the extension, don't show popup
-              logger.info("[Content] Tab is not managed by extension", "content.tab");
+              // Same as above: declining to draw the popup in an unmanaged
+              // tab is the normal outcome, not an exception.
+              logger.debug("[Content] Not showing popup: tab is not managed", "content.tab");
               sendResponse({ success: false, message: "Tab is not managed by extension" });
               return;
             }
@@ -562,7 +619,7 @@ class ReclaimContentScript {
       // Handle status update messages from background script
       case MESSAGE_ACTIONS.CLAIM_CREATION_REQUESTED:
         if (this.verificationPopup) {
-          this.verificationPopup.handleClaimCreationRequested(data.requestHash);
+          this.verificationPopup.handleClaimCreationRequested(data.requestHash, data.progress);
         }
         logger.info("[Content] Claim creation requested", "content.claim");
         sendResponse({ success: true });
@@ -594,7 +651,7 @@ class ReclaimContentScript {
 
       case MESSAGE_ACTIONS.PROOF_GENERATION_SUCCESS:
         if (this.verificationPopup) {
-          this.verificationPopup.handleProofGenerationSuccess(data.requestHash);
+          this.verificationPopup.handleProofGenerationSuccess(data.requestHash, data.progress);
         }
         logger.info("[Content] Proof generation success", "content.proof");
         sendResponse({ success: true });
@@ -691,6 +748,29 @@ class ReclaimContentScript {
     if (event.source !== window) return;
     const { action, data, messageId, extensionID } = event.data;
 
+    // MAIN-world log relay. The interceptor and injection scripts have no
+    // chrome.runtime, so this is the only route their diagnostics have to the
+    // hub. Relayed with the originating context, not "content", so the log
+    // still says where interception actually failed.
+    //
+    // Deliberately not gated on extensionID: the bridge is a same-window
+    // postMessage from our own injected script and carries no privileges. It
+    // is gated on managed-tab status in the background's message router like
+    // every other content-script message.
+    if (action === RECLAIM_SDK_ACTIONS.LOG && data?.message) {
+      logger.relay(data.message, data.type, data.level, data.context || "page", data.options);
+      // Both this script and the page-world scripts start at document_start, so
+      // the first config push can land before the bridge installed its
+      // listener. The bridge's defaults are permissive, so nothing is lost —
+      // but a consumer who disabled the console would still see page-world
+      // logs. Re-send once, now that we know the bridge is listening.
+      if (!this._logConfigEchoed && this._lastLogConfig) {
+        this._logConfigEchoed = true;
+        this.pushLogConfigToPage(this._lastLogConfig);
+      }
+      return;
+    }
+
     // Check if the message is meant for this extension
     if (action === RECLAIM_SDK_ACTIONS.CHECK_EXTENSION) {
       // Send response back to the page
@@ -708,7 +788,6 @@ class ReclaimContentScript {
       );
     }
 
-    // Handle provider ID request from injection script
     if (action === "RECLAIM_GET_PROVIDER_ID" && event.data.source === "injection-script") {
       // Respond with the provider ID from extension context
       window.postMessage(
@@ -739,7 +818,9 @@ class ReclaimContentScript {
       if (!this.checkExtensionId(extensionID)) {
         return;
       }
-      logger.info("[Content] Starting verification with data from SDK", "content.verification");
+      logger.info("[Content] Starting verification with data from SDK", "content.verification", {
+        eventType: EVENT_TYPES.WEB_PAGE_READY,
+      });
 
       chrome.runtime.sendMessage(
         {
@@ -888,7 +969,9 @@ class ReclaimContentScript {
           );
         },
       );
-      logger.info("[Content] Parameters get", "content.data");
+      // FINE: the background logs the same event, and a provider script can
+      // call getParametersSync() on every render.
+      logger.debug("[Content] Parameters get", "content.data");
       return;
     }
 
@@ -1027,7 +1110,6 @@ class ReclaimContentScript {
     }
   }
 
-  // Clean up old intercepted data
   cleanupInterceptedData() {
     const now = Date.now();
     const timeout = INTERCEPTED_DATA_MAX_AGE_MS;
@@ -1040,7 +1122,6 @@ class ReclaimContentScript {
     }
   }
 
-  // Start filtering intercepted network requests
   startNetworkFiltering() {
     if (!this.providerData) {
       return;
@@ -1053,6 +1134,8 @@ class ReclaimContentScript {
     this.isFiltering = true;
     this.filteringStartTime = Date.now();
     this.stopStoringInterceptions = false;
+    this.matchProgress.clear();
+    this.startNoMatchTimer();
 
     // Run filtering immediately
     this.filterInterceptedRequests();
@@ -1062,7 +1145,6 @@ class ReclaimContentScript {
       clearInterval(this.filteringInterval);
     }
 
-    // Then set up interval for continuous filtering
     this.filteringInterval = setInterval(() => {
       // Skip if we've already found all requests
       if (this.stopStoringInterceptions) {
@@ -1079,13 +1161,18 @@ class ReclaimContentScript {
     }, NETWORK_FILTERING_INTERVAL_MS);
   }
 
-  // Stop network filtering
   stopNetworkFiltering() {
-    // Clear the filtering interval
     if (this.filteringInterval) {
       clearInterval(this.filteringInterval);
       this.filteringInterval = null;
     }
+
+    // Report before disarming: reaching NETWORK_FILTERING_TIMEOUT_MS with
+    // nothing matched is exactly the case the summary exists for.
+    if (this.filteredRequests.length === 0 && this.noMatchTimer) {
+      this.reportNoMatchSummary();
+    }
+    this.clearNoMatchTimer();
 
     // Stop filtering flag
     this.isFiltering = false;
@@ -1100,13 +1187,11 @@ class ReclaimContentScript {
     }
   }
 
-  // Filter intercepted requests with provider criteria
   filterInterceptedRequests() {
     if (!this.providerData || !this.providerData.requestData) {
       return;
     }
 
-    // For each linked request/response pair
     for (const [key, combinedData] of this.interceptedRequestResponses.entries()) {
       // Skip already filtered requests
       if (this.filteredRequests.includes(key)) {
@@ -1127,9 +1212,21 @@ class ReclaimContentScript {
       };
 
       // Check against each criteria in provider data
-      for (const criteria of this.providerData.requestData) {
-        if (filterRequest(formattedRequest, criteria, this.parameters, logger)) {
+      for (
+        let matcherIndex = 0;
+        matcherIndex < this.providerData.requestData.length;
+        matcherIndex++
+      ) {
+        const criteria = this.providerData.requestData[matcherIndex];
+        const verdict = describeRequestMatch(formattedRequest, criteria, this.parameters, logger);
+        this.reportMatchAttempt(matcherIndex, key, formattedRequest, criteria, verdict);
+
+        if (verdict.matched) {
           // Mark this request as filtered
+          // Deliberately no eventType: the background's "Filtering request for
+          // request hash" line already carries REQUEST_MATCHED, and it is the
+          // authoritative one (it has the requestHash). Tagging this line too
+          // double-counted the event — a 3-claim session reported 6.
           logger.info(
             "[Content] Matching request found: " +
               formattedRequest.method +
@@ -1138,6 +1235,7 @@ class ReclaimContentScript {
             "content.filter",
           );
 
+          this.clearNoMatchTimer();
           this.filteredRequests.push(key);
 
           // Send to background script for cookie fetching and claim creation
@@ -1145,18 +1243,17 @@ class ReclaimContentScript {
             formattedRequest,
             criteria,
             this.providerData.loginUrl,
+            key,
           );
         }
       }
     }
 
-    // If we've found all possible matching requests, stop filtering
     if (this.filteredRequests.length >= this.providerData.requestData.length) {
       // Stop filtering and prevent further storage
       this.stopStoringInterceptions = true;
       this.isFiltering = false;
 
-      // Clear filtering interval
       if (this.filteringInterval) {
         clearInterval(this.filteringInterval);
         this.filteringInterval = null;
@@ -1168,13 +1265,127 @@ class ReclaimContentScript {
         this.cleanupInterval = null;
       }
 
-      // Clear all stored requests and responses
       this.interceptedRequestResponses.clear();
     }
   }
 
-  // Send filtered request to background script
-  sendFilteredRequestToBackground(formattedRequest, matchingCriteria, loginUrl) {
+  /**
+   * Record how far one request got against one matcher, and log it the first
+   * time it gets that far.
+   *
+   * Only *near misses* are logged individually. A plain url rejection is the
+   * overwhelming majority — 32 of 33 requests in a typical page load — and says
+   * nothing beyond "this wasn't the request", which the REQUEST_INTERCEPTED
+   * line already covers. Anything past the url check means the provider very
+   * nearly matched, which is the case worth a line: a stale bodySniff template
+   * or a responseMatch that no longer holds is otherwise completely silent, and
+   * the session dies on the timer looking like the user never logged in.
+   *
+   * Every url rejection is still counted, and surfaces in the timeout summary.
+   */
+  reportMatchAttempt(matcherIndex, requestKey, request, criteria, verdict) {
+    const progressKey = `${matcherIndex}|${requestKey}`;
+    const reached = MATCH_STAGE_ORDER.indexOf(verdict.stage);
+    const furthest = this.matchProgress.get(progressKey);
+
+    // A request is re-evaluated every tick, and can legitimately advance when
+    // its response finally arrives. Report advances only.
+    if (furthest !== undefined && reached <= furthest) return;
+    this.matchProgress.set(progressKey, reached);
+
+    if (verdict.matched || verdict.stage === MATCH_STAGES.URL) return;
+
+    // `responseMissing` is the normal state on the tick between a request and
+    // its response, so it is not worth an INFO line on its own.
+    const level = verdict.stage === MATCH_STAGES.RESPONSE_MISSING ? "debug" : "info";
+
+    logger[level](
+      `[Content] Matcher #${matcherIndex} ▸ ${verdict.stage} did NOT match: ${verdict.detail} — ${request.method} ${request.url}`,
+      "content.filter",
+      {
+        // The provider-authored templates that decided it. These are config,
+        // not user data — but they go through the payload rather than the
+        // message so they are capped and redaction still sees them.
+        payload: {
+          urlTemplate: criteria?.url,
+          bodyTemplate: criteria?.bodySniff?.enabled ? criteria?.bodySniff?.template : undefined,
+        },
+      },
+    );
+  }
+
+  /**
+   * Arm the "nothing ever matched" timer.
+   *
+   * The background's SessionTimerManager only starts on the *first* intercepted
+   * request, so it cannot distinguish "no traffic at all" from "plenty of
+   * traffic, none of it matching" — which is why
+   * RECLAIM_VERIFICATION_NO_ACTIVITY_DETECTED_EXCEPTION had no trigger. This
+   * timer runs in the content script, where the counters live, and reports
+   * whichever of the two actually happened.
+   */
+  startNoMatchTimer() {
+    this.clearNoMatchTimer();
+    this.noMatchTimer = setTimeout(() => {
+      this.noMatchTimer = null;
+      if (this.filteredRequests.length > 0) return;
+      this.reportNoMatchSummary();
+    }, SESSION_TIMER_DURATION_MS);
+  }
+
+  clearNoMatchTimer() {
+    if (this.noMatchTimer) {
+      clearTimeout(this.noMatchTimer);
+      this.noMatchTimer = null;
+    }
+  }
+
+  /** One line per matcher saying how far the closest request got. */
+  reportNoMatchSummary() {
+    const matchers = this.providerData?.requestData || [];
+    const seconds = Math.round(SESSION_TIMER_DURATION_MS / 1000);
+
+    // Tally the furthest stage each request reached, per matcher.
+    const tallies = matchers.map(() => ({ seen: 0, past: MATCH_STAGE_ORDER.map(() => 0) }));
+    for (const [progressKey, reached] of this.matchProgress.entries()) {
+      const matcherIndex = Number(progressKey.split("|")[0]);
+      const tally = tallies[matcherIndex];
+      if (!tally) continue;
+      tally.seen++;
+      for (let stage = 0; stage <= reached; stage++) tally.past[stage]++;
+    }
+
+    const nothingSeen = tallies.every((tally) => tally.seen === 0);
+
+    for (let i = 0; i < matchers.length; i++) {
+      const tally = tallies[i] || { seen: 0, past: MATCH_STAGE_ORDER.map(() => 0) };
+      const stageIndex = (stage) => MATCH_STAGE_ORDER.indexOf(stage);
+      logger.info(
+        `[Content] No request matched in ${seconds}s. Matcher #${i} (${matchers[i]?.method} ${matchers[i]?.url}): ` +
+          // Reaching stage N means every check before N passed, so each count
+          // is "url matched", "url+method matched", "url+method+body matched".
+          `${tally.seen} seen, ${tally.past[stageIndex(MATCH_STAGES.METHOD)]} url-matched, ` +
+          `${tally.past[stageIndex(MATCH_STAGES.BODY)]} method-matched, ` +
+          `${tally.past[stageIndex(MATCH_STAGES.RESPONSE_MISSING)]} body-matched, ` +
+          `${tally.past[stageIndex(MATCH_STAGES.MATCHED)]} fully matched`,
+        "content.filter",
+        {
+          // NO_ACTIVITY is truthful only when nothing was intercepted at all —
+          // this timer is what finally gives that upstream name a trigger. With
+          // traffic seen the session did have activity, it just never produced
+          // a claim, which is what the background's session timer already calls
+          // CLAIM_CREATION_TIMED_OUT_EXCEPTION. Deliberately not
+          // FILTER_REQUEST_ERROR: that marks a *thrown* filtering error, and
+          // mixing a clean non-match into it would break that query.
+          eventType: nothingSeen
+            ? EVENT_TYPES.RECLAIM_VERIFICATION_NO_ACTIVITY_DETECTED_EXCEPTION
+            : EVENT_TYPES.CLAIM_CREATION_TIMED_OUT_EXCEPTION,
+        },
+      );
+    }
+  }
+
+  sendFilteredRequestToBackground(formattedRequest, matchingCriteria, loginUrl, requestKey) {
     logger.info(
       "[Content] Sending filtered request to background: " + formattedRequest.url,
       "content.filter",
@@ -1193,12 +1404,26 @@ class ReclaimContentScript {
         },
       },
       (response) => {
-        // Background response handled silently
+        // Background now owns authoritative xPath/jsonPath resolution, so it can
+        // legitimately say "this response doesn't carry the data yet". Release
+        // the key so a later response for the same request is filtered again;
+        // without this the request stays marked as found and the flow stalls
+        // until the session timer fires.
+        if (response?.retryable && requestKey !== undefined) {
+          const idx = this.filteredRequests.indexOf(requestKey);
+          if (idx !== -1) {
+            this.filteredRequests.splice(idx, 1);
+          }
+          logger.info(
+            "[Content] Background could not resolve redactions yet, will keep filtering: " +
+              formattedRequest.url,
+            "content.filter",
+          );
+        }
       },
     );
   }
 
-  // Helper method to store provider ID in website's localStorage
   setProviderIdInLocalStorage(providerId) {
     // Don't store null, undefined, or 'unknown' values
     const key = "reclaimBrowserExtensionProviderId";
@@ -1238,8 +1463,11 @@ class ReclaimContentScript {
 
     if (!injectionScript?.length) {
       localStorage.removeItem(key);
-      logger.error(
-        "[Content] Skipping localStorage storage for injection script",
+      // Most providers carry no customInjection at all, so this is the normal
+      // path, not a failure. At ERROR it put an error line in every session for
+      // every such provider, which trains you to ignore the level.
+      logger.debug(
+        "[Content] No injection script for this provider; nothing to store",
         "content.storage",
       );
 
@@ -1285,6 +1513,5 @@ class ReclaimContentScript {
   }
 }
 
-// Initialize content script
 const contentScript = new ReclaimContentScript();
 export default contentScript;

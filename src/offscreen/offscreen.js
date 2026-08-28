@@ -2,10 +2,10 @@
 import "../utils/polyfills";
 import { MESSAGE_ACTIONS, MESSAGE_SOURCES, RECLAIM_SESSION_STATUS } from "../utils/constants";
 import { createClaimOnAttestor } from "@reclaimprotocol/attestor-core/browser";
-// Import our specialized WebSocket implementation for offscreen document
 import { WebSocket } from "../utils/offscreen-websocket";
 import { updateSessionStatus } from "../utils/fetch-calls";
 import { createRemoteLogger } from "../utils/logger/RemoteLogger";
+import { EVENT_TYPES } from "../utils/logger/constants";
 import { PROOF_GENERATION_TIMEOUT_MS } from "../utils/constants/config";
 
 const logger = createRemoteLogger("offscreen");
@@ -15,6 +15,7 @@ if (typeof WebAssembly === "undefined") {
   logger.error(
     "[OFFSCREEN] WebAssembly is not available in this browser context",
     "offscreen.init",
+    { eventType: EVENT_TYPES.OFFSCREEN_DOCUMENT_NOT_READY_EXCEPTION },
   );
 }
 
@@ -43,7 +44,9 @@ class OffscreenProofGenerator {
   }
 
   init() {
-    logger.info("[OFFSCREEN] Offscreen ready", "offscreen.init");
+    logger.info("[OFFSCREEN] Offscreen ready", "offscreen.init", {
+      eventType: EVENT_TYPES.OFFSCREEN_DOCUMENT_READY,
+    });
     chrome.runtime.onMessage.addListener(this.handleMessage.bind(this));
     this.sendReadySignal();
   }
@@ -70,7 +73,13 @@ class OffscreenProofGenerator {
       case MESSAGE_ACTIONS.GENERATE_PROOF:
         (async () => {
           try {
-            logger.info("[OFFSCREEN] Generating proof", "offscreen.proof");
+            logger.info("[OFFSCREEN] Generating proof", "offscreen.proof", {
+              eventType: EVENT_TYPES.PROOF_GENERATION_STARTED,
+            });
+
+            // Captured up front: generateProof() deletes sessionId off the
+            // claim data before handing it to the attestor.
+            const sessionId = data?.sessionId;
 
             const proof = await this.generateProof(data);
 
@@ -82,6 +91,7 @@ class OffscreenProofGenerator {
               logger.error(
                 "[OFFSCREEN] Proof contains embedded error: " + embeddedErr,
                 "offscreen.proof",
+                { eventType: EVENT_TYPES.PROOF_GENERATION_FAILED_EXCEPTION },
               );
               chrome.runtime.sendMessage({
                 action: MESSAGE_ACTIONS.GENERATE_PROOF_RESPONSE,
@@ -93,6 +103,17 @@ class OffscreenProofGenerator {
               return;
             }
 
+            // Reported here, not on attestor resolution: the proof is only known
+            // good once the embedded-error check above has passed.
+            try {
+              await updateSessionStatus(sessionId, RECLAIM_SESSION_STATUS.PROOF_GENERATION_SUCCESS);
+            } catch (e) {
+              logger.error(
+                "[OFFSCREEN] Error updating status to PROOF_GENERATION_SUCCESS: " + e?.message,
+                "offscreen.proof",
+              );
+            }
+
             chrome.runtime.sendMessage({
               action: MESSAGE_ACTIONS.GENERATE_PROOF_RESPONSE,
               source: MESSAGE_SOURCES.OFFSCREEN,
@@ -101,7 +122,11 @@ class OffscreenProofGenerator {
               proof: proof,
             });
           } catch (error) {
-            logger.error("[OFFSCREEN] Error generating proof: " + error.message, "offscreen.proof");
+            logger.error(
+              "[OFFSCREEN] Error generating proof: " + error.message,
+              "offscreen.proof",
+              { eventType: EVENT_TYPES.PROOF_GENERATION_FAILED_EXCEPTION },
+            );
             chrome.runtime.sendMessage({
               action: MESSAGE_ACTIONS.GENERATE_PROOF_RESPONSE,
               source: MESSAGE_SOURCES.OFFSCREEN,
@@ -165,6 +190,10 @@ class OffscreenProofGenerator {
     const sessionId = claimData.sessionId;
     delete claimData.sessionId;
 
+    // Declared outside the try so the catch can read it — it was set here and
+    // never read anywhere, which is why nothing caught the scoping.
+    let timeoutOccurred = false;
+
     try {
       logger.info(
         "[OFFSCREEN] Updating session status to PROOF_GENERATION_STARTED",
@@ -172,8 +201,6 @@ class OffscreenProofGenerator {
       );
 
       await updateSessionStatus(sessionId, RECLAIM_SESSION_STATUS.PROOF_GENERATION_STARTED);
-
-      let timeoutOccurred = false;
 
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(() => {
@@ -186,11 +213,25 @@ class OffscreenProofGenerator {
         }, PROOF_GENERATION_TIMEOUT_MS);
       });
 
-      logger.debug("[OFFSCREEN] Final claimData for attestor", "offscreen.proof");
+      // This is the last point the claim is observable before attestor-core gets
+      // it: `sessionId` has been stripped above, and it has crossed the
+      // chrome-messaging boundary from the background. Logging only the message
+      // here left the object that actually reached the attestor invisible, which
+      // is the one thing an attestor-side rejection needs. Raw at FINE, redacted
+      // at the default INFO — see LoggingHub._addLog.
+      logger.debug("[OFFSCREEN] Final claimData for attestor", "offscreen.proof", {
+        payload: claimData,
+      });
 
-      const attestorPromise = await createClaimOnAttestor(claimData);
+      // NOT awaited here on purpose. Awaiting first and only then racing the
+      // timeout meant the race ran against an already-settled value, so
+      // PROOF_GENERATION_TIMEOUT_MS could never interrupt a hung attestor call
+      // — and the "promise created" line was logged after the call had already
+      // finished, landing in the same millisecond as the result and making the
+      // logs claim the call started 16s later than it did.
+      const attestorPromise = createClaimOnAttestor(claimData);
 
-      logger.info("[OFFSCREEN] Attestor promise created", "offscreen.proof");
+      logger.info("[OFFSCREEN] Attestor call started", "offscreen.proof");
 
       const result = await Promise.race([attestorPromise, timeoutPromise]);
 
@@ -198,12 +239,27 @@ class OffscreenProofGenerator {
 
       logger.info("[OFFSCREEN] Attestor promise result received", "offscreen.proof");
 
-      await updateSessionStatus(sessionId, RECLAIM_SESSION_STATUS.PROOF_GENERATION_SUCCESS);
+      // PROOF_GENERATION_SUCCESS is deliberately NOT reported here. The attestor
+      // can resolve with an error carried inside the result object, which only
+      // the caller checks. Reporting success on resolution meant a failed
+      // session recorded PROOF_GENERATION_SUCCESS and then
+      // PROOF_GENERATION_FAILED, so analytics claimed both outcomes for the same
+      // session. The caller now reports it once the proof is validated.
       return result;
     } catch (error) {
+      // `timeoutOccurred` distinguishes "the attestor took too long" from "the
+      // attestor threw", which are different problems with the same message
+      // prefix. This is the timeout that actually fires — the background's
+      // PROOF_RESPONSE_TIMEOUT_MS is deliberately longer, so it only sees a
+      // document that never answered.
       logger.error(
         "[OFFSCREEN] Error generating proof: " + (error?.message || "Unknown error"),
         "offscreen.proof",
+        {
+          eventType: timeoutOccurred
+            ? EVENT_TYPES.CLAIM_CREATION_TIMED_OUT_EXCEPTION
+            : EVENT_TYPES.PROOF_GENERATION_FAILED_EXCEPTION,
+        },
       );
       await updateSessionStatus(sessionId, RECLAIM_SESSION_STATUS.PROOF_GENERATION_FAILED);
       throw error;

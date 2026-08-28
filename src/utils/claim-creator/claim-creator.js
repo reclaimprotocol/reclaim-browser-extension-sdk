@@ -3,12 +3,14 @@ import {
   extractParamsFromBody,
   extractParamsFromResponse,
   separateParams,
-  getHashedParamNames,
 } from "./params-extractor";
 import { MESSAGE_ACTIONS, MESSAGE_SOURCES } from "../constants";
 import { ensureOffscreenDocument } from "../offscreen-manager";
 import { getUserLocationBasedOnIp } from "./get-dynamic-geo";
-import { PRIVATE_KEY_TIMEOUT_MS } from "../constants/config";
+import { PRIVATE_KEY_TIMEOUT_MS, DEFAULT_ZK_ENGINE } from "../constants/config";
+import { EVENT_TYPES } from "../logger/constants";
+import { normalizeRedactionHash } from "../provider-normalization";
+import { assertClaimShape } from "./claim-shape";
 
 // Generate Chrome Android user agent (adapted from reference code)
 const generateChromeAndroidUserAgent = (chromeMajorVersion = 135, isMobile = true) => {
@@ -109,12 +111,16 @@ export const createClaimObject = async (
   loggingHub,
   context,
 ) => {
-  loggingHub.info("[CLAIM-CREATOR] Creating claim object from request data", "claim.creation");
+  loggingHub.info("[CLAIM-CREATOR] Creating claim object from request data", "claim.creation", {
+    eventType: EVENT_TYPES.PREPARING_CLAIM,
+  });
 
   // Ensure offscreen document is ready
   try {
     await ensureOffscreenDocument(loggingHub);
-    loggingHub.info("[CLAIM-CREATOR] Offscreen document is ready.", "claim.creation");
+    loggingHub.info("[CLAIM-CREATOR] Offscreen document is ready.", "claim.creation", {
+      eventType: EVENT_TYPES.OFFSCREEN_DOCUMENT_READY,
+    });
   } catch (error) {
     loggingHub.error(
       "[CLAIM-CREATOR] Failed to ensure offscreen document: " + error?.message,
@@ -201,7 +207,6 @@ export const createClaimObject = async (
     }
   }
 
-  // Process cookie string if available in request
   if (request.cookieStr) {
     secretParams.cookieStr = request.cookieStr;
   }
@@ -229,18 +234,21 @@ export const createClaimObject = async (
     };
   }
 
-  // 3. Extract params from response if available
+  // 3. Extract params from response if available.
+  // allParamValues is passed in as the accumulator so params already derived
+  // above (or supplied by a custom injection) count as satisfied — a redaction
+  // that can't resolve for an already-known param must not abort the claim.
+  // A RedactionResolveError for an *unknown* param propagates on purpose: it
+  // means the response doesn't carry the data yet, and the caller treats that
+  // as retryable rather than failing the session.
   if (request.responseText && providerData.responseMatches) {
-    // append the extracted parameters to the existing allParamValues
-    const extractedParams = extractParamsFromResponse(
+    allParamValues = extractParamsFromResponse(
       request.responseText,
       providerData.responseMatches,
       providerData.responseRedactions || [],
+      allParamValues,
+      loggingHub,
     );
-    allParamValues = {
-      ...allParamValues,
-      ...extractedParams,
-    };
   }
 
   // 4. Explicit extractedParams (e.g. from a customInjection request
@@ -251,18 +259,25 @@ export const createClaimObject = async (
     allParamValues = { ...allParamValues, ...request.extractedParams };
   }
 
-  // 5. Separate parameters into public and secret. Any param whose
-  // responseRedaction has a hash (oprf, etc.) must stay out of the public
-  // claim regardless of naming — extractParamsFromResponse extracts it
-  // independently of hash, so naming alone can't be trusted to keep it secret.
-  const hashedParamNames = getHashedParamNames(
-    providerData.responseMatches,
-    providerData.responseRedactions,
-  );
-  const { publicParams, secretParams: secretParamValues } = separateParams(
-    allParamValues,
-    hashedParamNames,
-  );
+  // 5. Separate parameters into public and secret, by NAME only — matching
+  // InApp's `_getHttpParams`/`_getSecretParams`, which split on the name
+  // containing "SECRET" and nothing else.
+  //
+  // Hash-bearing params are deliberately NOT forced secret. It reads like a
+  // privacy win, but it breaks OPRF outright:
+  //
+  //  - `secretParams.paramValues` is documented as substituting {{param}} in
+  //    the BODY only. A param referenced from `responseMatches` has to be in
+  //    `params.paramValues` or the attestor cannot substitute it and the match
+  //    fails.
+  //  - `updateParametersFromOprfData` (default true in attestor-core
+  //    client/create-claim.ts) rewrites `params` — and only `params` —
+  //    replacing the raw value with the OPRF nullifier. A value parked in
+  //    secretParams is never reached, so no hash is ever substituted.
+  //
+  // The privacy guarantee for a hashed param comes from that substitution
+  // happening client-side before the claim is sent, not from hiding the param.
+  const { publicParams, secretParams: secretParamValues } = separateParams(allParamValues);
 
   // Add parameter values to respective objects
   if (Object.keys(publicParams).length > 0) {
@@ -273,7 +288,6 @@ export const createClaimObject = async (
     secretParams.paramValues = secretParamValues;
   }
 
-  // Process response matches if available
   if (providerData.responseMatches) {
     params.responseMatches = providerData.responseMatches.map((match) => {
       // Create a clean object with only the required fields
@@ -287,64 +301,43 @@ export const createClaimObject = async (
     });
   }
 
-  // Process response redactions if available
+  // Process response redactions if available.
+  //
+  // Built as an ALLOWLIST of the four fields the attestor's schema declares.
+  // That schema is `additionalProperties: false` and is enforced server-side by
+  // AJV (attestor-core server/utils/validation.ts), so one stray key — real
+  // provider documents ship `order`, and `description`/`isOptional` appear on
+  // sibling structures — fails the whole claim with "Params validation failed",
+  // at proof time, after the user has logged in. A denylist cannot be kept in
+  // sync with a provider schema that grows independently of this SDK.
   if (providerData.responseRedactions) {
-    const EXCLUDED_REDACTION_FIELDS = ["order", "id"];
-
     params.responseRedactions = providerData.responseRedactions.map((redaction) => {
-      // Create a new object without hash field and empty jsonPath/xPath
       const cleanedRedaction = {};
 
-      Object.entries(redaction).forEach(([key, value]) => {
-        // Skip fields the attestor does not read
-        if (EXCLUDED_REDACTION_FIELDS.includes(key)) {
-          return;
+      // Empty xPath/jsonPath are omitted rather than sent as "": provider
+      // documents use "" for "not set", and the attestor would try to resolve it.
+      for (const key of ["xPath", "jsonPath", "regex"]) {
+        if (redaction?.[key]) {
+          cleanedRedaction[key] = redaction[key];
         }
+      }
 
-        // Skip empty jsonPath and xPath
-        if ((key === "jsonPath" || key === "xPath") && (!value || value === "")) {
-          return;
-        }
-
-        // Include hash if it has a value, skip if null/undefined
-        if (key === "hash") {
-          if (value) {
-            cleanedRedaction[key] = value;
-          }
-          return;
-        }
-
-        // Keep all other fields
-        cleanedRedaction[key] = value;
-      });
+      // Only `oprf-raw` is supported here; anything else is coerced.
+      const hash = normalizeRedactionHash(redaction?.hash, loggingHub);
+      if (hash) {
+        cleanedRedaction.hash = hash;
+      }
 
       return cleanedRedaction;
     });
   }
 
-  // Process response selections if available
-  if (providerData.responseSelections) {
-    params.responseSelections = providerData.responseSelections.map((selection) => {
-      // Only include value, type, and invert fields
-      const cleanedSelection = {};
+  // NOTE: `responseSelections` is deliberately NOT copied into params. It is a
+  // legacy provider field with no counterpart in the attestor's
+  // HttpProviderParameters schema, and that schema is `additionalProperties:
+  // false` — so including it made every claim for such a provider fail
+  // validation at the attestor. InApp does not send it either.
 
-      if ("value" in selection) {
-        cleanedSelection.value = selection.value;
-      }
-
-      if ("type" in selection) {
-        cleanedSelection.type = selection.type;
-      }
-
-      if ("invert" in selection) {
-        cleanedSelection.invert = selection.invert;
-      }
-
-      return cleanedSelection;
-    });
-  }
-
-  // Add any additional client options if available
   if (providerData.additionalClientOptions) {
     params.additionalClientOptions = providerData.additionalClientOptions;
   }
@@ -374,14 +367,20 @@ export const createClaimObject = async (
 
   params.geoLocation = geoLocation;
 
-  // Create the final claim object
+  // Last gate before the attestor. Both schemas are `additionalProperties:
+  // false` and AJV-enforced server-side, so an unexpected key means
+  // "ERROR_BAD_REQUEST: Params validation failed" at proof time — after the
+  // user has logged in, with nothing in the message naming the offending field.
+  // Catching it here turns that into an actionable local log.
+  assertClaimShape(params, secretParams, loggingHub);
+
   const claimObject = {
     name: "http",
     sessionId: sessionId,
     params,
     secretParams,
     ownerPrivateKey: ownerPrivateKey,
-    zkEngine: providerData?.extensionConfig?.zkEngine || "stwo",
+    zkEngine: providerData?.extensionConfig?.zkEngine || DEFAULT_ZK_ENGINE,
     client: {
       url: "wss://attestor.reclaimprotocol.org:444/ws",
     },
@@ -393,10 +392,20 @@ export const createClaimObject = async (
     claimObject.context = context;
   }
 
-  loggingHub.debug(
-    "[CLAIM-CREATOR] Claim object: " + JSON.stringify(claimObject, null, 2),
-    "claim.creation",
-  );
+  // The full claim. A claim rejected by the attestor ("Params validation
+  // failed", a response match that never matches) can only be diagnosed from
+  // the exact bytes that were sent, and the redacted form blanks `secretParams`,
+  // `paramValues` and `ownerPrivateKey` — the fields most likely to be at fault.
+  //
+  // At FINE this is the raw object; at the default INFO it is redacted, and
+  // `ownerPrivateKey` and the user's live session cookies never leave the
+  // device. No per-call opt-out is involved any more: the level decides.
+  //
+  // Still pass the OBJECT rather than stringifying here — stringifying at the
+  // call site would push the raw claim past redaction at every level.
+  loggingHub.debug("[CLAIM-CREATOR] Claim object:", "claim.creation", {
+    payload: claimObject,
+  });
 
   return claimObject;
 };

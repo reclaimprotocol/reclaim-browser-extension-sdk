@@ -1,12 +1,10 @@
 // Import shared utility functions
-import {
-  getValueFromJsonPath,
-  getValueFromXPath,
-  isJsonFormat,
-  safeJsonParse,
-} from "./params-extractor-utils.js";
+import { isJsonFormat, jsonPathExists, safeJsonParse } from "./params-extractor-utils.js";
+import { makeRegex } from "./make-regex.js";
+// Dependency-free by design, so it is safe for the content bundle — see the
+// "Keep them out of the content bundle" rule for the vendored parsers.
+import { normalizeUrlType, URL_TYPES } from "../provider-normalization.js";
 
-// Escape special regex characters in string
 function escapeSpecialCharacters(input) {
   return input.replace(/[[\]()*+?.,\\^$|#]/g, "\\$&");
 }
@@ -34,7 +32,6 @@ function isJsonSubset(template, actual) {
   return Object.keys(template).every((key) => isJsonSubset(template[key], actual[key]));
 }
 
-// Extract template variables from a string
 function getTemplateVariables(template) {
   const paramRegex = /{{(\w+)}}/g;
   const variables = [];
@@ -47,12 +44,9 @@ function getTemplateVariables(template) {
   return variables;
 }
 
-// Convert template to regex, substituting known parameters
 export function convertTemplateToRegex(template, parameters = {}) {
-  // Escape special regex characters
   let escapedTemplate = escapeSpecialCharacters(template);
 
-  // Find all template variables
   const allVars = getTemplateVariables(template);
   const unsubstitutedVars = [];
 
@@ -77,191 +71,257 @@ export function convertTemplateToRegex(template, parameters = {}) {
   };
 }
 
-// Function to check if a request matches filtering criteria
-function matchesRequestCriteria(request, filterCriteria, parameters = {}) {
-  if (!filterCriteria || !request) return false;
+/**
+ * The gate's stages, in the order they are evaluated.
+ *
+ * A rejected request is otherwise indistinguishable from a request that was
+ * never made: everything that logs about extraction runs only *after* a match,
+ * so a provider whose bodySniff template is stale fails on the session timer
+ * looking exactly like "the user never logged in". Naming the stage a candidate
+ * died at is the only signal that separates the two.
+ *
+ * Order matters — callers compare `MATCH_STAGE_ORDER.indexOf(stage)` to track
+ * the furthest point any request reached against a given matcher.
+ */
+export const MATCH_STAGES = {
+  URL: "url",
+  METHOD: "method",
+  BODY: "body",
+  RESPONSE_MISSING: "responseMissing",
+  RESPONSE_MATCH: "responseMatch",
+  RESPONSE_REDACTION: "responseRedaction",
+  MATCHED: "matched",
+};
+
+export const MATCH_STAGE_ORDER = [
+  MATCH_STAGES.URL,
+  MATCH_STAGES.METHOD,
+  MATCH_STAGES.BODY,
+  MATCH_STAGES.RESPONSE_MISSING,
+  MATCH_STAGES.RESPONSE_MATCH,
+  MATCH_STAGES.RESPONSE_REDACTION,
+  MATCH_STAGES.MATCHED,
+];
+
+const matched = () => ({ matched: true, stage: MATCH_STAGES.MATCHED });
+const rejected = (stage, detail) => ({ matched: false, stage, detail });
+
+function describeRequestCriteria(request, filterCriteria, parameters = {}) {
+  if (!filterCriteria || !request) {
+    return rejected(MATCH_STAGES.URL, "no request or no criteria");
+  }
 
   // 1) URL match: exact, REGEX, or TEMPLATE
-  const urlMatches = (() => {
-    const { url, urlType } = filterCriteria;
-    if (!url) return false;
+  const { url, urlType } = filterCriteria;
+  if (!url) return rejected(MATCH_STAGES.URL, "criteria carries no url");
 
-    const type = (urlType || "EXACT").toUpperCase();
+  // CONSTANT is upstream's default and its name for a plain URL; EXACT is this
+  // SDK's local alias for the same thing. An unknown value is inferred from the
+  // url rather than left unmatchable — this branch used to `return false` for
+  // everything it did not recognise, so a provider carrying the canonical
+  // CONSTANT never matched a single request.
+  const type = normalizeUrlType(urlType, url);
 
-    if (type === "EXACT") {
-      return url === request.url;
-    }
+  const urlMatches =
+    type === URL_TYPES.CONSTANT
+      ? url === request.url
+      : makeRegex(convertTemplateToRegex(url, parameters).pattern).test(request.url);
 
-    if (type === "REGEX" || type === "TEMPLATE") {
-      const { pattern } = convertTemplateToRegex(url, parameters);
+  if (!urlMatches) return rejected(MATCH_STAGES.URL, `${type} url did not match`);
 
-      return new RegExp(pattern).test(request.url);
-    }
-
-    return false;
-  })();
-
-  if (!urlMatches) return false;
   if (request.method?.toUpperCase() !== filterCriteria.method?.toUpperCase()) {
-    return false;
+    return rejected(
+      MATCH_STAGES.METHOD,
+      `expected ${filterCriteria.method}, saw ${request.method}`,
+    );
   }
 
   // 3) Body match (only if enabled)
-  const bodyMatches = (() => {
-    const sniff = filterCriteria.bodySniff;
-    if (!sniff || !sniff.enabled) return true;
-    const bodyTemplate = sniff.template ?? "";
-    const requestBody =
-      typeof request.body === "string" ? request.body : JSON.stringify(request.body ?? {});
+  const sniff = filterCriteria.bodySniff;
+  if (!sniff || !sniff.enabled) return matched();
 
-    // exact body equality satisfies body criterion
-    if (bodyTemplate === requestBody) return true;
+  const bodyTemplate = sniff.template ?? "";
+  const requestBody =
+    typeof request.body === "string" ? request.body : JSON.stringify(request.body ?? {});
 
-    // A literal (var-free) JSON template only needs to be a structural subset
-    // of the real body — a strict string/regex match breaks the moment the
-    // site appends a new field to the payload.
-    if (
-      getTemplateVariables(bodyTemplate).length === 0 &&
-      isJsonFormat(bodyTemplate) &&
-      isJsonFormat(requestBody)
-    ) {
-      const templateJson = safeJsonParse(bodyTemplate);
-      const requestJson = safeJsonParse(requestBody);
-      if (templateJson && requestJson && isJsonSubset(templateJson, requestJson)) {
-        return true;
-      }
+  // exact body equality satisfies body criterion
+  if (bodyTemplate === requestBody) return matched();
+
+  // A literal (var-free) JSON template only needs to be a structural subset
+  // of the real body — a strict string/regex match breaks the moment the
+  // site appends a new field to the payload.
+  if (
+    getTemplateVariables(bodyTemplate).length === 0 &&
+    isJsonFormat(bodyTemplate) &&
+    isJsonFormat(requestBody)
+  ) {
+    const templateJson = safeJsonParse(bodyTemplate);
+    const requestJson = safeJsonParse(requestBody);
+    if (templateJson && requestJson && isJsonSubset(templateJson, requestJson)) {
+      return matched();
     }
-
-    // template/regex body match
-    const { pattern } = convertTemplateToRegex(bodyTemplate, parameters);
-    return new RegExp(pattern).test(requestBody);
-  })();
-
-  return bodyMatches;
-}
-
-// Function to check if response matches criteria
-function matchesResponseCriteria(responseText, matchCriteria, parameters = {}) {
-  if (!matchCriteria || matchCriteria.length === 0) {
-    return true;
   }
 
-  for (const match of matchCriteria) {
+  const { pattern } = convertTemplateToRegex(bodyTemplate, parameters);
+  if (makeRegex(pattern).test(requestBody)) return matched();
+
+  // The actual body is the user's request payload, so only its size travels in
+  // the message. The template is provider-authored and is the thing worth
+  // reading, but it can be long — callers pass it through the log payload.
+  return rejected(
+    MATCH_STAGES.BODY,
+    `bodySniff template (${bodyTemplate.length} chars) did not match the request body (${requestBody.length} chars)`,
+  );
+}
+
+function describeResponseCriteria(responseText, matchCriteria, parameters = {}) {
+  if (!matchCriteria || matchCriteria.length === 0) {
+    return matched();
+  }
+
+  for (let i = 0; i < matchCriteria.length; i++) {
+    const match = matchCriteria[i];
     let pattern;
     if (match.type === "regex") {
       pattern = match.value;
     } else {
       pattern = convertTemplateToRegex(match.value, parameters).pattern;
     }
-    const regex = new RegExp(pattern);
+    const regex = makeRegex(pattern);
     const matches = regex.test(responseText);
-    // Check if match expectation is met
     const matchExpectation = match.invert ? !matches : matches;
     if (!matchExpectation) {
-      return false;
+      // `match.value` is provider-authored (a template with {{param}}
+      // placeholders), so it is safe in the message; the response is not, and
+      // only its size appears.
+      return rejected(
+        MATCH_STAGES.RESPONSE_MATCH,
+        `responseMatch #${i} ${match.invert ? "(inverted) " : ""}"${match.value}" not satisfied by the response (${responseText.length} chars)`,
+      );
     }
   }
 
-  return true;
+  return matched();
 }
 
-// Function to check if response fields match responseRedactions criteria
-function matchesResponseFields(responseText, responseRedactions, logger) {
+// Cheap pre-gate over responseRedactions.
+//
+// This is only a presence check — it produces no values. Authoritative
+// resolution (the attestor's xPath -> jsonPath -> regex chain) runs in the
+// background via ../claim-creator/attestor-extraction.js, which is where the
+// parsers live.
+//
+// Notably there is no xPath branch. There used to be, backed by a
+// regex-on-tag-name stand-in that could not evaluate most real XPath
+// expressions, so it rejected pages the attestor would have accepted. A
+// faithful xPath check needs xpath+parse5, and this module is bundled into a
+// content script injected at document_start on every page of every site — so
+// xPath is deferred to the background rather than approximated here.
+function describeResponseFields(responseText, responseRedactions, logger) {
   if (!responseRedactions || responseRedactions.length === 0) {
-    return true;
+    return matched();
   }
 
-  // Try to parse JSON if the response appears to be JSON
-  let jsonData = null;
-  const isJson = isJsonFormat(responseText);
+  const reject = (detail) => rejected(MATCH_STAGES.RESPONSE_REDACTION, detail);
 
-  if (isJson) {
-    jsonData = safeJsonParse(responseText);
-  }
+  for (let i = 0; i < responseRedactions.length; i++) {
+    const redaction = responseRedactions[i];
+    // An xPath-only redaction can't be pre-checked cheaply; let the background
+    // decide rather than guess.
+    if (redaction.xPath && !redaction.jsonPath && !redaction.regex) {
+      continue;
+    }
 
-  // Check each redaction pattern
-  for (const redaction of responseRedactions) {
-    // If jsonPath is specified and response is JSON
-    if (redaction.jsonPath && jsonData) {
-      try {
-        const value = getValueFromJsonPath(jsonData, redaction.jsonPath);
-        // If we get here but value is undefined, the path doesn't exist
-        if (value === undefined) return false;
-      } catch (error) {
-        logger.error(
-          `[NETWORK-FILTER] Error checking jsonPath ${redaction.jsonPath}: ${error?.message}`,
-          "content.filter",
+    // jsonPath is only meaningful once an xPath has narrowed to a JSON island;
+    // when there's an xPath in play, defer the whole redaction.
+    if (redaction.jsonPath && !redaction.xPath) {
+      if (!isJsonFormat(responseText)) {
+        return reject(
+          `redaction #${i} needs jsonPath ${redaction.jsonPath} but the response is not JSON (${responseText.length} chars)`,
         );
-        return false;
       }
-    }
-    // If xPath is specified and response is not JSON (assumed to be HTML)
-    else if (redaction.xPath && !isJson) {
-      try {
-        const value = getValueFromXPath(responseText, redaction.xPath);
-        if (!value) return false;
-      } catch (error) {
-        logger.error(
-          `[NETWORK-FILTER] Error checking xPath ${redaction.xPath}: ${error?.message}`,
-          "content.filter",
-        );
-        return false;
+      if (!jsonPathExists(responseText, redaction.jsonPath)) {
+        return reject(`redaction #${i} jsonPath ${redaction.jsonPath} is absent from the response`);
       }
+      continue;
     }
-    // If regex is specified
-    else if (redaction.regex) {
+
+    // A regex nested under an xPath applies to the selected element, not the
+    // whole body, so it can't be tested here either.
+    if (redaction.regex && !redaction.xPath) {
       try {
-        const regex = new RegExp(redaction.regex);
-        if (!regex.test(responseText)) return false;
+        if (!makeRegex(redaction.regex).test(responseText)) {
+          return reject(`redaction #${i} regex ${redaction.regex} did not match the response`);
+        }
       } catch (error) {
-        logger.error(
+        logger?.error?.(
           `[NETWORK-FILTER] Error checking regex ${redaction.regex}: ${error?.message}`,
           "content.filter",
         );
-        return false;
+        return reject(`redaction #${i} regex ${redaction.regex} is invalid: ${error?.message}`);
       }
     }
   }
 
   // All checks passed
-  return true;
+  return matched();
 }
 
-// Main filtering function
-export const filterRequest = (request, filterCriteria, parameters = {}, logger) => {
+/**
+ * The gate, with a reason attached.
+ *
+ * @returns {{matched: boolean, stage: string, detail?: string}} `stage` is the
+ *  point evaluation stopped — `MATCH_STAGES.MATCHED` on success, otherwise the
+ *  check that rejected the request. `detail` never carries response or request
+ *  bodies, only provider-authored patterns and sizes: it becomes a log line,
+ *  and log lines are not redacted.
+ */
+export const describeRequestMatch = (request, filterCriteria, parameters = {}, logger) => {
   try {
     // First check if request matches criteria
-    if (!matchesRequestCriteria(request, filterCriteria, parameters)) {
-      return false;
-    }
+    const requestVerdict = describeRequestCriteria(request, filterCriteria, parameters);
+    if (!requestVerdict.matched) return requestVerdict;
 
     // If criteria requires response validation but we have no response, reject
+    const needsResponse =
+      filterCriteria.responseMatches?.length > 0 || filterCriteria.responseRedactions?.length > 0;
+    if (needsResponse && !request.responseText) {
+      // Routine rather than fatal: the content script pairs a request with its
+      // response asynchronously, so this is the normal state on the tick
+      // between the two.
+      return rejected(MATCH_STAGES.RESPONSE_MISSING, "no response body paired with this request");
+    }
+
     if (filterCriteria.responseMatches && filterCriteria.responseMatches.length > 0) {
-      if (!request.responseText) {
-        return false;
-      }
-      if (
-        !matchesResponseCriteria(request.responseText, filterCriteria.responseMatches, parameters)
-      ) {
-        return false;
-      }
+      const responseVerdict = describeResponseCriteria(
+        request.responseText,
+        filterCriteria.responseMatches,
+        parameters,
+      );
+      if (!responseVerdict.matched) return responseVerdict;
     }
 
-    // Check if the response fields match the responseRedactions criteria
     if (filterCriteria.responseRedactions && filterCriteria.responseRedactions.length > 0) {
-      if (!request.responseText) {
-        return false;
-      }
-      if (!matchesResponseFields(request.responseText, filterCriteria.responseRedactions, logger)) {
-        return false;
-      }
+      const fieldsVerdict = describeResponseFields(
+        request.responseText,
+        filterCriteria.responseRedactions,
+        logger,
+      );
+      if (!fieldsVerdict.matched) return fieldsVerdict;
     }
 
-    return true;
+    return matched();
   } catch (error) {
-    logger.error("[NETWORK-FILTER] Error filtering request: " + error?.message, "content.filter");
-    return false;
+    logger?.error?.(
+      "[NETWORK-FILTER] Error filtering request: " + error?.message,
+      "content.filter",
+    );
+    return rejected(MATCH_STAGES.URL, `threw: ${error?.message}`);
   }
 };
+
+// Main filtering function
+export const filterRequest = (request, filterCriteria, parameters = {}, logger) =>
+  describeRequestMatch(request, filterCriteria, parameters, logger).matched;
 
 //tryWithNonce/tryWithTT/tryPlain

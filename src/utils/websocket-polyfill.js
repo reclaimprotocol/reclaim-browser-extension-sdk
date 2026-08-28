@@ -20,7 +20,6 @@ if (!isBackgroundContext) {
     constructor(url, protocols) {
       super(url, protocols);
 
-      // Add event handling compatibility
       this.addEventListener("error", (event) => {
         if (typeof this.onerror === "function") {
           this.onerror(event);
@@ -46,7 +45,6 @@ if (!isBackgroundContext) {
       });
     }
 
-    // Add a promise-based send method expected by some libraries
     sendPromise(data) {
       return new Promise((resolve, reject) => {
         try {

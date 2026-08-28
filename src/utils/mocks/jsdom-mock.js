@@ -53,7 +53,6 @@ module.exports = {
       return "<!DOCTYPE html><html><head></head><body></body></html>";
     }
 
-    // Static method for creating virtual console
     static createVirtualConsole() {
       return {
         on: () => {},

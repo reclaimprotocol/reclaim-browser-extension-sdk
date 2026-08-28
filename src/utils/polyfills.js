@@ -13,12 +13,10 @@ const getGlobalObject = () => {
   return Function("return this")();
 };
 
-// Get the global object
 const global = getGlobalObject();
 
 // Check if we're in a service worker or browser environment
 const isServiceWorker = typeof window === "undefined";
-// Determine if we're in content script context
 const isContentScript = typeof document !== "undefined" && document.contentType !== undefined;
 
 // Make Buffer and process available globally
@@ -31,15 +29,8 @@ if (typeof global.WebSocket === "undefined" && !isContentScript) {
   try {
     const { WebSocket } = require("./websocket-polyfill");
     global.WebSocket = WebSocket;
-    console.log("[POLYFILLS] WebSocket polyfill added to global");
   } catch (e) {
     console.warn("[POLYFILLS] Failed to load WebSocket polyfill:", e);
-  }
-} else {
-  if (!isContentScript) {
-    console.log("[POLYFILLS] Using native WebSocket implementation");
-  } else {
-    console.log("[POLYFILLS] Skipping WebSocket in content script context");
   }
 }
 
@@ -56,7 +47,6 @@ if (typeof global.require !== "function") {
       case "ws":
         // Don't return WebSocket in content script context
         if (isContentScript) {
-          console.log("[POLYFILLS] Blocking ws module in content script");
           return {}; // Empty implementation for content script
         }
         try {
@@ -91,7 +81,6 @@ if (typeof global.require !== "function") {
     if (moduleName === "ws") {
       // Don't return WebSocket in content script context
       if (isContentScript) {
-        console.log("[POLYFILLS] Blocking ws module in content script");
         return {}; // Empty implementation for content script
       }
       try {
@@ -132,7 +121,6 @@ if (typeof global.global === "undefined") {
   global.global = global;
 }
 
-// Handle crypto.getRandomValues polyfill if needed
 if (typeof global.crypto === "undefined") {
   global.crypto = {};
 }
@@ -150,7 +138,6 @@ if (typeof global.crypto.getRandomValues === "undefined") {
 // Handle other potential missing WebCrypto APIs
 if (typeof global.crypto.subtle === "undefined") {
   console.warn("[POLYFILLS] WebCrypto subtle API not available. Some functionality may not work.");
-  // Create a minimal fallback for subtle crypto
   global.crypto.subtle = {
     digest: async (algorithm, data) => {
       console.warn(`[POLYFILLS] Crypto subtle digest (${algorithm}) called with browser fallback`);
@@ -160,7 +147,6 @@ if (typeof global.crypto.subtle === "undefined") {
         0,
       );
 
-      // Convert to a byte array of appropriate length
       const result = new Uint8Array(32); // SHA-256 length
       for (let i = 0; i < 32; i++) {
         result[i] = (hashInt >> (i * 8)) & 0xff;
@@ -189,7 +175,6 @@ if (!isServiceWorker) {
   // Override URL constructor to handle node:url protocol
   const OriginalURL = global.URL;
   function CustomURL(url, base) {
-    // Handle node:url protocol
     if (typeof url === "string" && url.startsWith("node:")) {
       url = url.replace(/^node:/, "");
     }

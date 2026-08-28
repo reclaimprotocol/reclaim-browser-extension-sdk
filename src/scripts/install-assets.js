@@ -76,7 +76,6 @@ async function main() {
   console.log("[reclaim] copying circuits to public/browser-rpc/resources...");
   copyDir(zkResourcesDir, path.join(publicDir, "browser-rpc", "resources"));
 
-  // 2) Copy SDK assets into public/reclaim-browser-extension-sdk
   console.log("[reclaim] copying assets...");
   const targetBase = path.join(publicDir, "reclaim-browser-extension-sdk");
 
@@ -90,10 +89,8 @@ async function main() {
     path.join(targetBase, "content", "components"),
   );
 
-  // interceptor
   copyDir(path.join(sdkBuild, "interceptor"), path.join(targetBase, "interceptor"));
 
-  // offscreen
   copyDir(path.join(sdkBuild, "offscreen"), path.join(targetBase, "offscreen"));
 
   // snarkjs runtime

@@ -1,62 +1,43 @@
 /**
- * Utility functions for extracting values from JSON and HTML responses
- * Shared between network-filter.js and params-extractor.js
+ * Shared JSON helpers for the content-script request filter.
+ *
+ * The xPath/jsonPath value extractors that used to live here are gone: they
+ * diverged from the attestor (a regex-on-tag-name "XPath", and a JSONPath that
+ * returned a re-serialized JS value rather than the raw response slice), which
+ * meant a provider path that worked in the attestor and the InApp SDK could
+ * silently fail here. Authoritative extraction now lives in
+ * ./attestor-extraction.js on top of the vendored attestor code.
  */
 
 import { JSONPath } from "jsonpath-plus";
 
 /**
- * Extract values from JSON response using jsonPath
- * @param {Object} jsonData - Parsed JSON response
- * @param {string} jsonPath - JSONPath expression (e.g., $.userName, $.profile.electronicAddresses[0].email)
- * @returns {any} Extracted value or null if not found
+ * Does this jsonPath resolve against this response body?
+ *
+ * Uses the same JSONPath options as the attestor's `extractJSONValueIndexes`
+ * (wrap/resultType/eval/ignoreEvalErrors), so the content-script gate agrees
+ * with the attestor about whether a path exists. It deliberately stops at
+ * "does a pointer come back" — turning the pointer into a byte range needs
+ * esprima, and that only happens in the background, where the authoritative
+ * extraction runs.
+ *
+ * @param {string} responseText - raw response body
+ * @returns {boolean}
  */
-export const getValueFromJsonPath = (jsonData, jsonPath) => {
+export const jsonPathExists = (responseText, jsonPath) => {
   try {
-    const results = JSONPath({ path: jsonPath, json: jsonData });
-    const finalResult = results?.[0];
-    if (finalResult === undefined) {
-      return undefined;
-    } else if (finalResult === null) {
-      return "null";
-    }
-    return finalResult;
-  } catch (error) {
-    console.error(
-      `[PARAMS-EXTRACTOR-UTILS] Error extracting JSON value with path ${jsonPath}:`,
-      error,
-    );
-    return undefined;
-  }
-};
-
-/**
- * Extract values from HTML response using XPath (simplified)
- * @param {string} htmlString - HTML string
- * @param {string} xPath - XPath expression
- * @returns {string|null|undefined} Extracted value or null if not found
- */
-export const getValueFromXPath = (htmlString, xPath) => {
-  // This is a simplified implementation
-  // For proper XPath parsing, a library would be needed
-  try {
-    // Extract with regex based on the xPath pattern
-    // This is a very basic implementation and won't work for all XPath expressions
-    const cleanedXPath = xPath.replace(/^\/\//, "").replace(/\/@/, " ");
-    const parts = cleanedXPath.split("/");
-    const element = parts[parts.length - 1];
-
-    // Simple regex to find elements with content
-    const regex = new RegExp(`<${element}[^>]*>(.*?)<\/${element}>`, "i");
-    const match = htmlString.match(regex);
-
-    return match ? match[1] : undefined;
-  } catch (error) {
-    console.error(
-      `[PARAMS-EXTRACTOR-UTILS] Error extracting HTML value with XPath ${xPath}:`,
-      error,
-    );
-    return undefined;
+    const pointers = JSONPath({
+      path: jsonPath,
+      json: JSON.parse(responseText),
+      wrap: false,
+      resultType: "pointer",
+      eval: "safe",
+      ignoreEvalErrors: true,
+    });
+    if (!pointers) return false;
+    return Array.isArray(pointers) ? pointers.length > 0 : true;
+  } catch {
+    return false;
   }
 };
 

@@ -4,17 +4,21 @@
  */
 
 import { SESSION_TIMER_DURATION_MS } from "./constants/config";
+// Safe to import directly: background.js is the only importer of this module, so
+// this cannot start the hub in a consumer page. These lines used to be bare
+// console.log — the one part of the flow visible locally and unqueryable
+// remotely, ignoring both consoleEnabled and logLevel.
+import { loggingHub } from "./logger/LoggingHub";
+import { EVENT_TYPES } from "./logger/constants";
 
 export class SessionTimerManager {
   constructor() {
-    // Timer for session
     this.sessionTimer = null;
     this.sessionTimerDuration = SESSION_TIMER_DURATION_MS;
     this.sessionTimerPaused = false;
     this.sessionTimerRemainingTime = 0;
     this.sessionTimerStartTime = 0;
 
-    // Callback for session timeout
     this.onSessionTimeout = null;
   }
 
@@ -30,20 +34,23 @@ export class SessionTimerManager {
    * Start session timer (default 30 seconds)
    */
   startSessionTimer() {
-    console.log("[SESSION TIMER] Starting session timer");
-    // Clear any existing timer
+    loggingHub.debug("[SESSION TIMER] Starting session timer", "background.session");
     this.clearSessionTimer();
 
     this.sessionTimerStartTime = Date.now();
     this.sessionTimer = setTimeout(() => {
-      // Check if timer is still valid before firing timeout
       if (this.sessionTimer !== null) {
-        console.error("[SESSION TIMER] Session timer expired");
+        loggingHub.error("[SESSION TIMER] Session timer expired", "background.session", {
+          eventType: EVENT_TYPES.CLAIM_CREATION_TIMED_OUT_EXCEPTION,
+        });
         if (this.onSessionTimeout) {
           this.onSessionTimeout("Session timeout: No proofs generated within time limit");
         }
       } else {
-        console.log("[SESSION TIMER] Timer was already cleared, ignoring timeout");
+        loggingHub.debug(
+          "[SESSION TIMER] Timer was already cleared, ignoring timeout",
+          "background.session",
+        );
       }
     }, this.sessionTimerDuration);
   }
@@ -52,7 +59,7 @@ export class SessionTimerManager {
    * Reset session timer (called after successful proof generation)
    */
   resetSessionTimer() {
-    console.log("[SESSION TIMER] Resetting session timer");
+    loggingHub.debug("[SESSION TIMER] Resetting session timer", "background.session");
     this.clearSessionTimer();
     this.startSessionTimer();
   }
@@ -72,12 +79,11 @@ export class SessionTimerManager {
    */
   pauseSessionTimer() {
     if (this.sessionTimer && !this.sessionTimerPaused) {
-      console.log("[SESSION TIMER] Pausing session timer");
+      loggingHub.debug("[SESSION TIMER] Pausing session timer", "background.session");
       // Calculate remaining time
       const elapsedTime = Date.now() - this.sessionTimerStartTime;
       this.sessionTimerRemainingTime = Math.max(0, this.sessionTimerDuration - elapsedTime);
 
-      // Clear the current timer
       this.clearSessionTimer();
       this.sessionTimerPaused = true;
     }
@@ -88,13 +94,15 @@ export class SessionTimerManager {
    */
   resumeSessionTimer() {
     if (this.sessionTimerPaused) {
-      console.log(
-        "[SESSION TIMER] Resuming session timer with remaining time:",
-        this.sessionTimerRemainingTime,
+      loggingHub.debug(
+        `[SESSION TIMER] Resuming session timer with ${this.sessionTimerRemainingTime}ms remaining`,
+        "background.session",
       );
 
       this.sessionTimer = setTimeout(() => {
-        console.error("[SESSION TIMER] Session timer expired");
+        loggingHub.error("[SESSION TIMER] Session timer expired", "background.session", {
+          eventType: EVENT_TYPES.CLAIM_CREATION_TIMED_OUT_EXCEPTION,
+        });
         if (this.onSessionTimeout) {
           this.onSessionTimeout("Session timeout: No proofs generated within time limit");
         }
@@ -110,7 +118,7 @@ export class SessionTimerManager {
    * Clear all timers
    */
   clearAllTimers() {
-    console.log("[SESSION TIMER] Clearing all timers");
+    loggingHub.debug("[SESSION TIMER] Clearing all timers", "background.session");
     this.clearSessionTimer();
     this.sessionTimerPaused = false;
     this.sessionTimerRemainingTime = 0;
