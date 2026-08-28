@@ -475,11 +475,17 @@ class LoggingHub {
           : resolvedLevel === "WARNING"
             ? console.warn
             : console.log;
-      const prefix = `[${resolvedLevel}] [${context}]${type ? ` [${type}]` : ""} ${message}`;
+      // Literal format string, `message` passed as an argument — see the note
+      // in log-bridge.js. A message carrying "%s" otherwise consumes the
+      // payload and corrupts the line.
+      const format = type ? "[%s] [%s] [%s] %s" : "[%s] [%s] %s";
+      const parts = type
+        ? [resolvedLevel, context, type, message]
+        : [resolvedLevel, context, message];
       if (hasPayload) {
-        consoleFn(prefix, consolePayload);
+        consoleFn(format, ...parts, consolePayload);
       } else {
-        consoleFn(prefix);
+        consoleFn(format, ...parts);
       }
     }
 

@@ -87,15 +87,18 @@ class RemoteLogger {
     const resolved = normalizeLogLevel(level);
     const fn =
       resolved === "SEVERE" ? console.error : resolved === "WARNING" ? console.warn : console.log;
-    const prefix = `[${resolved}] [${this.source}]${type ? ` [${type}]` : ""} ${message}`;
     const shown =
       payload !== undefined && normalizeLogLevel(this.config.logLevel) !== "FINE"
         ? redact(payload)
         : payload;
+    // Literal format string, `message` passed as an argument — see the note in
+    // log-bridge.js.
+    const format = type ? "[%s] [%s] [%s] %s" : "[%s] [%s] %s";
+    const parts = type ? [resolved, this.source, type, message] : [resolved, this.source, message];
     if (payload !== undefined) {
-      fn(prefix, shown);
+      fn(format, ...parts, shown);
     } else {
-      fn(prefix);
+      fn(format, ...parts);
     }
     return true;
   }

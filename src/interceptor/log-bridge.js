@@ -128,11 +128,16 @@ export function createPageLogger(context, category) {
     if (shouldConsole(level)) {
       const fn =
         level === "SEVERE" ? console.error : level === "WARNING" ? console.warn : console.log;
-      const prefix = `[${level}] [${context}] ${message}`;
+      // The format string is a literal and `message` is an ARGUMENT, never
+      // interpolated into it. `message` is built from page-world content, and
+      // the console parses %s/%c/%o in its first argument: a message
+      // containing "%s" swallowed the payload and spliced it into the middle
+      // of the text, and "%c" let a page inject CSS into its own console.
+      // Substituted arguments are not re-parsed, so this closes both.
       if (payload !== undefined) {
-        fn(prefix, payload);
+        fn("[%s] [%s] %s", level, context, message, payload);
       } else {
-        fn(prefix);
+        fn("[%s] [%s] %s", level, context, message);
       }
     }
 

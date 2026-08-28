@@ -196,7 +196,9 @@ describe("redaction follows the level, not the destination", () => {
     }
 
     assert.equal(captured.length, 1);
-    const shown = captured[0][1];
+    // Last argument: the line is emitted as a literal format string plus its
+    // substitutions, so the payload is no longer at index 1.
+    const shown = captured[0].at(-1);
     // Still an object, so devtools renders a tree — but a redacted copy, and
     // emphatically not the caller's live object.
     assert.notEqual(shown, TEMPLATE, "the console must not get the live object at INFO");
@@ -220,7 +222,7 @@ describe("redaction follows the level, not the destination", () => {
     const line = hub.logs[0].logLine;
     assert.ok(line.includes("0xsignaturevalue"), "FINE ships the real value remotely");
     assert.ok(line.includes("1234567890"));
-    assert.equal(captured[0][1], TEMPLATE, "the console gets the live object at FINE");
+    assert.equal(captured[0].at(-1), TEMPLATE, "the console gets the live object at FINE");
   });
 
   it("caps the redacted line, and allows a much longer raw one", () => {
