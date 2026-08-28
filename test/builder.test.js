@@ -19,10 +19,16 @@ import {
 const VC_ID = "550e8400-e29b-41d4-a716-446655440000";
 
 test("selects Builder only for an exact api=2 URL with a sessionId", () => {
-  const builder = parseVerificationUrl("https://verify.example.test/?api=2&sessionId=session-1");
+  const builder = parseVerificationUrl(
+    "https://verify.example.test/?api=2&sessionId=session-1&diag=1",
+  );
   assert.deepEqual(
-    { mode: builder.mode, sessionId: builder.sessionId },
-    { mode: "builder", sessionId: "session-1" },
+    {
+      mode: builder.mode,
+      sessionId: builder.sessionId,
+      diagnosticMode: builder.diagnosticMode,
+    },
+    { mode: "builder", sessionId: "session-1", diagnosticMode: true },
   );
 
   assert.equal(
@@ -97,6 +103,23 @@ test("uses only Builder bridge routes and sends the Verification Client header",
   }
 });
 
+test("preserves unauthenticated Builder proof creation when attestor auth is not configured", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    new Response(null, { status: 200, headers: { "Content-Length": "0" } });
+
+  try {
+    const client = createBuilderBridgeClient({
+      backendUrl: "https://bridge.example.test",
+      verificationClientId: VC_ID,
+    });
+
+    assert.equal(await client.getAttestorAuth("session-1"), null);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("adapts Builder recipes without inventing request identities", () => {
   const provider = builderRecipeToProviderData(
     {
@@ -107,6 +130,10 @@ test("adapts Builder recipes without inventing request identities", () => {
         {
           url: "https://provider.example.test/api/items/{{id}}",
           method: "DELETE",
+          headers: {
+            "x-api-key": "{{context.SECRET_apiKey}}",
+            "x-client": "reclaim-extension",
+          },
           responseMatches: [{ type: "contains", value: "optional", isOptional: true }],
           responseRedactions: [
             { jsonPath: "$.independent" },
@@ -124,6 +151,10 @@ test("adapts Builder recipes without inventing request identities", () => {
   assert.equal(provider.requestData[0].urlType, "TEMPLATE");
   assert.equal(provider.requestData[0].builderRequestId, undefined);
   assert.equal(provider.requestData[0].requestHash, "builder:0:0");
+  assert.deepEqual(provider.requestData[0].headers, {
+    "x-api-key": "{{context.SECRET_apiKey}}",
+    "x-client": "reclaim-extension",
+  });
   assert.equal(provider.extensionConfig.allowInjectionsViaChromeScripting, true);
   assert.deepEqual(provider.requestData[0].responseRedactions, [
     { jsonPath: "$.independent" },

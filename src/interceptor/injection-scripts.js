@@ -3,9 +3,14 @@ import { createPageLogger } from "./log-bridge";
 // The window.Reclaim surface is installed at module scope, before the IIFE
 // below builds its own logger, so it needs one of its own.
 const apiLogger = createPageLogger("injection", "injection.api");
+const providerScriptLogger = createPageLogger("provider_script", "provider_script");
 
 window.Reclaim = window.Reclaim || {};
 let __reclaimParams = {};
+
+window.Reclaim.log = function (...args) {
+  providerScriptLogger.info(...args);
+};
 
 try {
   const ls = localStorage.getItem("reclaimBrowserExtensionParameters");
@@ -48,6 +53,21 @@ window.Reclaim.canExpectManyClaims = function (flag) {
       { action: "RECLAIM_SET_EXPECT_MANY_CLAIMS", data: { expectMany: !!flag } },
       "*",
     );
+  } catch {}
+};
+
+window.Reclaim.requiresUserInteraction = function (flag) {
+  try {
+    window.postMessage(
+      { action: "RECLAIM_REQUIRES_USER_INTERACTION", data: { required: !!flag } },
+      "*",
+    );
+  } catch {}
+};
+
+window.Reclaim.reportUserLoggedIn = function () {
+  try {
+    window.postMessage({ action: "RECLAIM_REPORT_USER_LOGGED_IN", data: {} }, "*");
   } catch {}
 };
 

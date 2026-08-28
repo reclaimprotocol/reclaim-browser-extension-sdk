@@ -83,7 +83,7 @@ export function parseVerificationUrl(value) {
     throw new Error("Builder verification URLs require a non-empty sessionId");
   }
 
-  return { mode: "builder", sessionId, url };
+  return { mode: "builder", sessionId, diagnosticMode: url.searchParams.get("diag") === "1", url };
 }
 
 export function createBuilderBridgeClient({ backendUrl = BACKEND_URL, verificationClientId }) {
@@ -101,10 +101,17 @@ export function createBuilderBridgeClient({ backendUrl = BACKEND_URL, verificati
     },
 
     async getAttestorAuth(sessionId) {
-      const { data: body } = await createBuilderAttestorAuth({
+      const response = await createBuilderAttestorAuth({
         ...requestOptions(sessionId),
         body: {},
       });
+      if (
+        response.response.status === 204 ||
+        response.response.headers.get("Content-Length") === "0"
+      ) {
+        return null;
+      }
+      const body = response.data;
       if (!body) return null;
 
       const encoded = decodeAuthorizationEnvelope(body);
@@ -162,9 +169,7 @@ export function createBuilderBridgeClient({ backendUrl = BACKEND_URL, verificati
     const generatedBaseUrl = generatedBuilderBridgeClient.getConfig().baseUrl;
     if (!generatedBaseUrl) throw new Error("Generated Builder bridge client has no server URL");
     return {
-      baseUrl: new URL(generatedBaseUrl, `${baseUrl}/`)
-        .toString()
-        .replace(/\/+$/, ""),
+      baseUrl: new URL(generatedBaseUrl, `${baseUrl}/`).toString().replace(/\/+$/, ""),
       path: { sessionId: normalized },
       headers: { "x-reclaim-vc-id": vcId },
       throwOnError: true,
@@ -220,6 +225,9 @@ export function builderRecipeToProviderData(recipe, providerOrdinal) {
           : [],
         ...(requestBodyTemplate
           ? { bodySniff: { enabled: true, template: requestBodyTemplate } }
+          : {}),
+        ...(request.headers && typeof request.headers === "object"
+          ? { headers: request.headers }
           : {}),
         ...(request.credentials ? { credentials: request.credentials } : {}),
         ...(request.writeRedactionMode ? { writeRedactionMode: request.writeRedactionMode } : {}),

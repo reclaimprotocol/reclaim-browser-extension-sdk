@@ -237,6 +237,22 @@ export default function initBackground() {
           BUILDER_EVENTS.REQUEST_MATCHED,
           builderRequestEventData(ctx, criteria),
         );
+        if (ctx.builder.diagnosticMode) {
+          let observedUrl = request.url;
+          try {
+            const parsed = new URL(request.url);
+            observedUrl = `${parsed.origin}${parsed.pathname}`;
+          } catch {}
+          await ctx.builder.client.reportEventBestEffort(
+            ctx.builder.sessionId,
+            BUILDER_EVENTS.NETWORK_REQUEST_OBSERVED,
+            {
+              ...builderRequestEventData(ctx, criteria),
+              httpMethod: request.method,
+              url: observedUrl,
+            },
+          );
+        }
       }
 
       let claimData = null;

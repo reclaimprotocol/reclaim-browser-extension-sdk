@@ -34,6 +34,8 @@ export interface VerificationUrl {
   mode: "legacy" | "builder";
   /** Present only for a Builder URL with a non-empty sessionId. */
   sessionId?: string;
+  /** Exact `diag=1` on a Builder URL enables DEBUG diagnostics. */
+  diagnosticMode?: boolean;
   url: URL;
 }
 

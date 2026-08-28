@@ -43,6 +43,9 @@ export type BuilderSession = {
   claimantClientId?: string | null;
   claimantDetails?: ClaimantDetails;
   claimantDetailsUpdatedAt?: string;
+  themeId?: string;
+  theme?: BuilderTheme;
+  preferredLocale?: string;
   verificationClientId: string;
   verificationClientIssuer: string;
   verificationClientJwksUrl: string;
@@ -53,6 +56,45 @@ export type BuilderSession = {
   completedAt?: string;
   mode: "SANDBOX" | "LIVE";
   preferAiAgent?: boolean;
+};
+
+/**
+ * Locale-to-string values normalized by the bridge. Builder string values use the theme's preferred locale, or `en` when no preference exists. The wrapper keeps generated clients type-safe in Dart and TypeScript.
+ */
+export type LocalizedText = {
+  values: {
+    [key: string]: string;
+  };
+};
+
+export type BuilderConsent = {
+  title?: LocalizedText;
+  body?: Array<LocalizedText>;
+  disclaimer?: LocalizedText;
+  continueButtonLabel?: LocalizedText;
+};
+
+export type BuilderTheme = {
+  id: string;
+  orgId: string;
+  label: string;
+  iconUrl?: string;
+  preferredLocale?: string;
+  consent?: BuilderConsent;
+  /**
+   * Platform-neutral visual and copy configuration from Builder. The bridge preserves this object exactly; Verification Clients decode it through their existing theme model.
+   */
+  clientTheme?: JsonObject;
+  termsAndConditionLink?: string;
+  privacyPolicyLink?: string;
+  status: "ACTIVE" | "ARCHIVED";
+  createMetadata: ActorMetadata;
+  updateMetadata: ActorMetadata;
+};
+
+export type ActorMetadata = {
+  id?: string | null;
+  doneAt?: string;
 };
 
 export type BuilderBootstrap = {
@@ -79,6 +121,9 @@ export type RequestSelection = {
   url: string;
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   requestBodyTemplate?: string;
+  headers?: {
+    [key: string]: string;
+  };
   credentials?: "omit" | "same-origin" | "include";
   writeRedactionMode?: "zk" | "key-update";
   additionalClientOptions?: {
@@ -92,6 +137,9 @@ export type RequestSelectionTemplate = {
   url: string;
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   requestBodyTemplate?: string;
+  headers?: {
+    [key: string]: string;
+  };
   credentials?: "omit" | "same-origin" | "include";
   writeRedactionMode?: "zk" | "key-update";
   additionalClientOptions?: {
@@ -129,7 +177,7 @@ export type ClaimantDimensions = {
 };
 
 export type ClaimantDetails = {
-  claimantClientId?: string;
+  claimantClientId: string;
   claimantId?: string;
   collectedAt?: string;
   apiClient?: string;
@@ -700,7 +748,7 @@ export type CreateBuilderAttestorAuthError =
 
 export type CreateBuilderAttestorAuthResponses = {
   /**
-   * Base64-encoded legacy attestor authorization
+   * Base64-encoded legacy attestor authorization. The response body is empty when ATTESTOR_AUTH_PRIVATE_KEY isn't configured; clients must then create the claim without an authRequest.
    */
   200: string;
 };

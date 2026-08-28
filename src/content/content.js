@@ -948,6 +948,29 @@ class ReclaimContentScript {
       return;
     }
 
+    if (
+      action === RECLAIM_SDK_ACTIONS.REQUIRES_USER_INTERACTION &&
+      typeof data?.required === "boolean"
+    ) {
+      chrome.runtime.sendMessage({
+        action: MESSAGE_ACTIONS.UPDATE_USER_INTERACTION_REQUIREMENT,
+        source: MESSAGE_SOURCES.CONTENT_SCRIPT,
+        target: MESSAGE_SOURCES.BACKGROUND,
+        data: { required: data.required },
+      });
+      return;
+    }
+
+    if (action === RECLAIM_SDK_ACTIONS.REPORT_USER_LOGGED_IN) {
+      chrome.runtime.sendMessage({
+        action: MESSAGE_ACTIONS.REPORT_USER_LOGGED_IN,
+        source: MESSAGE_SOURCES.CONTENT_SCRIPT,
+        target: MESSAGE_SOURCES.BACKGROUND,
+        data: {},
+      });
+      return;
+    }
+
     if (action === RECLAIM_SDK_ACTIONS.PARAMETERS_GET) {
       chrome.runtime.sendMessage(
         {

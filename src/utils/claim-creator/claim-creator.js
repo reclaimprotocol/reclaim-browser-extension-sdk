@@ -160,8 +160,12 @@ export const createClaimObject = async (
   params.url = providerData.urlType === "TEMPLATE" ? providerData.url : request.url;
   params.method = request.method || "GET";
 
+  // Static recipe headers override the captured value. Cookies remain attached
+  // separately through request.cookieStr.
+  const requestHeaders = { ...(request.headers || {}), ...(providerData.headers || {}) };
+
   // Process headers - split between public and secret
-  if (request.headers) {
+  if (Object.keys(requestHeaders).length > 0) {
     const publicHeaders = {
       "Sec-Fetch-Mode": "same-origin",
       "Sec-Fetch-Site": "same-origin",
@@ -183,7 +187,7 @@ export const createClaimObject = async (
       }
     }
 
-    Object.entries(request.headers).forEach(([key, value]) => {
+    Object.entries(requestHeaders).forEach(([key, value]) => {
       const lowerKey = key.toLowerCase();
       if (PUBLIC_HEADERS.includes(lowerKey)) {
         publicHeaders[key] = value;

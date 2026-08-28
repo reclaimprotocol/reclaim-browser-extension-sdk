@@ -12,6 +12,7 @@ import {
   builderRecipeToProviderData,
   builderTemplateParameters,
 } from "../utils/builder";
+import { getClientSource } from "../utils/logger/client-source";
 
 const BUILDER_CLAIMANT_ID_STORAGE_KEY = "reclaim_builder_claimant_client_id";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -661,10 +662,14 @@ export async function cancelSession(ctx) {
     // Builder reports cancellation through the bridge. Legacy sessions keep
     // their status update because its protocol has no cancellation state.
     if (ctx.builder) {
-      await ctx.builder.client.reportEventBestEffort(ctx.sessionId, BUILDER_EVENTS.VERIFICATION_CANCELLED, {
-        initiator: "USER",
-        cancellationReason: "USER_CANCELLED",
-      });
+      await ctx.builder.client.reportEventBestEffort(
+        ctx.sessionId,
+        BUILDER_EVENTS.VERIFICATION_CANCELLED,
+        {
+          initiator: "USER",
+          cancellationReason: "USER_CANCELLED",
+        },
+      );
     } else if (!ctx.isBuilderMode && ctx.sessionId) {
       try {
         loggingHub.info(
@@ -803,6 +808,7 @@ export async function cancelSession(ctx) {
 async function prepareBuilderProvider(ctx, templateData) {
   const config = templateData.builder;
   if (!ctx.builder) {
+    ctx.loggingHub.setConfig({ logLevel: config.diagnosticMode ? "DEBUG" : "INFO" });
     const claimantClientId = await resolveClaimantClientId(config.claimantClientId);
     const client = ctx.createBuilderBridgeClient({
       backendUrl: config.backendUrl,
@@ -821,14 +827,54 @@ async function prepareBuilderProvider(ctx, templateData) {
       providerOrdinal: 0,
       claimantClientId,
       claimantDetails: config.claimantDetails || {},
+      diagnosticMode: config.diagnosticMode === true,
       terminal: false,
     };
 
-    await client.reportEventBestEffort(config.sessionId, BUILDER_EVENTS.VERIFICATION_CLIENT_OPENED, {
-      claimantClientId,
-    });
+    await client.reportEventBestEffort(
+      config.sessionId,
+      BUILDER_EVENTS.VERIFICATION_CLIENT_OPENED,
+      {
+        claimantClientId,
+      },
+    );
+    if (config.diagnosticMode) {
+      await client.reportEventBestEffort(
+        config.sessionId,
+        BUILDER_EVENTS.VERIFICATION_DIAGNOSTICS_MODE_CHANGED,
+        {
+          previousMode: "STANDARD",
+          mode: "SENSITIVE",
+          sensitiveDataLevel: "PERSONAL_DATA",
+          scopes: ["ATTESTOR_LOGS", "STACKTRACES"],
+          authorizationReason: "CLIENT_DEBUGGING",
+          source: "launch_url",
+        },
+      );
+    }
     try {
+      const observedDetails = await collectBrowserClaimantDetails();
       await client.patchClaimant(config.sessionId, {
+        claimantId: claimantClientId,
+        collectedAt: new Date().toISOString(),
+        apiClient: getClientSource(),
+        locale: globalThis.navigator?.language,
+        httpUserAgent: globalThis.navigator?.userAgent,
+        client: {
+          kind: "reclaim_browser_extension_sdk",
+          verificationClient: {
+            id: bootstrap.session.verificationClientId,
+            name: "reclaim_browser_extension_sdk",
+          },
+          application: {
+            packageName: globalThis.chrome?.runtime?.id,
+            version: globalThis.chrome?.runtime?.getManifest?.()?.version,
+          },
+        },
+        device: { id: claimantClientId, ...observedDetails.device },
+        operatingSystem: { platform: globalThis.navigator?.platform },
+        browser: { userAgent: globalThis.navigator?.userAgent },
+        ...observedDetails.dimensions,
         ...config.claimantDetails,
         claimantClientId,
       });
@@ -848,12 +894,16 @@ async function prepareBuilderProvider(ctx, templateData) {
   const attestorAuthRequest = await builder.client.getAttestorAuth(builder.sessionId);
   builder.currentProvider = { recipe, providerData, attestorAuthRequest };
 
-  await builder.client.reportEventBestEffort(builder.sessionId, BUILDER_EVENTS.VERIFICATION_PROVIDER_STARTED, {
-    providerId: recipe.providerId,
-    resolvedVersion: recipe.resolvedVersion,
-    ordinal: builder.providerOrdinal,
-    expectedRequestCount: providerData.requestData.length,
-  });
+  await builder.client.reportEventBestEffort(
+    builder.sessionId,
+    BUILDER_EVENTS.VERIFICATION_PROVIDER_STARTED,
+    {
+      providerId: recipe.providerId,
+      resolvedVersion: recipe.resolvedVersion,
+      ordinal: builder.providerOrdinal,
+      expectedRequestCount: providerData.requestData.length,
+    },
+  );
 
   return {
     ...templateData,
@@ -864,6 +914,38 @@ async function prepareBuilderProvider(ctx, templateData) {
     parameters: builderTemplateParameters(templateData.parameters, builder.session.context, recipe),
     callbackUrl: "",
   };
+}
+
+async function collectBrowserClaimantDetails() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    if (!tab?.id) return { device: {}, dimensions: {} };
+    const [result] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => ({
+        orientation: globalThis.screen?.orientation?.type,
+        viewportWidth: globalThis.innerWidth,
+        viewportHeight: globalThis.innerHeight,
+        displayWidth: Math.round(
+          (globalThis.screen?.width ?? 0) * (globalThis.devicePixelRatio ?? 1),
+        ),
+        displayHeight: Math.round(
+          (globalThis.screen?.height ?? 0) * (globalThis.devicePixelRatio ?? 1),
+        ),
+      }),
+    });
+    const value = result?.result;
+    if (!value) return { device: {}, dimensions: {} };
+    return {
+      device: { orientation: value.orientation },
+      dimensions: {
+        viewport: { width: value.viewportWidth, height: value.viewportHeight, unit: "css-px" },
+        display: { width: value.displayWidth, height: value.displayHeight, unit: "physical-px" },
+      },
+    };
+  } catch {
+    return { device: {}, dimensions: {} };
+  }
 }
 
 async function completeBuilderProvider(ctx, proofs) {
@@ -896,23 +978,31 @@ async function completeBuilderProvider(ctx, proofs) {
   builder.proofs.push(...proofs);
 
   for (const [requestOrdinal, request] of requests.entries()) {
-    await builder.client.reportEventBestEffort(builder.sessionId, BUILDER_EVENTS.REQUEST_CLAIM_COMPLETED, {
+    await builder.client.reportEventBestEffort(
+      builder.sessionId,
+      BUILDER_EVENTS.REQUEST_CLAIM_COMPLETED,
+      {
+        providerId: recipe.providerId,
+        resolvedVersion: recipe.resolvedVersion,
+        ordinal: builder.providerOrdinal,
+        requestOrdinal,
+        ...(request.requestId ? { requestId: request.requestId } : {}),
+        attempt: 1,
+      },
+    );
+  }
+  await builder.client.reportEventBestEffort(
+    builder.sessionId,
+    BUILDER_EVENTS.VERIFICATION_PROVIDER_COMPLETED,
+    {
       providerId: recipe.providerId,
       resolvedVersion: recipe.resolvedVersion,
       ordinal: builder.providerOrdinal,
-      requestOrdinal,
-      ...(request.requestId ? { requestId: request.requestId } : {}),
-      attempt: 1,
-    });
-  }
-  await builder.client.reportEventBestEffort(builder.sessionId, BUILDER_EVENTS.VERIFICATION_PROVIDER_COMPLETED, {
-    providerId: recipe.providerId,
-    resolvedVersion: recipe.resolvedVersion,
-    ordinal: builder.providerOrdinal,
-    expectedRequestCount: providerData.requestData.length,
-    completedRequestCount: requests.length,
-    completedProofCount: requests.length,
-  });
+      expectedRequestCount: providerData.requestData.length,
+      completedRequestCount: requests.length,
+      completedProofCount: requests.length,
+    },
+  );
 
   builder.providerOrdinal += 1;
   if (builder.providerOrdinal < builder.recipes.length) {
@@ -926,10 +1016,14 @@ async function completeBuilderProvider(ctx, proofs) {
     BUILDER_EVENTS.VERIFICATION_PROOFS_COMPLETED,
     totals,
   );
-  await builder.client.reportEventBestEffort(builder.sessionId, BUILDER_EVENTS.VERIFICATION_RESULT_SUBMITTING, {
-    ...totals,
-    attempt: 1,
-  });
+  await builder.client.reportEventBestEffort(
+    builder.sessionId,
+    BUILDER_EVENTS.VERIFICATION_RESULT_SUBMITTING,
+    {
+      ...totals,
+      attempt: 1,
+    },
+  );
   try {
     await builder.client.submitResult(builder.sessionId, {
       status: "success",

@@ -178,6 +178,7 @@ class ReclaimExtensionProofRequest {
         claimantClientId: options.claimantClientId,
         backendUrl: options.backendUrl || BACKEND_URL,
         claimantDetails: options.claimantDetails || {},
+        diagnosticMode: verification.diagnosticMode,
       },
     });
     instance.sessionId = verification.sessionId;
