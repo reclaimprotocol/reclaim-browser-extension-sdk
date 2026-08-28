@@ -14,7 +14,8 @@
  *   5.0.8         yes               NO
  *   5.1.0-dev.1   yes               yes
  *   5.1.0         NO (404)          n/a
- *   5.1.1         yes               yes   <- current pin
+ *   5.1.1         yes               yes
+ *   5.1.3         yes               yes   <- current pin
  *
  * A bump into 5.0.6–5.0.8 produces no install error, no build error and no test
  * failure — it fails at runtime, deep in the offscreen document, as
