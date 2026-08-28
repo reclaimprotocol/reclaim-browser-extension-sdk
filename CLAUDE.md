@@ -296,7 +296,7 @@ either way — and a half-imported, half-copied chain is harder to keep in locks
 one `attestor-parity.test.js` can diff end to end. That test runs on 5.1.1 (it skipped on 5.0.5), so the
 copies are now checked against the real attestor on every `npm test` rather than trusted.
 
-### attestor-core is pinned to `5.1.1` exactly — do not bump it casually
+### attestor-core is pinned to `5.1.3` exactly — do not bump it casually
 
 `@reclaimprotocol/attestor-core` is pinned **without `^`**. Two independent regressions in the 5.0.x/5.1.x
 line make several versions unusable, and neither fails at install time:
@@ -309,12 +309,19 @@ line make several versions unusable, and neither fails at install time:
 | 5.0.8        | yes                      | **no**                  |
 | 5.1.0-dev.1  | yes                      | yes (but a prerelease)  |
 | 5.1.0        | **no — 404**             | n/a                     |
-| **5.1.1** ✅ | yes                      | **yes**                 |
+| 5.1.1        | yes                      | yes                     |
+| **5.1.3** ✅ | yes                      | **yes**                 |
 
 - 5.1.0 dropped `browser/resources/attestor-browser.min.mjs` from the tarball (unpacked size
   2.64 MB → 1.02 MB) while still declaring `exports["./browser"]`, which
   [offscreen.js](src/offscreen/offscreen.js) imports. Resolution fails at build time. 5.1.1 restored it
   (2.58 MB unpacked, 1.55 MB bundle).
+- 5.1.1 still failed OPRF proofs server-side with
+  `oprf-raw cross-block markers incomplete: pending for packets N` on responses whose OPRF-marked region
+  straddles TLS record boundaries — intermittently, so a provider could pass one run and fail the next.
+  Patched in **5.1.3**. The error text appears in no client bundle: it is raised by the attestor
+  service, reaching the offscreen document as `recv claim response {success: false}` _after_ the ZK
+  proofs have already generated. Do not go back below 5.1.3.
 - 5.0.6–5.0.8 still ship that bundle, but it no longer registers a ZK operator maker for `stwo` — the
   engine [config.js](src/utils/constants/config.js) `DEFAULT_ZK_ENGINE` selects. Nothing complains until
   proof time, when the offscreen document throws
@@ -326,7 +333,7 @@ line make several versions unusable, and neither fails at install time:
 the pinned version ships the bundle and that the bundle references `DEFAULT_ZK_ENGINE`. **Run `npm test`
 after any attestor bump** — that test turns both regressions from a runtime failure into a test failure.
 
-**What a bump has to be checked against**, beyond that test — all of it verified for 5.1.1:
+**What a bump has to be checked against**, beyond that test — all of it re-verified for 5.1.3:
 
 - `exports["./browser"]` resolves and the bundle exports `createClaimOnAttestor`
   ([offscreen.js](src/offscreen/offscreen.js)); `exports["./external-rpc"]` exports
