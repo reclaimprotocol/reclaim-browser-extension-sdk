@@ -1,3 +1,9 @@
+import { createPageLogger } from "./log-bridge";
+
+// The window.Reclaim surface is installed at module scope, before the IIFE
+// below builds its own logger, so it needs one of its own.
+const apiLogger = createPageLogger("injection", "injection.api");
+
 window.Reclaim = window.Reclaim || {};
 let __reclaimParams = {};
 
@@ -32,7 +38,7 @@ window.Reclaim.updatePublicData = function (obj) {
       "*",
     );
   } catch (e) {
-    console.error("Reclaim.updatePublicData error:", e);
+    apiLogger.error("Reclaim.updatePublicData error:", e);
   }
 };
 
@@ -55,16 +61,21 @@ window.Reclaim.reportProviderError = function (msg) {
       "*",
     );
   } catch (e) {
-    console.error("Reclaim.reportProviderError error:", e);
+    apiLogger.error("Reclaim.reportProviderError error:", e);
   }
 };
 
 window.Reclaim.requestClaim = function (rdObject) {
   try {
-    console.log("Reclaim.requestClaim rdObject", rdObject);
+    // Was a bare console.log of the whole rdObject. That is a provider-authored
+    // request descriptor which routinely carries the response the claim is
+    // being built from, printed into the *provider tab's* console — the one
+    // place the user can read it — with no config gate and no route to the
+    // endpoint. Through the bridge it obeys logLevel and gets redacted at INFO.
+    apiLogger.info("Reclaim.requestClaim", { rdObject });
     window.postMessage({ action: "RECLAIM_REQUEST_CLAIM", data: { rdObject } }, "*");
   } catch (e) {
-    console.error("Reclaim.requestClaim error:", e);
+    apiLogger.error("Reclaim.requestClaim error:", e);
   }
 };
 
@@ -108,15 +119,10 @@ try {
   const PROVIDER_API_ENDPOINT = (providerId) =>
     `${BACKEND_URL}/api/providers/${providerId}/custom-injection`;
 
-  // Debug utility for logging
-  const debug = {
-    log: (...args) => console.log("🔍 [Injection Script]:", ...args),
-    error: (...args) => console.error("❌ [Injection Script Error]:", ...args),
-    info: (...args) => console.info("ℹ️ [Injection Script Info]:", ...args),
-    // log: (...args) => undefined,
-    // error: (...args) => undefined,
-    // info: (...args) => undefined
-  };
+  // Logging for the injection script. Routed through the page-world bridge so
+  // provider-script failures land in the session's diagnostic dump instead of
+  // only in the page console, where nobody sees them after the fact.
+  const debug = createPageLogger("injection", "injection.script");
 
   /**
    * IMPORTANT: localStorage Context Isolation
@@ -210,7 +216,6 @@ try {
 
       const scriptContent = await response.text();
 
-      // Check if we got a valid script
       if (!scriptContent || scriptContent.trim() === "") {
         debug.info(`No injection script content found for provider: ${providerId}`);
         return null;
@@ -367,7 +372,6 @@ try {
         return;
       }
 
-      // Fetch the injection script from localStorage
       const injectionScript = localStorage.getItem(
         `reclaimBrowserExtensionInjectionScript:${providerId}`,
       );

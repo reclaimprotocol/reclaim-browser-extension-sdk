@@ -1,6 +1,10 @@
 .reclaim-popup {
   position: fixed;
-  bottom: 20px;
+  /* Lifted clear of the bottom of the page. At 20px the panel landed inside the
+     sticky bars sites like to put there — cookie notices, CTA bars, chat
+     launchers are all roughly 50-60px tall — so it overlapped them on load.
+     Only the initial position: dragging sets `top`/`left` and `bottom: auto`. */
+  bottom: 64px;
   right: 20px;
   width: 320px;
   max-height: 85vh;
@@ -74,12 +78,49 @@
   cursor: grabbing;
 }
 
+/* Drag affordance: the conventional dot-grid grabber (4x2), drawn with one tiled
+   radial gradient rather than eight elements. `margin: 0 auto` centres it in the
+   flex header without setting justify-content, so re-enabling the commented-out
+   logo and title above still lays out as it used to. */
+.reclaim-drag-handle {
+  margin: 0 auto;
+  /* Exact multiples of background-size, or the last column/row renders as a
+     clipped half-dot: 20/5 = 4 columns, 10/5 = 2 rows. */
+  width: 20px;
+  height: 10px;
+  /* Let the mousedown land on the header, matching .reclaim-popup-logo. */
+  pointer-events: none;
+  background-image: radial-gradient(
+    circle at center,
+    rgba(255, 255, 255, 0.55) 1px,
+    transparent 1.3px
+  );
+  background-size: 5px 5px;
+  transition: background-image 0.2s ease;
+}
+
+/* Brighten with the header's own hover, and hold it bright while dragging so the
+   handle reads as the thing being held. */
+.reclaim-popup-header:hover .reclaim-drag-handle,
+.reclaim-popup.dragging .reclaim-drag-handle {
+  background-image: radial-gradient(
+    circle at center,
+    rgba(255, 255, 255, 0.9) 1px,
+    transparent 1.3px
+  );
+}
+
 .reclaim-popup-content {
-  padding: 8px 18px 16px 18px;
+  /* Symmetric. The gap below the header's border was 8px while the gap under the
+     last card was 16px, which read as the panel sagging at the bottom. */
+  padding: 12px 18px 12px 18px;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  min-height: 280px;
+  /* Hug the content. This used to be `center` inside a `min-height: 280px` box,
+     which was fine when the info grid filled it; with only the session id and
+     the status card left it padded the panel out with dead space. */
+  justify-content: flex-start;
+  min-height: 0;
   max-height: 400px;
   overflow-y: auto;
 }
@@ -105,29 +146,10 @@
   letter-spacing: -0.01em;
 }
 
-/* Compact info grid */
-.reclaim-info-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.reclaim-info-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.02);
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  transition: all 0.2s ease;
-}
-
-.reclaim-info-item:hover {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.08);
-}
+/* The Source / Description / Data Required grid that used to sit above the
+   session id is gone — the popup shows the session id and the verification
+   status only. `.reclaim-info-label` and `.reclaim-info-value` below are kept:
+   the session-id row still uses both. */
 
 .reclaim-info-label {
   color: rgba(255, 255, 255, 0.6);
@@ -158,18 +180,6 @@
 
 .reclaim-info-value:hover {
   color: #3b82f6;
-}
-
-.reclaim-info-value.expandable {
-  cursor: pointer;
-}
-
-.reclaim-info-value.expanded {
-  white-space: normal;
-  word-break: break-word;
-  text-overflow: clip;
-  overflow: visible;
-  max-width: none;
 }
 
 .reclaim-info-tooltip {
@@ -220,7 +230,7 @@
   background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(5, 150, 105, 0.04) 100%);
   border-radius: 8px;
   border: 1px solid rgba(16, 185, 129, 0.15);
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   position: relative;
 }
 
@@ -303,7 +313,9 @@
 
 /* Combined verification container */
 .reclaim-verification-container {
-  margin-bottom: 4px;
+  /* Nothing follows this container, so a bottom margin here is just trailing
+     space under the last card. */
+  margin-bottom: 0;
   transform: translateY(0);
   opacity: 1;
   will-change: transform, opacity;
@@ -397,7 +409,7 @@
   opacity: 0;
   will-change: transform, opacity;
   transition: all 0.3s ease;
-  margin-top: 12px;
+  margin-top: 10px;
   display: none;
 }
 
@@ -407,22 +419,10 @@
   display: block;
 }
 
-/* Adjust content spacing when status is visible */
-.reclaim-popup-content:has(.reclaim-status-container.visible) {
-  justify-content: flex-start;
-  padding-top: 20px;
-}
-
-/* Alternative for browsers that don't support :has() */
-.reclaim-popup-content.status-active {
-  justify-content: flex-start;
-  padding-top: 20px;
-}
-
 .reclaim-status-progress {
   display: flex;
   flex-direction: column;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .reclaim-progress-header {
@@ -500,7 +500,7 @@
 }
 
 .reclaim-status-message {
-  margin-top: 8px;
+  margin-top: 6px;
   font-size: 12px;
   color: rgba(255, 255, 255, 0.8);
   font-weight: 500;
@@ -535,12 +535,12 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  margin: 8px 0;
+  margin: 4px 0;
 }
 
 .reclaim-circular-loader svg {
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   animation: reclaim-rotate 2s linear infinite;
 }
 
@@ -635,7 +635,9 @@
 @media (max-width: 400px) {
   .reclaim-popup {
     width: calc(100% - 24px);
-    bottom: 12px;
+    /* Lifted too, but less: max-height is 90vh here, so a large bottom offset
+       would push the top of the panel off a short viewport. */
+    bottom: 24px;
     right: 12px;
     left: 12px;
     max-width: 100%;
@@ -643,7 +645,7 @@
   }
 
   .reclaim-popup-content {
-    min-height: 240px;
+    min-height: 0;
     max-height: calc(90vh - 80px);
   }
 

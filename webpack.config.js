@@ -103,7 +103,11 @@ const commonResolve = {
   },
 };
 
-const DROP_CONSOLE = process.env.DROP_CONSOLE === "false";
+// Opt-in only, and note the polarity: this used to be `=== "false"`, so setting
+// DROP_CONSOLE=false *enabled* console stripping and there was no way to ask for
+// it by name. Consoles are the SDK's local debugging surface (see
+// DEFAULT_LOG_CONFIG.consoleEnabled), so stripping them must be deliberate.
+const DROP_CONSOLE = process.env.DROP_CONSOLE === "true";
 
 const commonOptimization = {
   minimize: true,

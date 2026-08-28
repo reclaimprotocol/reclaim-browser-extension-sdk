@@ -2,6 +2,8 @@
 // Handles session start, fail, submit, and timer logic
 
 import { loggingHub } from "../utils/logger/LoggingHub";
+import { EVENT_TYPES } from "../utils/logger/constants";
+import { normalizeInjectionType } from "../utils/provider-normalization";
 import { addCspStrippingRule, removeCspStrippingRule } from "./cspRuleManager";
 import { CSP_RULE_MAX_LIFETIME_MS, TAB_TRANSITION_DELAY_MS } from "../utils/constants/config";
 
@@ -17,22 +19,20 @@ export async function startVerification(ctx, templateData) {
     ctx.callbackUrl = null;
     ctx.generatedProofs = new Map();
     ctx.filteredRequests = new Map();
+    ctx.reportedExtractionFailures = new Set();
     ctx.initPopupMessage = new Map();
     ctx.providerDataMessage = new Map();
     ctx.providerRequestsByHash = new Map();
     ctx.aborted = false;
     ctx._cspRuleId = null;
 
-    // Reset timers and timer state variables
     ctx.sessionTimerManager.clearAllTimers();
     ctx.firstRequestReceived = false;
 
-    // fetch provider data
     if (!templateData.providerId) {
       throw new Error("Provider ID not found");
     }
 
-    // Set session context in the logging hub
     ctx.loggingHub.setSessionContext({
       sessionId: templateData.sessionId,
       providerId: templateData.providerId,
@@ -51,7 +51,21 @@ export async function startVerification(ctx, templateData) {
       templateData.applicationId,
     );
 
+    // Coerce injectionType before anything reads it. The router hands it to
+    // the content script, which only distinguishes NONE from "inject the
+    // interceptor" — an unsupported value (MSWJS/XHOOK/CDP) would otherwise
+    // flow through unchecked.
+    if (providerData) {
+      providerData.injectionType = normalizeInjectionType(providerData.injectionType, loggingHub);
+    }
     ctx.providerData = providerData;
+
+    loggingHub.info(
+      `[BACKGROUND] Fetched provider data for ${templateData.providerId}: ` +
+        `${providerData?.name || "unnamed"}, ${providerData?.requestData?.length ?? 0} request(s)`,
+      "background.provider",
+      { eventType: EVENT_TYPES.FETCHED_PROVIDERS },
+    );
 
     ctx.providerId = templateData.providerId;
     if (templateData.parameters) {
@@ -115,12 +129,12 @@ export async function startVerification(ctx, templateData) {
     // Create a new tab with provider URL DIRECTLY - not through an async flow
     const providerUrl = providerData.loginUrl;
 
-    // Use chrome.tabs.create directly and handle the promise explicitly
     chrome.tabs.create({ url: providerUrl }, (tab) => {
       ctx.activeTabId = tab.id;
       loggingHub.info(
         `[BACKGROUND] New tab created for provider ${templateData.providerId} with tab id ${tab.id}`,
         "background.tab",
+        { eventType: EVENT_TYPES.LOADING_INITIAL_URL },
       );
 
       ctx.managedTabs.add(tab.id);
@@ -157,7 +171,6 @@ export async function startVerification(ctx, templateData) {
           },
         };
 
-        // Initialize the message map if it doesn't exist
         if (!ctx.initPopupMessage) {
           ctx.initPopupMessage = new Map();
         }
@@ -177,6 +190,7 @@ export async function startVerification(ctx, templateData) {
       loggingHub.info(
         `[BACKGROUND] Starting verification with session id: ${ctx.sessionId}`,
         "background.verification",
+        { eventType: EVENT_TYPES.USER_STARTED_VERIFICATION },
       );
 
       // Update session status after tab creation
@@ -191,6 +205,7 @@ export async function startVerification(ctx, templateData) {
           loggingHub.error(
             `[BACKGROUND] Error updating session status: ${error?.message}`,
             "background.session",
+            { eventType: EVENT_TYPES.UPDATE_SESSION_STATUS_ERROR },
           );
         });
     });
@@ -203,6 +218,7 @@ export async function startVerification(ctx, templateData) {
     loggingHub.error(
       `[BACKGROUND] Error starting verification: ${error?.message}`,
       "background.verification",
+      { eventType: EVENT_TYPES.RECLAIM_EXCEPTION },
     );
     // Clean up CSP stripping rule if it was added before the error
     if (ctx._cspRuleId) {
@@ -215,16 +231,16 @@ export async function startVerification(ctx, templateData) {
   }
 }
 
-export async function failSession(ctx, errorMessage, requestHash) {
-  loggingHub.info(`[BACKGROUND] Failing session: ${errorMessage}`, "background.session");
+export async function failSession(ctx, errorMessage, requestHash, eventType) {
+  loggingHub.info(`[BACKGROUND] Failing session: ${errorMessage}`, "background.session", {
+    eventType: eventType || EVENT_TYPES.RECLAIM_EXCEPTION,
+  });
 
-  // Clean up CSP stripping rule
   if (ctx._cspRuleId) {
     await removeCspStrippingRule().catch(() => {});
     ctx._cspRuleId = null;
   }
 
-  // Clear all timers
   ctx.sessionTimerManager.clearAllTimers();
 
   // abort immediately to stop queue/offscreen processing
@@ -248,6 +264,7 @@ export async function failSession(ctx, errorMessage, requestHash) {
       loggingHub.error(
         `[BACKGROUND] Error updating session status to failed: ${error?.message}`,
         "background.session",
+        { eventType: EVENT_TYPES.UPDATE_SESSION_STATUS_ERROR },
       );
     }
   }
@@ -269,7 +286,6 @@ export async function failSession(ctx, errorMessage, requestHash) {
       });
   }
 
-  // Also forward to the original tab
   if (ctx.originalTabId) {
     try {
       await chrome.tabs.sendMessage(ctx.originalTabId, {
@@ -291,6 +307,7 @@ export async function failSession(ctx, errorMessage, requestHash) {
     loggingHub.info(
       `[BACKGROUND] Proof generation failed, Broadcasting to popup/options pages: ${errorMessage}`,
       "background.proof",
+      { eventType: EVENT_TYPES.PROOF_GENERATION_FAILED },
     );
 
     await chrome.runtime.sendMessage({
@@ -308,8 +325,7 @@ export async function failSession(ctx, errorMessage, requestHash) {
   ctx.proofGenerationQueue = [];
   ctx.isProcessingQueue = false;
 
-  // Clear session context from logging hub
-  ctx.loggingHub.clearSessionContext();
+  await ctx.loggingHub.clearSessionContext();
 
   // Release concurrency guard
   ctx.activeSessionId = null;
@@ -366,10 +382,15 @@ export async function submitProofs(ctx) {
       publicData: ctx.publicData ?? null,
     }));
 
-    loggingHub.info(
-      `[BACKGROUND] Submitting proofs ${JSON.stringify(finalProofs)}`,
-      "background.proof",
-    );
+    // At INFO the identifier, signatures, witnesses and providerRequest survive
+    // redaction while `claimData` is blanked wholesale — the same shape the
+    // InApp SDK's own PROOF_GENERATED line has. That is deliberate: `claimData`
+    // holds `context.extractedParameters`, which is the plaintext value the user
+    // is proving, and this used to reach Loki on every successful session.
+    loggingHub.info("[BACKGROUND] Submitting proofs", "background.proof", {
+      eventType: EVENT_TYPES.SUBMITTING_PROOF,
+      payload: finalProofs,
+    });
 
     let submitted = false;
     // If callbackUrl provided, submit; otherwise just signal completion
@@ -429,6 +450,7 @@ export async function submitProofs(ctx) {
         loggingHub.error(
           `[BACKGROUND] Error submitting proofs: ${error.message}`,
           "background.proof",
+          { eventType: EVENT_TYPES.PROOF_SUBMISSION_FAILED },
         );
         throw error;
       }
@@ -439,6 +461,7 @@ export async function submitProofs(ctx) {
           loggingHub.info(
             `[BACKGROUND] Updating status to PROOF_GENERATION_SUCCESS`,
             "background.proof",
+            { eventType: EVENT_TYPES.PROOF_GENERATION_SUCCESS },
           );
           await ctx.updateSessionStatus(
             ctx.sessionId,
@@ -454,6 +477,18 @@ export async function submitProofs(ctx) {
         }
       }
     }
+
+    // Emitted once, before the notifications and independently of them. It used
+    // to ride on the activeTabId branch below, so a flow that completed after
+    // the provider tab had closed produced no PROOF_SUBMITTED event at all —
+    // the session simply stopped mid-stream in the logs. `submitted` is spelled
+    // out because with no callbackUrl nothing is posted anywhere: the proofs are
+    // handed back to the consumer, which the event name alone does not convey.
+    loggingHub.info(
+      `[BACKGROUND] Proofs ready (${finalProofs.length}), submittedToCallback=${submitted}`,
+      "background.proof",
+      { eventType: EVENT_TYPES.PROOF_SUBMITTED },
+    );
 
     // Notify content script with proofs in both cases
     if (ctx.activeTabId) {
@@ -534,21 +569,18 @@ export async function submitProofs(ctx) {
       }
     }
 
-    // Clean up CSP stripping rule
     if (ctx._cspRuleId) {
       await removeCspStrippingRule().catch(() => {});
       ctx._cspRuleId = null;
     }
 
-    // Clear session context from logging hub
-    ctx.loggingHub.clearSessionContext();
+    await ctx.loggingHub.clearSessionContext();
 
     // Release concurrency guard on success
     ctx.activeSessionId = null;
     return { success: true };
   } catch (error) {
     loggingHub.error(`[BACKGROUND] Error submitting proof: ${error?.message}`, "background.proof");
-    // Clean up CSP stripping rule on failure too
     if (ctx._cspRuleId) {
       await removeCspStrippingRule().catch(() => {});
       ctx._cspRuleId = null;
@@ -561,9 +593,10 @@ export async function submitProofs(ctx) {
 
 export async function cancelSession(ctx) {
   try {
-    loggingHub.info(`[BACKGROUND] Cancelling session`, "background.session");
+    loggingHub.info(`[BACKGROUND] Cancelling session`, "background.session", {
+      eventType: EVENT_TYPES.RECLAIM_VERIFICATION_CANCELLED_EXCEPTION,
+    });
 
-    // Clean up CSP stripping rule
     if (ctx._cspRuleId) {
       await removeCspStrippingRule().catch(() => {});
       ctx._cspRuleId = null;
@@ -616,7 +649,6 @@ export async function cancelSession(ctx) {
       }
     }
 
-    // Also forward to the original tab
     if (ctx.originalTabId) {
       try {
         loggingHub.info(
@@ -655,7 +687,6 @@ export async function cancelSession(ctx) {
       );
     }
 
-    // Close managed tab and restore original if available
     if (ctx.originalTabId) {
       try {
         setTimeout(async () => {
@@ -697,8 +728,7 @@ export async function cancelSession(ctx) {
     ctx.providerRequestsByHash = new Map();
     ctx.managedTabs.clear();
 
-    // Clear session context from logging hub
-    ctx.loggingHub.clearSessionContext();
+    await ctx.loggingHub.clearSessionContext();
 
     // Release guard
     ctx.activeSessionId = null;

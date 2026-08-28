@@ -11,10 +11,12 @@ export function addToProofGenerationQueue(ctx, claimData, requestHash) {
 }
 
 export async function processNextQueueItem(ctx) {
-  const { loggingHub } = ctx;
+  const { loggingHub, EVENT_TYPES } = ctx;
 
   if (ctx.aborted) {
-    loggingHub.info("[BACKGROUND] Proof generation queue aborted", "background.proofQueue");
+    loggingHub.info("[BACKGROUND] Proof generation queue aborted", "background.proofQueue", {
+      eventType: EVENT_TYPES.CLAIM_CREATION_CANCELLED_EXCEPTION,
+    });
     return;
   }
 
@@ -51,7 +53,9 @@ export async function processNextQueueItem(ctx) {
 
   try {
     if (ctx.aborted) {
-      loggingHub.info("[BACKGROUND] Proof generation aborted", "background.proofQueue");
+      loggingHub.info("[BACKGROUND] Proof generation aborted", "background.proofQueue", {
+        eventType: EVENT_TYPES.CLAIM_CREATION_CANCELLED_EXCEPTION,
+      });
       return;
     }
 
@@ -65,6 +69,7 @@ export async function processNextQueueItem(ctx) {
     loggingHub.info(
       "[BACKGROUND] Proof generation started for request hash: " + task.requestHash,
       "background.proofQueue",
+      { eventType: EVENT_TYPES.PROOF_GENERATION_STARTED },
     );
 
     const proofResponseObject = await ctx.generateProof(
@@ -76,7 +81,9 @@ export async function processNextQueueItem(ctx) {
     );
 
     if (ctx.aborted) {
-      loggingHub.info("[BACKGROUND] Proof generation aborted", "background.proofQueue");
+      loggingHub.info("[BACKGROUND] Proof generation aborted", "background.proofQueue", {
+        eventType: EVENT_TYPES.CLAIM_CREATION_CANCELLED_EXCEPTION,
+      });
       return;
     }
 
@@ -87,6 +94,7 @@ export async function processNextQueueItem(ctx) {
           ": " +
           proofResponseObject.error,
         "background.proofQueue",
+        { eventType: EVENT_TYPES.PROOF_GENERATION_FAILED_EXCEPTION },
       );
       ctx.failSession("Proof generation failed: " + proofResponseObject.error, task.requestHash);
       return;
@@ -102,27 +110,35 @@ export async function processNextQueueItem(ctx) {
       loggingHub.info(
         "[BACKGROUND] Proof generation successful for request hash: " + task.requestHash,
         "background.proofQueue",
+        { eventType: EVENT_TYPES.PROOF_GENERATED },
       );
 
       chrome.tabs.sendMessage(ctx.activeTabId, {
         action: ctx.MESSAGE_ACTIONS.PROOF_GENERATION_SUCCESS,
         source: ctx.MESSAGE_SOURCES.BACKGROUND,
         target: ctx.MESSAGE_SOURCES.CONTENT_SCRIPT,
-        data: { requestHash: task.requestHash },
+        // Sent after generatedProofs is updated above, so `completed` counts
+        // this proof. The popup cannot derive it — see claimProgress().
+        data: { requestHash: task.requestHash, progress: ctx.claimProgress?.() },
       });
 
       ctx.sessionTimerManager.resetSessionTimer();
     }
   } catch (error) {
+    // Not every rejection down this path is an Error: the offscreen bridge used
+    // to reject a bare `{success, error}` literal, which made this line — the
+    // session's only explanation of a proof failure — read "…: undefined", and
+    // put that same string on the consumer's Promise. Fixed at the source, but
+    // read both shapes so the next plain-object rejection is still legible.
+    const reason = error?.message || error?.error || String(error);
+
     loggingHub.error(
-      "[BACKGROUND] Proof generation failed for request hash: " +
-        task.requestHash +
-        ": " +
-        error?.message,
+      "[BACKGROUND] Proof generation failed for request hash: " + task.requestHash + ": " + reason,
       "background.proofQueue",
+      { eventType: EVENT_TYPES.PROOF_GENERATION_FAILED_EXCEPTION },
     );
 
-    ctx.failSession("Proof generation failed: " + error.message, task.requestHash);
+    ctx.failSession("Proof generation failed: " + reason, task.requestHash);
     return;
   } finally {
     ctx.isProcessingQueue = false;

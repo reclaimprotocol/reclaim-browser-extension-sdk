@@ -3,8 +3,11 @@ import { reclaimExtensionSDK } from '@reclaimprotocol/browser-extension-sdk';
 import './ReclaimDemo.css';
 
 const PROVIDERS = [
+  {id:'example', name: 'Example Provider'},
   { id: '7519ad78-208a-425d-9fac-97c13b0f0d4d', name: 'Kaggle Oprf' },
   {id: '33c5d558-ad53-4c4b-b500-a9f41f7ff1f7', name: 'Reclaim Test Provider'},
+  {id: '666e5b03-92cc-4f85-8cc2-708fafe3fdff', name: "githb chainbound"},
+  {id: '23d24ecd-ef60-4490-8eb4-360301282d8e', name: 'ether scan'}
 ];
 
 const APP_ID = import.meta.env.VITE_RECLAIM_APP_ID;
@@ -212,6 +215,27 @@ export default function ReclaimDemo() {
       const request = await reclaimExtensionSDK.init(APP_ID, APP_SECRET, providerId, {
         extensionID: EXTENSION_ID,
         // callbackUrl: 'https://your.server/receive-proofs' // optional
+
+        // Full local logging while developing. The SDK ships with
+        // consoleEnabled: false and logLevel: "INFO", because a consumer
+        // extension goes to end users and the content-script console is the
+        // *provider tab's* console.
+        //
+        // logConfig is applied before anything else in init(), so this also
+        // captures the session-init and provider-fetch logs.
+        //
+        // Where the output lands (one console per extension context):
+        //   background  → chrome://extensions → the extension → "service worker"
+        //   offscreen   → same page → "Inspect views: offscreen/offscreen.html"
+        //   content     → the provider tab's own DevTools console
+        //   interceptor → the provider tab's console too (MAIN world)
+        //
+        // remoteLogLevel is left alone: it already defaults to DEBUG, so the
+        // diagnostic endpoint receives everything regardless of this setting.
+        logConfig: {
+          logLevel: 'DEBUG',
+          consoleEnabled: true,
+        },
       });
 
       // request.setAppCallbackUrl("https://your-server.com/receive-proofs");

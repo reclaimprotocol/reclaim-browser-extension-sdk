@@ -5,10 +5,8 @@ import { createClaimOnAttestor } from "@reclaimprotocol/attestor-core";
 export const testPolyfills = () => {
   console.log("[POLYFILLS] Testing polyfills for @reclaimprotocol/attestor-core");
 
-  // Verify Buffer is available
   console.log("[POLYFILLS] Buffer available:", typeof Buffer !== "undefined");
 
-  // Verify process is available
   console.log("[POLYFILLS] process available:", typeof process !== "undefined");
 
   // Verify createClaimOnAttestor is a function

@@ -259,7 +259,6 @@ export function shouldIncludeCookie(cookie, urlObj, loggingHub) {
       return false;
     }
 
-    // Check if cookie is expired
     if (cookie.expirationDate && cookie.expirationDate < Date.now() / 1000) {
       return false;
     }

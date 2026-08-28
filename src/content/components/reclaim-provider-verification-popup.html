@@ -1,25 +1,15 @@
-<div class="reclaim-popup-header">
+<div class="reclaim-popup-header" title="Drag to move">
   <!-- <img class="reclaim-popup-logo" src="{{logoUrl}}" alt="Reclaim Protocol" />
   <h3 class="reclaim-popup-title">Reclaim Protocol</h3> -->
+
+  <!-- The header IS the drag handle (see initializeDragFunctionality), but with
+       the logo and title commented out it renders as an empty bar, so nothing
+       told the user it could be dragged. Decorative: `aria-hidden` because the
+       `title` above already carries the hint. -->
+  <span class="reclaim-drag-handle" aria-hidden="true"></span>
 </div>
 
 <div class="reclaim-popup-content">
-  <!-- Compact info grid -->
-  <div class="reclaim-info-grid">
-    <div class="reclaim-info-item">
-      <span class="reclaim-info-label">Source</span>
-      <span class="reclaim-info-value" data-tooltip="{{providerName}}">{{providerName}}</span>
-    </div>
-    <div class="reclaim-info-item">
-      <span class="reclaim-info-label">Description</span>
-      <span class="reclaim-info-value" data-tooltip="{{description}}">{{description}}</span>
-    </div>
-    <div class="reclaim-info-item">
-      <span class="reclaim-info-label">Data Required</span>
-      <span class="reclaim-info-value" data-tooltip="{{dataRequired}}">{{dataRequired}}</span>
-    </div>
-  </div>
-
   <!-- Session ID with copy button -->
   <div class="reclaim-session-section">
     <div class="reclaim-session-content">

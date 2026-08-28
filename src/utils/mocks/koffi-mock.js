@@ -3,7 +3,6 @@
  * This provides stub implementations of the methods used by the attestor-core package
  */
 
-// Create a stub library object
 const createLibraryStub = () => {
   return {
     func: () => () => {
@@ -13,9 +12,7 @@ const createLibraryStub = () => {
   };
 };
 
-// Main exports of the koffi module
 module.exports = {
-  // Main function to load a library
   load: function () {
     console.warn("Koffi.load called in browser environment - returning stub implementation");
     return createLibraryStub();

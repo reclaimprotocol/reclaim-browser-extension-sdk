@@ -7,11 +7,43 @@
 
 // --- Proof Generation ---
 
-/** Max time for attestor proof generation in offscreen document (ms) */
+/**
+ * ZK engine used when a provider doesn't specify one in
+ * `extensionConfig.zkEngine`.
+ *
+ * This must be an engine the pinned attestor-core's **prebuilt browser bundle**
+ * actually registers a ZK operator maker for, otherwise proof generation dies in
+ * the offscreen document with "No ZK operator maker for <engine>". The bundle is
+ * a checked-in artifact upstream and its engine support has silently changed
+ * between patch releases — see attestor-zk-engine.test.js, which guards this.
+ */
+export const DEFAULT_ZK_ENGINE = "stwo";
+
+/**
+ * Max time for attestor proof generation in offscreen document (ms).
+ *
+ * This is the real proof budget: offscreen.js races `createClaimOnAttestor`
+ * against it.
+ */
 export const PROOF_GENERATION_TIMEOUT_MS = 120000; // 2 minutes
 
-/** Max time waiting for proof generation response from offscreen (ms) */
-export const PROOF_RESPONSE_TIMEOUT_MS = 60000; // 1 minute
+/**
+ * Max time the background waits for the offscreen document's response (ms).
+ *
+ * **Must stay strictly greater than PROOF_GENERATION_TIMEOUT_MS**, hence the
+ * derivation rather than a literal. It was 60s against an inner 120s, so the
+ * outer timeout always won: a proof that legitimately needed 60–120s was killed
+ * by the background while the offscreen document was still working, and the
+ * inner timeout could never surface at all. The session then failed with the
+ * vaguer "Timeout waiting for offscreen document" instead of the offscreen's
+ * own "Proof generation timed out after 120 seconds".
+ *
+ * The headroom covers the PROOF_GENERATION_FAILED `updateSessionStatus` POST
+ * the offscreen makes on its way out, plus the chrome-messaging hop. This
+ * timeout is now only a backstop for an offscreen document that died without
+ * answering at all.
+ */
+export const PROOF_RESPONSE_TIMEOUT_MS = PROOF_GENERATION_TIMEOUT_MS + 15000; // 2m15s
 
 /** Max time waiting for private key generation from offscreen (ms) */
 export const PRIVATE_KEY_TIMEOUT_MS = 10000; // 10 seconds
@@ -65,6 +97,37 @@ export const LOG_FLUSH_INTERVAL_MS = 5000; // 5 seconds
 
 /** Time window for log deduplication (ms) */
 export const LOG_DEDUPE_WINDOW_MS = 100; // 100 ms
+
+/**
+ * Periodic flush period when `chrome.alarms` is used instead of setInterval.
+ * Chrome clamps alarm periods to a 30-second minimum in released extensions, so
+ * this is the floor, not a preference. The alarm is a backstop against worker
+ * death — batch-size and terminal-event flushes do the routine work.
+ */
+export const LOG_FLUSH_ALARM_PERIOD_MINUTES = 0.5;
+
+/**
+ * Max characters of a single log line kept before truncation.
+ *
+ * Matches the InApp SDK's cap. Without it, one `JSON.stringify(providerData)`
+ * can be hundreds of kilobytes, which is why the logs backend needs
+ * `splitLargeEntry` at all — and an oversized batch is more likely to be
+ * rejected outright, taking every other log in the batch with it.
+ */
+export const LOG_MAX_LINE_LENGTH = 2000;
+
+/**
+ * Cap for a log line carrying a RAW payload, i.e. one emitted at FINE.
+ *
+ * Deliberately far above LOG_MAX_LINE_LENGTH: a real claim — request body
+ * template, cookie header, response redactions — runs well past 2000
+ * characters, so the normal cap would cut off exactly the half being asked for.
+ *
+ * Finite rather than absent, though. An oversized POST is rejected outright, and
+ * a rejected batch stays queued for retry, so one runaway payload would block
+ * every later batch behind it. This bounds that without truncating a real claim.
+ */
+export const LOG_MAX_UNREDACTED_LINE_LENGTH = 100_000;
 
 // --- Custom Injection ---
 

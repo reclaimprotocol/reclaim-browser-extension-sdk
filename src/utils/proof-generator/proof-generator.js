@@ -1,11 +1,25 @@
-// Import polyfills
 import "../polyfills";
 
 import { MESSAGE_ACTIONS, MESSAGE_SOURCES } from "../constants/index";
 import { ensureOffscreenDocument } from "../offscreen-manager";
 import { PROOF_RESPONSE_TIMEOUT_MS } from "../constants/config";
+import { EVENT_TYPES } from "../logger/constants";
 
-// Main function to generate proof using offscreen document
+/**
+ * Reject with a real Error that still carries the `{success, error}` shape.
+ *
+ * These paths used to reject a plain object literal, so `error.message` in
+ * proofQueue's catch was `undefined` — the session's one explanation of a proof
+ * timeout read "Proof generation failed: undefined", and that string is also
+ * what reaches the consumer's Promise.
+ */
+const rejection = (message) => {
+  const error = new Error(message);
+  error.success = false;
+  error.error = message;
+  return error;
+};
+
 export const generateProof = async (claimData, loggingHub) => {
   try {
     if (!claimData) {
@@ -15,30 +29,31 @@ export const generateProof = async (claimData, loggingHub) => {
       );
       throw new Error("No claim data provided for proof generation");
     }
-    // Ensure the offscreen document exists and is ready
     await ensureOffscreenDocument(loggingHub);
 
     // Generate the proof using the offscreen document
     return new Promise((resolve, reject) => {
       const messageTimeout = setTimeout(() => {
-        loggingHub.error(
-          "[PROOF-GENERATOR] Timeout waiting for offscreen document to generate proof",
-          "proof.generation",
-        );
-        reject({
-          success: false,
-          error: "Timeout waiting for offscreen document to generate proof",
+        // Reaching this means the offscreen document never answered at all —
+        // its own PROOF_GENERATION_TIMEOUT_MS is shorter and would have replied
+        // with a more specific error first. Say so, rather than reporting it as
+        // a generic proof timeout.
+        const message =
+          "Offscreen document did not respond within " +
+          PROOF_RESPONSE_TIMEOUT_MS / 1000 +
+          "s (it should have reported its own timeout first — the document is likely gone)";
+        loggingHub.error("[PROOF-GENERATOR] " + message, "proof.generation", {
+          eventType: EVENT_TYPES.PROOF_GENERATION_FAILED_EXCEPTION,
         });
+        reject(rejection(message));
       }, PROOF_RESPONSE_TIMEOUT_MS);
 
-      // Create a message listener for the offscreen response
       const messageListener = (response) => {
         if (
           response.action === MESSAGE_ACTIONS.GENERATE_PROOF_RESPONSE &&
           response.source === MESSAGE_SOURCES.OFFSCREEN &&
           response.target === MESSAGE_SOURCES.BACKGROUND
         ) {
-          // Clear timeout and remove listener
           clearTimeout(messageTimeout);
           chrome.runtime.onMessage.removeListener(messageListener);
 
@@ -78,10 +93,8 @@ export const generateProof = async (claimData, loggingHub) => {
         }
       };
 
-      // Add listener for response
       chrome.runtime.onMessage.addListener(messageListener);
 
-      // Send message to offscreen document to generate proof
       chrome.runtime.sendMessage(
         {
           action: MESSAGE_ACTIONS.GENERATE_PROOF,
@@ -93,16 +106,14 @@ export const generateProof = async (claimData, loggingHub) => {
           if (chrome.runtime.lastError) {
             clearTimeout(messageTimeout);
             chrome.runtime.onMessage.removeListener(messageListener);
+            const message =
+              chrome.runtime.lastError.message || "Error communicating with offscreen document";
             loggingHub.error(
-              "[PROOF-GENERATOR] Error sending message to offscreen document: " +
-                chrome.runtime.lastError.message,
+              "[PROOF-GENERATOR] Error sending message to offscreen document: " + message,
               "proof.generation",
+              { eventType: EVENT_TYPES.PROOF_GENERATION_FAILED_EXCEPTION },
             );
-            reject({
-              success: false,
-              error:
-                chrome.runtime.lastError.message || "Error communicating with offscreen document",
-            });
+            reject(rejection(message));
           }
         },
       );

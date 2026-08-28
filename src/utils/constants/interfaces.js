@@ -30,6 +30,14 @@ export const RECLAIM_SDK_ACTIONS = {
   REQUEST_CLAIM: "RECLAIM_REQUEST_CLAIM",
   SET_LOG_CONFIG: "RECLAIM_SET_LOG_CONFIG",
   LOG_CONFIG_UPDATED: "RECLAIM_LOG_CONFIG_UPDATED",
+  // MAIN-world → content-script log relay. The interceptor and the injection
+  // scripts run in the page's own world with no `chrome.runtime`, so this is
+  // the only way their diagnostics reach the hub. See LOG_BRIDGE in
+  // src/interceptor/log-bridge.js.
+  LOG: "RECLAIM_LOG",
+  // Content script → MAIN world: pushes the log config down, since the page
+  // world cannot read chrome.storage to find out whether the console is enabled.
+  LOG_CONFIG: "RECLAIM_LOG_CONFIG",
 };
 
 export const RECLAIM_SESSION_STATUS = {

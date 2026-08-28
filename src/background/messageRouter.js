@@ -2,15 +2,37 @@
 // Handles chrome.runtime.onMessage and routes actions to modules
 
 import { loggingHub } from "../utils/logger/LoggingHub";
+import { EVENT_TYPES } from "../utils/logger/constants";
+import { DEFAULT_INJECTION_TYPE } from "../utils/provider-normalization";
 import * as sessionManager from "./sessionManager";
+import { MESSAGE_ACTIONS } from "../utils/constants/interfaces";
+
+/**
+ * Offscreen replies that have their own one-shot listener. They still pass
+ * through this router, so the default case must recognise them instead of
+ * reporting them as unsupported actions.
+ */
+const OFFSCREEN_REPLY_ACTIONS = new Set([
+  MESSAGE_ACTIONS.GET_PRIVATE_KEY_RESPONSE,
+  MESSAGE_ACTIONS.GENERATE_PROOF_RESPONSE,
+]);
 
 export async function handleMessage(ctx, message, sender, sendResponse) {
   const { action, source, target, data } = message;
 
   try {
-    // Handle LOG_MESSAGE action from content/offscreen
+    // Handle LOG_MESSAGE action from content/offscreen.
+    // data.source ("content" | "offscreen") is forwarded too — without it every
+    // remote log is indistinguishable from a background one once it reaches the
+    // hub, which makes a multi-context flow impossible to follow.
     if (action === ctx.MESSAGE_ACTIONS.LOG_MESSAGE) {
-      ctx.loggingHub.handleRemoteLog(data.message, data.type, data.level || "INFO");
+      ctx.loggingHub.handleRemoteLog(
+        data.message,
+        data.type,
+        data.level || "INFO",
+        data.source || source,
+        data.options,
+      );
       sendResponse({ success: true });
       return true;
     }
@@ -38,7 +60,7 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
               target: ctx.MESSAGE_SOURCES.CONTENT_SCRIPT,
               data: {
                 shouldInitialize: isManaged,
-                injectionType: ctx.providerData?.injectionType || null,
+                injectionType: ctx.providerData?.injectionType || DEFAULT_INJECTION_TYPE,
               },
             })
             .catch((err) =>
@@ -115,11 +137,22 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
             ctx.sessionId &&
             ctx.callbackUrl !== undefined // allow empty string as optional
           ) {
+            // Identifiers and shape, not the whole document. A provider's
+            // requestData is tens of kilobytes and its custom injection can be
+            // far larger; logging it whole is what forced the backend to split
+            // oversized entries in the first place.
             loggingHub.info(
-              "[BACKGROUND] Sending the following provider data to content script: " +
-                JSON.stringify(ctx.providerData),
+              "[BACKGROUND] Sending provider data to content script: " +
+                `${ctx.providerData?.httpProviderId || ctx.providerId} ` +
+                `(${ctx.providerData?.name || "unnamed"}), ` +
+                `${ctx.providerData?.requestData?.length ?? 0} request(s)`,
               "background.provider",
             );
+            // The object, not a string: the hub prints it in full to the
+            // console and redacts it on the way to the endpoint.
+            loggingHub.debug("[BACKGROUND] Provider data:", "background.provider", {
+              payload: ctx.providerData,
+            });
 
             sendResponse({
               success: true,
@@ -157,7 +190,7 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
           sendResponse({
             success: true,
             isManaged,
-            injectionType: ctx.providerData?.injectionType || null,
+            injectionType: ctx.providerData?.injectionType || DEFAULT_INJECTION_TYPE,
           });
         }
         break;
@@ -166,7 +199,6 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
           source === ctx.MESSAGE_SOURCES.CONTENT_SCRIPT &&
           target === ctx.MESSAGE_SOURCES.BACKGROUND
         ) {
-          // Set session context in the logging hub
           ctx.loggingHub.setSessionContext({
             sessionId: data.sessionId,
             providerId: data.providerId,
@@ -176,11 +208,13 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
           loggingHub.info(
             "Starting new verification using Reclaim Extension SDK",
             "background.verification",
+            { eventType: EVENT_TYPES.IS_RECLAIM_EXTENSION_SDK },
           );
 
           loggingHub.info(
-            "[BACKGROUND] Starting new verification flow with data: " + JSON.stringify(data),
+            "[BACKGROUND] Starting new verification flow with data:",
             "background.verification",
+            { eventType: EVENT_TYPES.VERIFICATION_FLOW_STARTED, payload: data },
           );
 
           // Concurrency guard
@@ -332,6 +366,14 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
               data.sessionId,
               data.loginUrl,
             );
+            // Un-memoize a retryable reject, otherwise the early-return above
+            // would answer every later (possibly matching) response for this
+            // hash from the cached miss.
+            if (result?.retryable) {
+              ctx.filteredRequests.delete(data.criteria.requestHash);
+              sendResponse({ success: false, retryable: true, error: result.error });
+              break;
+            }
             loggingHub.info(
               "[BACKGROUND] Filtered request processed with hash: " + data.criteria.requestHash,
               "background.filter",
@@ -366,10 +408,14 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
         break;
       case ctx.MESSAGE_ACTIONS.UPDATE_PUBLIC_DATA:
         if (sender.tab?.id && ctx.managedTabs.has(sender.tab.id)) {
-          loggingHub.info(
-            "[BACKGROUND] Updating public data: " + data?.publicData,
-            "background.data",
-          );
+          // Whatever the provider's script scraped off the page — the user's
+          // name, balance, account id. Concatenating it into the message put it
+          // past redaction entirely, because redaction cannot reach inside a
+          // string that was already built at the call site. It travels as a
+          // payload so the level decides: blanked at INFO, raw at FINE.
+          loggingHub.info("[BACKGROUND] Updating public data", "background.data", {
+            payload: { publicData: data?.publicData },
+          });
           ctx.publicData = typeof data?.publicData === "string" ? data.publicData : null;
           sendResponse({ success: true });
         } else {
@@ -412,7 +458,17 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
       }
       case ctx.MESSAGE_ACTIONS.GET_PARAMETERS:
         if (sender.tab?.id && ctx.managedTabs.has(sender.tab.id)) {
-          loggingHub.info("[BACKGROUND] Getting parameters: " + ctx.parameters, "background.data");
+          // Key names only. `ctx.parameters` is an object, so concatenating it
+          // logged the literal "[object Object]" — and would have logged the
+          // user's values had it ever been a string.
+          //
+          // FINE, not INFO: a provider script can call getParametersSync() on
+          // every render, and content.js logs "[Content] Parameters get" for
+          // the same event. Two lines per call, saying only that the page asked
+          // for parameters it was given at session start.
+          loggingHub.debug("[BACKGROUND] Getting parameters", "background.data", {
+            payload: { parameters: ctx.parameters || {} },
+          });
           sendResponse({ success: true, parameters: ctx.parameters || {} });
         } else {
           loggingHub.error(
@@ -463,6 +519,7 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
             loggingHub.info(
               "[BACKGROUND] Request claim processed: " + data.requestHash,
               "background.claim",
+              { eventType: EVENT_TYPES.PROVIDER_SCRIPT_REQUESTED_CLAIM },
             );
 
             sendResponse({ success: true, result });
@@ -470,6 +527,7 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
             loggingHub.error(
               "[BACKGROUND] Request claim processing failed: " + e?.message,
               "background.claim",
+              { eventType: EVENT_TYPES.CLAIM_PARAMETER_VALIDATION_FAILED_EXCEPTION },
             );
             sendResponse({ success: false, error: e?.message || String(e) });
           }
@@ -477,6 +535,7 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
           loggingHub.error(
             "[BACKGROUND] REQUEST_CLAIM: Tab is not managed by extension",
             "background.claim",
+            { eventType: EVENT_TYPES.TAB_NOT_MANAGED_BY_EXTENSION_EXCEPTION },
           );
           sendResponse({ success: false, error: "Tab is not managed by extension" });
         }
@@ -570,10 +629,14 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
               });
 
               const result = results?.[0]?.result;
-              loggingHub.info(
-                "[BACKGROUND] RUN_CUSTOM_INJECTION result: " + JSON.stringify(result),
-                "background.injection",
-              );
+              // A provider's injection can return whatever it likes, including
+              // scraped page values under key names redaction has never heard
+              // of. Nesting it under `injectionResult` — an opaque key — blanks
+              // the whole thing at INFO instead of walking into an object whose
+              // shape we do not control. Raw at FINE.
+              loggingHub.info("[BACKGROUND] RUN_CUSTOM_INJECTION result", "background.injection", {
+                payload: { injectionResult: result },
+              });
               sendResponse({ success: true, result });
               break;
             }
@@ -590,7 +653,21 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
         break;
       }
       default: {
-        loggingHub.error("[BACKGROUND] DEFAULT: Action not supported", "background.message");
+        // The offscreen document's replies are consumed by the dedicated
+        // one-shot listeners in claim-creator / proof-generator, but this router
+        // sees every chrome.runtime message, so they reach the default case too.
+        // Reporting them as errors made every SUCCESSFUL session carry two
+        // ERROR lines — noise that hides the real ones. They are answered by
+        // their own listener, so this must not sendResponse either.
+        if (OFFSCREEN_REPLY_ACTIONS.has(action)) {
+          break;
+        }
+        // Name the action: "Action not supported" with no action is not
+        // diagnosable from the logs, which is the whole point of logging it.
+        loggingHub.error(
+          `[BACKGROUND] DEFAULT: Action not supported: ${action}`,
+          "background.message",
+        );
         sendResponse({ success: false, error: "Action not supported" });
       }
     }

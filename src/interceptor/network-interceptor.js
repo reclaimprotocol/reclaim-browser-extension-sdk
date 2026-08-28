@@ -1,19 +1,21 @@
 /* eslint-disable @typescript-eslint/no-this-alias */
 
+import { createPageLogger } from "./log-bridge";
+// Plain constants file, no imports of its own, so this stays cheap for a
+// bundle injected at document_start.
+import { EVENT_TYPES } from "../utils/logger/constants";
+
 (function () {
   const injectionFunction = function () {
     /**
-     * Debug utility for consistent logging across the interceptor
-     * @type {Object}
+     * Logging for the interceptor.
+     *
+     * Goes through the page-world bridge rather than straight to `console`, so
+     * these lines reach the LoggingHub and the diagnostic endpoint like every
+     * other context's, and respect the SDK's console config. The `log`/`info`/
+     * `error` shape is unchanged from the previous local `debug` object.
      */
-    const debug = {
-      log: (...args) => console.log("🔍 [Debug]:", ...args),
-      error: (...args) => console.error("❌ [Error]:", ...args),
-      info: (...args) => console.info("ℹ️ [Info]:", ...args),
-      // log: (...args) => undefined, // Disabled console.log("🔍 [Debug]:", ...args),
-      // error: (...args) => undefined, // Disabled console.error("❌ [Error]:", ...args),
-      // info: (...args) => undefined, // Disabled console.info("ℹ️ [Info]:", ...args),
-    };
+    const debug = createPageLogger("interceptor", "interceptor.network");
 
     /**
      * RequestInterceptor class
@@ -49,7 +51,6 @@
        */
       async processRequestMiddlewares(requestData) {
         try {
-          // Run all request middlewares in parallel
           await Promise.all(this.requestMiddlewares.map((middleware) => middleware(requestData)));
         } catch (error) {
           debug.error("Error in request middleware:", error);
@@ -113,7 +114,6 @@
         const originalFetch = this.originalFetch;
         const self = this;
 
-        // Create a proxy for the fetch function
         window.fetch = new Proxy(originalFetch, {
           apply: async function (target, thisArg, argumentsList) {
             const [url, options = {}] = argumentsList;
@@ -131,7 +131,6 @@
               },
             };
 
-            // Add a marker property to the request
             Object.defineProperty(requestData, "_rc", {
               value: true,
               enumerable: false,
@@ -170,7 +169,6 @@
             // Start parsing ASAP; don't clone forAudit again
             self.processResponseMiddlewares(forAudit, requestData).catch(debug.error);
 
-            // Return the app's branch
             return forApp;
 
             // FIX: Don't create a prototype-chained response, use the original
@@ -206,7 +204,6 @@
         // Create a WeakMap to store request info for each XHR instance
         const requestInfoMap = new WeakMap();
 
-        // Modify open method on prototype
         XMLHttpRequest.prototype.open = function (...args) {
           // Mark this instance as intercepted
           Object.defineProperty(this, "_rc", {
@@ -226,7 +223,6 @@
             },
           };
 
-          // Store request info in WeakMap
           requestInfoMap.set(this, requestInfo);
 
           // Call original method
@@ -252,13 +248,11 @@
           return originalSetRequestHeader.apply(this, arguments);
         };
 
-        // Modify send method on prototype
         XMLHttpRequest.prototype.send = function (data) {
           const requestInfo = requestInfoMap.get(this);
           if (requestInfo) {
             requestInfo.options.body = data;
 
-            // Process request middlewares
             const runRequestMiddlewares = async () => {
               try {
                 await Promise.all(
@@ -269,7 +263,6 @@
               }
             };
 
-            // Store original onreadystatechange
             const originalHandler = this.onreadystatechange;
 
             // Override onreadystatechange
@@ -347,7 +340,6 @@
                       writable: false,
                     });
 
-                    // Process response middlewares
                     await self.processResponseMiddlewares(responseObj, requestInfo);
                   } catch (error) {
                     debug.error("Error processing XHR response:", error);
@@ -356,7 +348,6 @@
               }
             };
 
-            // Run middlewares then send
             runRequestMiddlewares().then(() => {
               originalSend.call(this, requestInfo.options.body);
             });
@@ -514,6 +505,15 @@
             data: combinedData,
           },
           "*",
+        );
+
+        // Named lifecycle event. Method and URL only — the response body here
+        // would be the user's data, and the interception itself is what matters.
+        debug.event(
+          EVENT_TYPES.REQUEST_INTERCEPTED,
+          "Intercepted",
+          combinedData.request.method,
+          url,
         );
       } catch (error) {
         debug.error("Error processing request/response:", error);

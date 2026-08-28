@@ -25,6 +25,17 @@ document.getElementById("startBtn").addEventListener("click", async () => {
 
     request = await reclaimExtensionSDK.init(appId, appSecret, providerId, {
       extensionID: "giclhcgjpilblajdkdkdboobjpaoanlk",
+
+      // Full local logging while developing. Defaults are consoleEnabled:false
+      // and logLevel:"INFO" because a consumer extension ships to end users.
+      // Applied first inside init(), so session-init and provider-fetch logs
+      // are captured too. Read them in: chrome://extensions → "service worker"
+      // (background), "Inspect views: offscreen/offscreen.html" (offscreen),
+      // and the provider tab's console (content script + interceptor).
+      logConfig: {
+        logLevel: "DEBUG",
+        consoleEnabled: true,
+      },
     });
 
     console.log("[popup] request", request);
