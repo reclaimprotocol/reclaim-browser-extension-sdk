@@ -122,7 +122,16 @@ describe("vendored attestor primitives", () => {
   });
 
   it("does not error on a catastrophic-looking regex", () => {
-    const regexp = makeRegex("^[a-z]+$");
+    // The catastrophic pattern is the INPUT UNDER TEST, not an accident.
+    // Upstream evaluates provider regexes with RE2, which cannot backtrack; we
+    // use `new RegExp` (webpack aliases re2 to false), which can. This pins
+    // what makeRegex does when handed a provider regex of that shape.
+    //
+    // CodeQL flags it as an inefficient regular expression and Copilot Autofix
+    // has once "fixed" it to `^[a-z]+$` — a linear pattern, which makes the
+    // test assert nothing at all. Do not simplify it.
+    // codeql[js/redos]
+    const regexp = makeRegex("([a-z]+)+$");
     regexp.test("a".repeat(31) + "\x00");
   });
 
