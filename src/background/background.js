@@ -10,7 +10,11 @@ import { RECLAIM_SESSION_STATUS, MESSAGE_ACTIONS, MESSAGE_SOURCES } from "../uti
 import { removeCspStrippingRule } from "./cspRuleManager";
 import { generateProof, formatProof } from "../utils/proof-generator";
 import { createClaimObject } from "../utils/claim-creator";
-import { BUILDER_EVENTS, createBuilderBridgeClient } from "../utils/builder";
+import {
+  BUILDER_EVENTS,
+  builderExtractedParameterValues,
+  createBuilderBridgeClient,
+} from "../utils/builder";
 import { loggingHub } from "../utils/logger/LoggingHub";
 import { EVENT_TYPES } from "../utils/logger/constants";
 import { SessionTimerManager } from "../utils/session-timer";
@@ -120,6 +124,8 @@ export default function initBackground() {
     providerDataMessage: new Map(),
     activeSessionId: null,
     _cspRuleId: null,
+    _cspRuleTimer: null,
+    _cspRuleGeneration: 0,
     builder: null,
     isBuilderMode: false,
     isBuilderTransition: false,
@@ -142,6 +148,7 @@ export default function initBackground() {
       }
       if (Array.isArray(proof?.witnesses)) formatted.witnesses = proof.witnesses;
       if (proof?.taskId != null) formatted.taskId = proof.taskId;
+      formatted.extractedParameterValues = builderExtractedParameterValues(proof);
       return formatted;
     },
     createClaimObject,
@@ -259,6 +266,11 @@ export default function initBackground() {
       try {
         const criteriaWithGeo = {
           ...criteria,
+          // A requestClaim descriptor is created by the Builder provider
+          // script, not by the provider recipe matcher. Preserve the active
+          // mode so claim creation keeps Builder parameter precedence and
+          // independent response-redaction semantics.
+          ...(ctx.builder ? { builderMode: true } : {}),
           geoLocation: ctx.providerData?.geoLocation ?? "",
           extensionConfig: ctx.providerData?.extensionConfig,
           templateParameters: ctx.parameters,

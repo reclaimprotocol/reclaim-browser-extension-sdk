@@ -9,16 +9,21 @@ import { CSP_RULE_MAX_LIFETIME_MS, TAB_TRANSITION_DELAY_MS } from "../utils/cons
 import {
   BUILDER_EVENTS,
   builderProblem,
+  builderProviderParameters,
   builderRecipeToProviderData,
-  builderTemplateParameters,
+  normalizeVerificationClientId,
 } from "../utils/builder";
 import { getClientSource } from "../utils/logger/client-source";
+import { clearBuilderCspRule } from "./builder-transition";
 
 const BUILDER_CLAIMANT_ID_STORAGE_KEY = "reclaim_builder_claimant_client_id";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export async function startVerification(ctx, templateData) {
   try {
+    // A CSP timer belongs to exactly one provider/session. Invalidate the
+    // previous timer before Builder preparation can await network calls.
+    invalidateCspRuleTimer(ctx);
     const isBuilderRequest = templateData?.builder?.apiVersion === "2";
     // A later legacy request must not inherit a failed Builder request's mode.
     // During a Builder multi-provider transition `ctx.builder` remains set,
@@ -43,6 +48,7 @@ export async function startVerification(ctx, templateData) {
     ctx.providerDataMessage = new Map();
     ctx.providerRequestsByHash = new Map();
     ctx.aborted = false;
+    ctx.expectManyClaims = false;
     ctx._cspRuleId = null;
 
     ctx.sessionTimerManager.clearAllTimers();
@@ -127,11 +133,14 @@ export async function startVerification(ctx, templateData) {
       try {
         const { ruleId } = await addCspStrippingRule(providerData.loginUrl);
         ctx._cspRuleId = ruleId;
-        // Safety net: auto-remove after max lifetime regardless of cleanup paths
-        setTimeout(() => {
-          if (ctx._cspRuleId) {
+        // Safety net: auto-remove after max lifetime regardless of cleanup paths.
+        // Guard by generation so an old provider cannot remove a newer rule.
+        const generation = ctx._cspRuleGeneration;
+        ctx._cspRuleTimer = setTimeout(() => {
+          if (ctx._cspRuleGeneration === generation && ctx._cspRuleId) {
             removeCspStrippingRule().catch(() => {});
             ctx._cspRuleId = null;
+            ctx._cspRuleTimer = null;
             loggingHub.info(
               "[BACKGROUND] CSP rule auto-removed after max lifetime",
               "background.csp",
@@ -202,6 +211,7 @@ export async function startVerification(ctx, templateData) {
             callbackUrl: ctx.callbackUrl,
             providerId: ctx.providerId,
             appId: ctx.appId,
+            builder: ctx.builder?.sessionMetadata,
           },
         };
 
@@ -261,6 +271,7 @@ export async function startVerification(ctx, templateData) {
       await removeCspStrippingRule().catch(() => {});
       ctx._cspRuleId = null;
     }
+    invalidateCspRuleTimer(ctx);
     // Release concurrency guard on immediate failure
     ctx.activeSessionId = null;
     throw error;
@@ -276,14 +287,20 @@ export async function failSession(ctx, errorMessage, requestHash, eventType) {
     await removeCspStrippingRule().catch(() => {});
     ctx._cspRuleId = null;
   }
+  invalidateCspRuleTimer(ctx);
 
   ctx.sessionTimerManager.clearAllTimers();
 
   // abort immediately to stop queue/offscreen processing
   ctx.aborted = true;
 
-  // Builder reports terminal state through its bridge. Legacy sessions retain
-  // their existing status update behaviour.
+  // A successfully submitted or cancelled Builder terminal owns the outcome.
+  // An error reservation is deliberately not a guard: its signed submission
+  // may have failed, and the local failure path still must clean up.
+  if (ctx.builder?.terminal === "success" || ctx.builder?.terminal === "cancelled") return;
+
+  // Builder reports terminal state through its direct API. Legacy sessions
+  // retain their existing status update behaviour.
   if (ctx.builder) {
     await submitBuilderFailure(ctx, "PROOF_ENGINE_ERROR", "Proof generation failed");
   } else if (!ctx.isBuilderMode && ctx.sessionId) {
@@ -625,6 +642,7 @@ export async function submitProofs(ctx) {
       await removeCspStrippingRule().catch(() => {});
       ctx._cspRuleId = null;
     }
+    invalidateCspRuleTimer(ctx);
 
     await ctx.loggingHub.clearSessionContext();
 
@@ -637,14 +655,18 @@ export async function submitProofs(ctx) {
       await removeCspStrippingRule().catch(() => {});
       ctx._cspRuleId = null;
     }
+    invalidateCspRuleTimer(ctx);
     // Release concurrency guard on failure
     ctx.activeSessionId = null;
     throw error;
   }
 }
 
-export async function cancelSession(ctx) {
+export async function cancelSession(ctx, requestedSessionId) {
   try {
+    if (!ctx.sessionId || String(ctx.sessionId) !== String(requestedSessionId ?? "")) {
+      return false;
+    }
     loggingHub.info(`[BACKGROUND] Cancelling session`, "background.session", {
       eventType: EVENT_TYPES.RECLAIM_VERIFICATION_CANCELLED_EXCEPTION,
     });
@@ -653,15 +675,17 @@ export async function cancelSession(ctx) {
       await removeCspStrippingRule().catch(() => {});
       ctx._cspRuleId = null;
     }
+    invalidateCspRuleTimer(ctx);
 
     ctx.sessionTimerManager.clearAllTimers();
 
     // abort immediately to stop queue/offscreen processing
     ctx.aborted = true;
 
-    // Builder reports cancellation through the bridge. Legacy sessions keep
+    // Builder reports cancellation through its direct API. Legacy sessions keep
     // their status update because its protocol has no cancellation state.
     if (ctx.builder) {
+      if (!claimBuilderTerminal(ctx.builder, "cancelled")) return false;
       await ctx.builder.client.reportEventBestEffort(
         ctx.sessionId,
         BUILDER_EVENTS.VERIFICATION_CANCELLED,
@@ -669,6 +693,13 @@ export async function cancelSession(ctx) {
           initiator: "USER",
           cancellationReason: "USER_CANCELLED",
         },
+      );
+      await submitBuilderTerminal(
+        ctx,
+        "cancelled",
+        "VERIFICATION_CANCELLED",
+        "Verification cancelled",
+        false,
       );
     } else if (!ctx.isBuilderMode && ctx.sessionId) {
       try {
@@ -796,12 +827,14 @@ export async function cancelSession(ctx) {
 
     // Release guard
     ctx.activeSessionId = null;
+    return true;
   } catch (e) {
     ctx.activeSessionId = null;
     loggingHub.error(
       `[BACKGROUND] Error during cancelSession: ${e?.message}`,
       "background.session",
     );
+    return false;
   }
 }
 
@@ -810,12 +843,19 @@ async function prepareBuilderProvider(ctx, templateData) {
   if (!ctx.builder) {
     ctx.loggingHub.setConfig({ logLevel: config.diagnosticMode ? "DEBUG" : "INFO" });
     const claimantClientId = await resolveClaimantClientId(config.claimantClientId);
+    const verificationClientId = normalizeVerificationClientId(config.verificationClientId);
     const client = ctx.createBuilderBridgeClient({
       backendUrl: config.backendUrl,
       verificationClientId: config.verificationClientId,
     });
     const bootstrap = await client.bootstrap(config.sessionId);
     assertBuilderBootstrap(bootstrap, config.sessionId);
+    if (
+      bootstrap.session.verificationClientId &&
+      normalizeVerificationClientId(bootstrap.session.verificationClientId) !== verificationClientId
+    ) {
+      throw new Error("Builder session Verification Client does not match the request");
+    }
 
     ctx.builder = {
       client,
@@ -826,10 +866,33 @@ async function prepareBuilderProvider(ctx, templateData) {
       proofs: [],
       providerOrdinal: 0,
       claimantClientId,
+      verificationClientId,
       claimantDetails: config.claimantDetails || {},
+      parameters:
+        templateData.parameters &&
+        typeof templateData.parameters === "object" &&
+        !Array.isArray(templateData.parameters)
+          ? { ...templateData.parameters }
+          : {},
       diagnosticMode: config.diagnosticMode === true,
       terminal: false,
+      sessionMetadata: {
+        theme: bootstrap.session.theme ?? null,
+        preferredLocale:
+          bootstrap.session.preferredLocale ?? bootstrap.session.theme?.preferredLocale ?? null,
+        consent: bootstrap.session.theme?.consent ?? bootstrap.session.consent ?? null,
+        runtimeConfig: bootstrap.session.runtimeConfig ?? null,
+      },
     };
+
+    // The extension popup has no consent renderer. Never silently proceed
+    // without the consent step configured by Builder; submit a signed error
+    // through the normal start-failure path instead. Theme, locale and runtime
+    // flags are retained as metadata for consumers while the existing popup
+    // safely falls back to its legacy presentation.
+    if (hasBuilderConsent(ctx.builder.sessionMetadata.consent)) {
+      throw new Error("Builder consent is configured but the extension cannot render consent UI");
+    }
 
     await client.reportEventBestEffort(
       config.sessionId,
@@ -863,7 +926,7 @@ async function prepareBuilderProvider(ctx, templateData) {
         client: {
           kind: "reclaim_browser_extension_sdk",
           verificationClient: {
-            id: bootstrap.session.verificationClientId,
+            id: builder.verificationClientId,
             name: "reclaim_browser_extension_sdk",
           },
           application: {
@@ -911,7 +974,12 @@ async function prepareBuilderProvider(ctx, templateData) {
     providerId: recipe.providerId,
     applicationId: builderApplicationId(builder.session),
     context: builder.session.context,
-    parameters: builderTemplateParameters(templateData.parameters, builder.session.context, recipe),
+    parameters: builderProviderParameters(
+      templateData.parameters,
+      builder.parameters,
+      builder.session.context,
+      recipe,
+    ),
     callbackUrl: "",
   };
 }
@@ -962,7 +1030,7 @@ async function completeBuilderProvider(ctx, proofs) {
       ...(providerRequest.builderRequestId ? { requestId: providerRequest.builderRequestId } : {}),
       ...(providerRequest.url ? { url: providerRequest.url } : {}),
       ...(providerRequest.method ? { method: providerRequest.method } : {}),
-      // The bridge receives the extension's exact legacy proof output. Do not
+      // Builder receives the extension's exact legacy proof output. Do not
       // deserialize, normalize, or verify nested attestation material here.
       proof,
       ...(extractedParameters && typeof extractedParameters === "object"
@@ -1010,6 +1078,11 @@ async function completeBuilderProvider(ctx, proofs) {
     return;
   }
 
+  // Reserve the terminal outcome before any asynchronous reporting or result
+  // submission. A cancellation or engine failure racing this point must not
+  // publish a second, contradictory canonical result.
+  if (!claimBuilderTerminal(builder, "success")) return;
+
   const totals = builderTotals(builder);
   await builder.client.reportEventBestEffort(
     builder.sessionId,
@@ -1039,6 +1112,11 @@ async function completeBuilderProvider(ctx, proofs) {
         problem: builderProblem("RESULT_SUBMISSION_FAILED", "Result submission failed", true),
       },
     );
+    // Release the success reservation before publishing the durable signed
+    // error. Otherwise failSession sees the in-flight success and cannot
+    // claim the error terminal outcome after a transient submit failure.
+    if (builder.terminal === "success") builder.terminal = null;
+    await submitBuilderFailure(ctx, "RESULT_SUBMISSION_FAILED", "Result submission failed");
     throw error;
   }
 
@@ -1050,6 +1128,11 @@ async function startNextBuilderProvider(ctx) {
   const activeTabId = ctx.activeTabId;
   ctx.isBuilderTransition = true;
   try {
+    // The next provider may have a different hostname. Remove the previous
+    // session rule before its tab is opened; startVerification resets the
+    // local rule id while preparing the new provider, so cleanup must happen
+    // at the transition boundary.
+    await clearBuilderCspRule(ctx, removeCspStrippingRule);
     if (activeTabId) {
       ctx.managedTabs.delete(activeTabId);
       await chrome.tabs.remove(activeTabId);
@@ -1066,25 +1149,81 @@ async function startNextBuilderProvider(ctx) {
 
 async function submitBuilderFailure(ctx, reasonCode, title) {
   const builder = ctx.builder;
-  if (!builder || builder.terminal) return;
+  if (!claimBuilderTerminal(builder, "error")) return;
   const problem = builderProblem(reasonCode, title, true);
+  const result = { status: "error", results: builder.results, problem };
+  for (const attempt of [1, 2]) {
+    await builder.client.reportEventBestEffort(
+      builder.sessionId,
+      BUILDER_EVENTS.VERIFICATION_RESULT_SUBMITTING,
+      { ...builderTotals(builder), attempt, status: "error" },
+    );
+    try {
+      await builder.client.submitResult(builder.sessionId, result);
+      return;
+    } catch {
+      if (attempt === 1) continue;
+    }
+    await builder.client.reportEventBestEffort(
+      builder.sessionId,
+      BUILDER_EVENTS.VERIFICATION_RESULT_SUBMISSION_FAILED,
+      {
+        attempt,
+        problem: builderProblem("RESULT_SUBMISSION_FAILED", "Result submission failed", true),
+      },
+    );
+  }
+}
+
+async function submitBuilderTerminal(ctx, status, reasonCode, title, retryable) {
+  const builder = ctx.builder;
+  if (!builder) return false;
+  const problem = builderProblem(reasonCode, title, retryable);
   try {
-    await builder.client.submitResult(builder.sessionId, {
-      status: "error",
+    await builder.client.reportEventBestEffort(
+      ctx.sessionId,
+      BUILDER_EVENTS.VERIFICATION_RESULT_SUBMITTING,
+      {
+        ...builderTotals(builder),
+        attempt: 1,
+        status,
+      },
+    );
+    await builder.client.submitResult(ctx.sessionId, {
+      status,
       results: builder.results,
       problem,
     });
-    builder.terminal = true;
+    return true;
   } catch {
     await builder.client.reportEventBestEffort(
-      builder.sessionId,
+      ctx.sessionId,
       BUILDER_EVENTS.VERIFICATION_RESULT_SUBMISSION_FAILED,
       {
         attempt: 1,
         problem: builderProblem("RESULT_SUBMISSION_FAILED", "Result submission failed", true),
       },
     );
+    return false;
   }
+}
+
+function claimBuilderTerminal(builder, status) {
+  if (!builder || builder.terminal) return false;
+  builder.terminal = status;
+  return true;
+}
+
+function invalidateCspRuleTimer(ctx) {
+  if (ctx._cspRuleTimer) clearTimeout(ctx._cspRuleTimer);
+  ctx._cspRuleTimer = null;
+  ctx._cspRuleGeneration = (ctx._cspRuleGeneration || 0) + 1;
+}
+
+function hasBuilderConsent(consent) {
+  return !!consent && typeof consent === "object" && !Array.isArray(consent)
+    ? Object.keys(consent).length > 0
+    : !!consent;
 }
 
 async function notifyBuilderCompleted(ctx, proofs) {
@@ -1108,6 +1247,7 @@ async function finishBuilderSession(ctx) {
     await chrome.tabs.update(ctx.originalTabId, { active: true }).catch(() => {});
   if (activeTabId) await chrome.tabs.remove(activeTabId).catch(() => {});
   if (ctx._cspRuleId) await removeCspStrippingRule().catch(() => {});
+  invalidateCspRuleTimer(ctx);
   ctx._cspRuleId = null;
   ctx.activeTabId = null;
   ctx.originalTabId = null;

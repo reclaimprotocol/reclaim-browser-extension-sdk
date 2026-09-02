@@ -2,9 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  BUILDER_BACKEND_URL,
+  builderExtractedParameterValues,
+  builderProviderParameters,
   builderRecipeToProviderData,
   createBuilderBridgeClient,
   builderTemplateParameters,
+  interpolateBuilderHeaders,
+  interpolateBuilderTemplate,
+  mergeBuilderParameterSources,
+  normalizeVerificationClientId,
   parseVerificationUrl,
 } from "../src/utils/builder.js";
 import {
@@ -17,6 +24,108 @@ import {
 } from "../src/utils/claim-creator/params-extractor.js";
 
 const VC_ID = "550e8400-e29b-41d4-a716-446655440000";
+
+test("canonicalizes Verification Client UUIDs for Builder API headers and payloads", () => {
+  assert.equal(normalizeVerificationClientId(VC_ID.toUpperCase()), VC_ID);
+  assert.throws(() => normalizeVerificationClientId("not-a-uuid"), /verificationClientId/);
+});
+
+test("Builder session parameters outrank captures, while requestClaim values win", () => {
+  assert.deepEqual(
+    mergeBuilderParameterSources({
+      url: { accountId: "from-url", urlOnly: "url" },
+      body: { accountId: "from-body", bodyOnly: "body" },
+      response: { accountId: "from-response", responseOnly: "response" },
+      template: { accountId: "from-session", sessionOnly: "session" },
+      extracted: { accountId: "from-request-claim", requestOnly: "request" },
+    }),
+    {
+      accountId: "from-request-claim",
+      urlOnly: "url",
+      bodyOnly: "body",
+      responseOnly: "response",
+      sessionOnly: "session",
+      requestOnly: "request",
+    },
+  );
+});
+
+test("Builder explicit parameters persist when transitioning to another provider", () => {
+  const explicit = { accountId: "session-account" };
+  const first = builderProviderParameters(
+    explicit,
+    {},
+    { accountId: "context-account" },
+    { requests: [{ url: "https://one.test/{{accountId}}" }] },
+  );
+  const second = builderProviderParameters(
+    undefined,
+    explicit,
+    { accountId: "context-account" },
+    { requests: [{ url: "https://two.test/{{accountId}}" }] },
+  );
+
+  assert.equal(first.accountId, "session-account");
+  assert.equal(second.accountId, "session-account");
+});
+
+test("Builder proofs always expose extracted parameter values", () => {
+  assert.deepEqual(
+    builderExtractedParameterValues({
+      claim: { context: JSON.stringify({ extractedParameters: { accountId: "account-7" } }) },
+    }),
+    { accountId: "account-7" },
+  );
+  assert.deepEqual(
+    builderExtractedParameterValues({
+      claim: { context: { extractedParameters: { accountId: "account-8" } } },
+    }),
+    { accountId: "account-8" },
+  );
+  assert.deepEqual(builderExtractedParameterValues({ claim: {} }), {});
+});
+
+test("interpolates static Builder header values with final parameter precedence", () => {
+  assert.deepEqual(
+    interpolateBuilderHeaders(
+      {
+        Authorization: "Bearer {{token}}",
+        "x-api-key": "{{SECRET_apiKey}}",
+        "x-unresolved": "{{missing}}",
+      },
+      {
+        token: "session-token",
+        SECRET_apiKey: "request-api-key",
+      },
+    ),
+    {
+      Authorization: "Bearer session-token",
+      "x-api-key": "request-api-key",
+      "x-unresolved": "{{missing}}",
+    },
+  );
+});
+
+test("interpolates Builder scalar fields while leaving unknown placeholders intact", () => {
+  assert.equal(
+    interpolateBuilderTemplate("region={{context.region}}/{{missing}}", {
+      "context.region": "eu-west-1",
+    }),
+    "region=eu-west-1/{{missing}}",
+  );
+});
+
+test("Builder merge helper retains legacy capture precedence without explicit values", () => {
+  assert.deepEqual(
+    mergeBuilderParameterSources({
+      url: { id: "url" },
+      body: { id: "body" },
+      response: { id: "response" },
+      extracted: { id: "request-claim" },
+    }),
+    { id: "request-claim" },
+  );
+});
 
 test("selects Builder only for an exact api=2 URL with a sessionId", () => {
   const builder = parseVerificationUrl(
@@ -42,7 +151,7 @@ test("selects Builder only for an exact api=2 URL with a sessionId", () => {
   assert.throws(() => parseVerificationUrl("https://verify.example.test/?api=2"), /sessionId/);
 });
 
-test("uses only Builder bridge routes and sends the Verification Client header", async () => {
+test("uses direct Builder verification routes and sends the Verification Client header", async () => {
   const requests = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, init = {}) => {
@@ -59,7 +168,7 @@ test("uses only Builder bridge routes and sends the Verification Client header",
 
   try {
     const client = createBuilderBridgeClient({
-      backendUrl: "https://bridge.example.test",
+      backendUrl: "https://builder.example.test",
       verificationClientId: VC_ID,
     });
     await client.bootstrap("session/one");
@@ -80,27 +189,55 @@ test("uses only Builder bridge routes and sends the Verification Client header",
       })),
       [
         {
-          path: "/api/sdk/builder/v2/sessions/session%2Fone/bootstrap",
+          path: "/verifications/sessions/session%2Fone/bootstrap",
           method: "GET",
           vcId: VC_ID,
         },
         {
-          path: "/api/sdk/builder/v2/sessions/session%2Fone/claimant",
+          path: "/verifications/sessions/session%2Fone/claimant",
           method: "PATCH",
           vcId: VC_ID,
         },
-        { path: "/api/sdk/builder/v2/sessions/session%2Fone/events", method: "POST", vcId: VC_ID },
+        { path: "/verifications/sessions/session%2Fone/events", method: "POST", vcId: VC_ID },
         {
-          path: "/api/sdk/builder/v2/sessions/session%2Fone/attestor-auth",
+          path: "/verifications/sessions/session%2Fone/attestor-auth",
           method: "POST",
           vcId: VC_ID,
         },
-        { path: "/api/sdk/builder/v2/sessions/session%2Fone/results", method: "POST", vcId: VC_ID },
+        { path: "/verifications/sessions/session%2Fone/results", method: "POST", vcId: VC_ID },
       ],
     );
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("defaults Builder transport to the Builder origin", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (url, init = {}) => {
+    requests.push(new Request(url, init));
+    return new Response(JSON.stringify({ session: {}, recipes: [] }), { status: 200 });
+  };
+
+  try {
+    const client = createBuilderBridgeClient({ verificationClientId: VC_ID });
+    await client.bootstrap("session-1");
+    assert.equal(new URL(requests[0].url).origin, BUILDER_BACKEND_URL);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("rejects the legacy API as a Builder transport", () => {
+  assert.throws(
+    () =>
+      createBuilderBridgeClient({
+        backendUrl: "https://api.reclaimprotocol.org",
+        verificationClientId: VC_ID,
+      }),
+    /cannot use the legacy Reclaim API/,
+  );
 });
 
 test("preserves unauthenticated Builder proof creation when attestor auth is not configured", async () => {
@@ -110,7 +247,7 @@ test("preserves unauthenticated Builder proof creation when attestor auth is not
 
   try {
     const client = createBuilderBridgeClient({
-      backendUrl: "https://bridge.example.test",
+      backendUrl: "https://builder.example.test",
       verificationClientId: VC_ID,
     });
 
@@ -191,7 +328,6 @@ test("fills only missing Builder parameters from session context", () => {
     userId: "explicit",
     "context.userId": "explicit-context",
     sessionOnly: "from-session",
-    "context.sessionOnly": "from-session",
   });
   const { pattern, unsubstitutedVars } = convertTemplateToRegex(
     "https://provider.example.test/{{userId}}/{{context.userId}}/{{sessionOnly}}",
@@ -204,29 +340,57 @@ test("fills only missing Builder parameters from session context", () => {
   );
 });
 
-test("uses context aliases in canonical, underscore, then bare order", () => {
+test("selects the highest-priority context alias requested by a recipe", () => {
   const context = { accountId: "account-7" };
 
-  assert.deepEqual(builderTemplateParameters({}, context, {
-    requests: [{ url: "https://x.test/{{context.accountId}}/{{context_accountId}}/{{accountId}}" }],
-  }), { "context.accountId": "account-7" });
-  assert.deepEqual(builderTemplateParameters({}, context, {
-    requests: [{ headers: { "x-account": "{{context_accountId}}/{{accountId}}" } }],
-  }), {
-    "context.accountId": "account-7",
-    context_accountId: "account-7",
-  });
-  assert.deepEqual(builderTemplateParameters({}, context, {
-    requests: [{ responseRedactions: [{ regex: "{{accountId}}" }] }],
-  }), {
-    "context.accountId": "account-7",
-    accountId: "account-7",
-  });
+  assert.deepEqual(
+    builderTemplateParameters({}, context, {
+      requests: [
+        { url: "https://x.test/{{context.accountId}}/{{context_accountId}}/{{accountId}}" },
+      ],
+    }),
+    {
+      "context.accountId": "account-7",
+    },
+  );
+  assert.deepEqual(
+    builderTemplateParameters({}, context, {
+      requests: [{ headers: { "x-account": "{{context_accountId}}/{{accountId}}" } }],
+    }),
+    {
+      context_accountId: "account-7",
+    },
+  );
+  assert.deepEqual(
+    builderTemplateParameters({}, context, {
+      requests: [{ responseRedactions: [{ regex: "{{accountId}}" }] }],
+    }),
+    {
+      accountId: "account-7",
+    },
+  );
 });
 
-test("does not create unused or redundant bare Builder context aliases", () => {
+test("uses named response-redaction groups as Builder context aliases", () => {
+  assert.deepEqual(
+    builderTemplateParameters(
+      {},
+      { userId: "session", unused: "ignored" },
+      {
+        requests: [
+          {
+            responseRedactions: [{ regex: '"userId":"(?<context_userId>[^\"]+)"' }],
+          },
+        ],
+      },
+    ),
+    { context_userId: "session" },
+  );
+});
+
+test("omits unused context and keeps explicit selected aliases", () => {
   const parameters = builderTemplateParameters(
-    {},
+    { context_userId: "explicit" },
     {
       userId: "session",
       accountId: "account",
@@ -237,18 +401,16 @@ test("does not create unused or redundant bare Builder context aliases", () => {
     {
       requests: [
         {
-          url: "https://provider.example.test/{{userId}}/{{context.accountId}}/{{reclaimSessionId}}/{{attestationNonce}}",
+          url: "https://provider.example.test/{{context_userId}}/{{context.accountId}}/{{reclaimSessionId}}/{{attestationNonce}}",
         },
       ],
     },
   );
 
-  assert.equal(parameters.userId, "session");
-  assert.equal(parameters.accountId, undefined);
-  assert.equal(parameters.unused, undefined);
-  assert.equal(parameters.reclaimSessionId, undefined);
-  assert.equal(parameters.attestationNonce, undefined);
-  assert.equal(parameters["context.accountId"], "account");
+  assert.deepEqual(parameters, {
+    context_userId: "explicit",
+    "context.accountId": "account",
+  });
 });
 
 test("forwards optional response matches only when their expectation is met", () => {

@@ -2,10 +2,19 @@ export interface InitOptions {
   extensionID?: string;
   providerVersion?: string;
   callbackUrl?: string;
+  acceptAiProviders?: boolean;
+  logConfig?: LogConfig;
+}
+
+export interface LogConfig {
+  /** `INFO` redacts values; `FINE` includes raw diagnostic values. */
+  logLevel?: "SEVERE" | "WARNING" | "INFO" | "FINE" | "ERROR" | "WARN" | "DEBUG";
+  /** Mirror diagnostic lines to the current context's console. */
+  consoleEnabled?: boolean;
 }
 
 export interface BuilderClaimantDetails {
-  /** Keep this string to 64 characters or fewer. */
+  /** Bounded diagnostics only; do not include cookies, credentials, URLs, or proof data. */
   locale?: string;
   /** Keep this string to 64 characters or fewer. */
   timezone?: string;
@@ -23,9 +32,9 @@ export interface BuilderInitOptions extends InitOptions {
   verificationClientId: string;
   /** Stable per-installation claimant UUID; generated and stored when omitted. */
   claimantClientId?: string;
-  /** HTTPS origin exposing `/api/sdk/builder/v2`; defaults to Reclaim's API. */
+  /** HTTPS Builder origin exposing `/verifications/sessions`; defaults to Builder. */
   backendUrl?: string;
-  /** Optional bounded claimant diagnostics sent to the Builder bridge. */
+  /** Optional bounded claimant diagnostics sent to Builder. */
   claimantDetails?: BuilderClaimantDetails;
 }
 
@@ -34,7 +43,7 @@ export interface VerificationUrl {
   mode: "legacy" | "builder";
   /** Present only for a Builder URL with a non-empty sessionId. */
   sessionId?: string;
-  /** Exact `diag=1` on a Builder URL enables DEBUG diagnostics. */
+  /** Exact `diag=1` on a Builder URL enables FINE diagnostics. */
   diagnosticMode?: boolean;
   url: URL;
 }
@@ -86,6 +95,8 @@ export class ReclaimExtensionSDK {
   initializeBackground(): unknown;
   isExtensionInstalled(opts?: { extensionID?: string; timeout?: number }): Promise<boolean>;
   getVersion(): string;
+  getClientSource(): string;
+  setLogConfig(config: LogConfig, extensionID?: string, timeout?: number): Promise<boolean>;
   parseVerificationUrl(verificationUrl: string | URL): VerificationUrl;
   init(
     applicationId: string,

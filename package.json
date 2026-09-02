@@ -20,7 +20,7 @@
     "index.d.ts"
   ],
   "scripts": {
-    "generate:builder-bridge": "openapi-ts && esbuild src/generated/builder-bridge/index.ts --bundle --format=esm --platform=browser --target=es2022 --outfile=src/generated/builder-bridge.gen.js",
+    "generate:builder-bridge": "node scripts/generate-builder-client.mjs",
     "prebuild": "prettier --write .",
     "build": "NODE_ENV=production node webpack-build-utils/build.js",
     "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test \"src/**/*.test.js\" test/builder.test.js",
@@ -131,6 +131,7 @@
     "html-loader": "^4.2.0",
     "html-webpack-plugin": "^5.5.0",
     "https-browserify": "^1.0.0",
+    "js-yaml": "^4.1.0",
     "node-polyfill-webpack-plugin": "4.1.0",
     "os-browserify": "^0.3.0",
     "path-browserify": "^1.0.1",

@@ -200,6 +200,7 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
                 callbackUrl: ctx.callbackUrl,
                 providerId: ctx.providerId,
                 appId: ctx.appId,
+                builder: ctx.builder?.sessionMetadata,
               },
             });
           } else {
@@ -327,8 +328,12 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
             "background.verification",
           );
 
-          await sessionManager.cancelSession(ctx, data?.sessionId);
-          sendResponse({ success: true });
+          const cancelled = await sessionManager.cancelSession(ctx, data?.sessionId);
+          sendResponse(
+            cancelled
+              ? { success: true }
+              : { success: false, error: "Verification session is no longer active" },
+          );
         } else {
           loggingHub.error(
             "[BACKGROUND] CANCEL_VERIFICATION: Action not supported",

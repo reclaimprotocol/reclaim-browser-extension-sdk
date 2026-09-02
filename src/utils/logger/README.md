@@ -1,64 +1,55 @@
-# Logger Utility
+# Logging
 
-A utility for sending diagnostic logs to Grafana for debugging purposes. This logger is separate from the existing Reclaim session status tracking.
+The SDK has one logging pipeline. The background `loggingHub` enriches and
+batches logs before sending them to Reclaim's diagnostic endpoint. Content and
+offscreen contexts use `createRemoteLogger()` to forward entries to that hub.
+Page-world interceptor scripts use the `RECLAIM_LOG` window message because
+they cannot call `chrome.runtime`.
 
 ## Usage
 
-```javascript
-import { log, logError, loggerService } from "../utils/logger";
+```js
+import { loggingHub } from "./LoggingHub.js";
+import { EVENT_TYPES } from "./constants.js";
 
-// Log a simple message
-log(
-  "Starting verification process", // message
-  "background.verification", // type/category
-  "abc123", // sessionId
-  "provider-123", // providerId
-  "0x123456789", // appId
-);
-
-// Log an error
-try {
-  // Some code that might throw an error
-} catch (error) {
-  logError(
-    error, // The Error object
-    "background.error", // type/category
-    "abc123", // sessionId
-    "provider-123", // providerId
-    "0x123456789", // appId
-    "Failed during verification process", // optional message
-  );
-}
-
-// For advanced usage, you can use the service directly
-import { loggerService, LogEntry } from "../utils/logger";
-
-const customLogEntry = new LogEntry({
-  sessionId: "abc123",
-  providerId: "provider-123",
-  appId: "0x123456789",
-  logLine: "Custom log entry",
-  type: "custom.log",
+loggingHub.info("Provider data loaded", "background.provider", {
+  eventType: EVENT_TYPES.FETCHED_PROVIDERS,
 });
-
-loggerService.addLog(customLogEntry);
 ```
 
-## Features
+For content and offscreen modules:
 
-- Automatically batches logs and sends them periodically
-- Sends logs immediately when batch size is reached
-- Handles errors and retries failed log submissions
-- Maintains persistent device ID for tracking
-- Properly formats timestamps and log entries for Grafana
+```js
+import { createRemoteLogger } from "./RemoteLogger.js";
 
-## Log Format
+const logger = createRemoteLogger("content");
+logger.warn("Response match is pending", "content.filter");
+```
 
-Each log entry includes:
+Use a dotted category (`background.claim`, `content.filter`) and an
+`EVENT_TYPES` value when the line maps to a lifecycle event. Pass structured
+data as `options.payload`; never concatenate response bodies, credentials,
+extracted values, or proofs into the message string.
 
-- `logLine`: The message content
-- `ts`: Timestamp in nanoseconds (Unix timestamp × 1,000,000)
-- `type`: Category/module of the log
-- `sessionId`: Current session identifier
-- `providerId`: Provider identifier
-- `appId`: Application identifier
+## Levels and privacy
+
+`INFO` is the default and redacts payload values. `FINE` is opt-in and sends
+raw diagnostic payloads to the endpoint as well as the console when enabled.
+`SEVERE` and `WARNING` remain visible at the default threshold. `debug()` is a
+backward-compatible alias for `FINE`; `fine()` is the canonical spelling.
+
+Configure the level with `reclaimExtensionSDK.setLogConfig()` or the `logConfig`
+option to `init()`. Keep `consoleEnabled` separate from `logLevel`: it only
+controls local mirroring and does not change remote collection.
+
+```js
+await reclaimExtensionSDK.setLogConfig({
+  logLevel: "INFO",
+  consoleEnabled: true,
+});
+```
+
+The logging hub persists its queue in `chrome.storage.session` and flushes on
+batch size, terminal cleanup, and a periodic schedule. Keep cleanup paths
+awaiting `clearSessionContext()` so terminal errors are not lost when an MV3
+service worker stops.

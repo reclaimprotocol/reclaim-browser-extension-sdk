@@ -18,6 +18,6 @@ export type CreateClientConfig<T extends ClientOptions = ClientOptions2> = (
 
 export const client = createClient(
   createConfig<ClientOptions2>({
-    baseUrl: "/api/sdk/builder/v2",
+    baseUrl: "http://localhost:4001",
   }),
 );

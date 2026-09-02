@@ -4,24 +4,21 @@ import type { Client, Options as Options2, TDataShape } from "@hey-api/client-fe
 
 import { client } from "./client.gen";
 import type {
-  BootstrapBuilderSessionData,
-  BootstrapBuilderSessionErrors,
-  BootstrapBuilderSessionResponses,
-  CreateBuilderAttestorAuthData,
-  CreateBuilderAttestorAuthErrors,
-  CreateBuilderAttestorAuthResponses,
-  GetBuilderBridgeOpenApiData,
-  GetBuilderBridgeOpenApiErrors,
-  GetBuilderBridgeOpenApiResponses,
-  PatchBuilderClaimantData,
-  PatchBuilderClaimantErrors,
-  PatchBuilderClaimantResponses,
-  ReportBuilderEventData,
-  ReportBuilderEventErrors,
-  ReportBuilderEventResponses,
-  SubmitBuilderResultsData,
-  SubmitBuilderResultsErrors,
-  SubmitBuilderResultsResponses,
+  BootstrapVerificationClientData,
+  BootstrapVerificationClientErrors,
+  BootstrapVerificationClientResponses,
+  CreateVerificationAttestorAuthData,
+  CreateVerificationAttestorAuthErrors,
+  CreateVerificationAttestorAuthResponses,
+  PatchVerificationClaimantData,
+  PatchVerificationClaimantErrors,
+  PatchVerificationClaimantResponses,
+  ReportVerificationEventData,
+  ReportVerificationEventErrors,
+  ReportVerificationEventResponses,
+  SubmitVerificationClientResultData,
+  SubmitVerificationClientResultErrors,
+  SubmitVerificationClientResultResponses,
 } from "./types.gen";
 
 export type Options<
@@ -42,30 +39,15 @@ export type Options<
 };
 
 /**
- * Get the Builder bridge OpenAPI document
+ * Bootstrap a Builder-mode Verification Client
+ * Returns the immutable session snapshot and its resolved provider recipes in one request. This is the entry point for claimant-facing `api=2` clients. It is served directly by Builder; legacy clients keep using the legacy backend. The registered `x-reclaim-vc-id` must match the client selected when the session was created.
  */
-export const getBuilderBridgeOpenApi = <ThrowOnError extends boolean = false>(
-  options?: Options<GetBuilderBridgeOpenApiData, ThrowOnError>,
-) => {
-  return (options?.client ?? client).get<
-    GetBuilderBridgeOpenApiResponses,
-    GetBuilderBridgeOpenApiErrors,
-    ThrowOnError
-  >({
-    url: "/openapi.yaml",
-    ...options,
-  });
-};
-
-/**
- * Get the session and resolved provider recipes
- */
-export const bootstrapBuilderSession = <ThrowOnError extends boolean = false>(
-  options: Options<BootstrapBuilderSessionData, ThrowOnError>,
+export const bootstrapVerificationClient = <ThrowOnError extends boolean = false>(
+  options: Options<BootstrapVerificationClientData, ThrowOnError>,
 ) => {
   return (options.client ?? client).get<
-    BootstrapBuilderSessionResponses,
-    BootstrapBuilderSessionErrors,
+    BootstrapVerificationClientResponses,
+    BootstrapVerificationClientErrors,
     ThrowOnError
   >({
     security: [
@@ -74,20 +56,21 @@ export const bootstrapBuilderSession = <ThrowOnError extends boolean = false>(
         type: "apiKey",
       },
     ],
-    url: "/sessions/{sessionId}/bootstrap",
+    url: "/verifications/sessions/{sessionId}/bootstrap",
     ...options,
   });
 };
 
 /**
- * Update the latest claimant diagnostic snapshot
+ * Update claimant details
+ * Updates the session's latest diagnostic claimant and device snapshot. The Builder captures the request's Reclaim client headers, HTTP user agent, and peer IP separately from client-reported values. These details never affect proof validity. The x-reclaim-vc-id must match the registered Verification Client selected at session creation.
  */
-export const patchBuilderClaimant = <ThrowOnError extends boolean = false>(
-  options: Options<PatchBuilderClaimantData, ThrowOnError>,
+export const patchVerificationClaimant = <ThrowOnError extends boolean = false>(
+  options: Options<PatchVerificationClaimantData, ThrowOnError>,
 ) => {
   return (options.client ?? client).patch<
-    PatchBuilderClaimantResponses,
-    PatchBuilderClaimantErrors,
+    PatchVerificationClaimantResponses,
+    PatchVerificationClaimantErrors,
     ThrowOnError
   >({
     security: [
@@ -96,7 +79,7 @@ export const patchBuilderClaimant = <ThrowOnError extends boolean = false>(
         type: "apiKey",
       },
     ],
-    url: "/sessions/{sessionId}/claimant",
+    url: "/verifications/sessions/{sessionId}/claimant",
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -106,14 +89,15 @@ export const patchBuilderClaimant = <ThrowOnError extends boolean = false>(
 };
 
 /**
- * Report a client-produced verification event
+ * Report a verification status event
+ * Used by the session's Verification Client, identified by the `x-reclaim-vc-id` header, to report status pings (opened, ready, per-request progress, and terminal events). Never carries the proof — the signed result is submitted via the result endpoint.
  */
-export const reportBuilderEvent = <ThrowOnError extends boolean = false>(
-  options: Options<ReportBuilderEventData, ThrowOnError>,
+export const reportVerificationEvent = <ThrowOnError extends boolean = false>(
+  options: Options<ReportVerificationEventData, ThrowOnError>,
 ) => {
   return (options.client ?? client).post<
-    ReportBuilderEventResponses,
-    ReportBuilderEventErrors,
+    ReportVerificationEventResponses,
+    ReportVerificationEventErrors,
     ThrowOnError
   >({
     security: [
@@ -122,7 +106,7 @@ export const reportBuilderEvent = <ThrowOnError extends boolean = false>(
         type: "apiKey",
       },
     ],
-    url: "/sessions/{sessionId}/events",
+    url: "/verifications/sessions/{sessionId}/events",
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -132,14 +116,15 @@ export const reportBuilderEvent = <ThrowOnError extends boolean = false>(
 };
 
 /**
- * Create session-bound legacy attestor authorization
+ * Create session-bound attestor authorization
+ * Creates the legacy-compatible attestor authorization for this Builder session when `ATTESTOR_AUTH_PRIVATE_KEY` is configured. The request accepts no application secret or provider signature. An empty response means attestor authorization is disabled for this deployment.
  */
-export const createBuilderAttestorAuth = <ThrowOnError extends boolean = false>(
-  options: Options<CreateBuilderAttestorAuthData, ThrowOnError>,
+export const createVerificationAttestorAuth = <ThrowOnError extends boolean = false>(
+  options: Options<CreateVerificationAttestorAuthData, ThrowOnError>,
 ) => {
   return (options.client ?? client).post<
-    CreateBuilderAttestorAuthResponses,
-    CreateBuilderAttestorAuthErrors,
+    CreateVerificationAttestorAuthResponses,
+    CreateVerificationAttestorAuthErrors,
     ThrowOnError
   >({
     security: [
@@ -148,7 +133,7 @@ export const createBuilderAttestorAuth = <ThrowOnError extends boolean = false>(
         type: "apiKey",
       },
     ],
-    url: "/sessions/{sessionId}/attestor-auth",
+    url: "/verifications/sessions/{sessionId}/attestor-auth",
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -158,14 +143,15 @@ export const createBuilderAttestorAuth = <ThrowOnError extends boolean = false>(
 };
 
 /**
- * Sign and submit exact legacy proofs as a Builder result
+ * Submit exact legacy proofs as a managed Builder result
+ * Accepts exact legacy `Proof` objects from a claimant-facing `api=2` client. Builder atomically records the first terminal outcome, checks it against the submitted status, signs the outer Builder JWS with its managed key, optionally encrypts it for matching callback subscriptions, and enqueues delivery. Retrying the same terminal outcome is idempotent. This is the only result-submission endpoint; Verification Clients never receive signing or encryption keys.
  */
-export const submitBuilderResults = <ThrowOnError extends boolean = false>(
-  options: Options<SubmitBuilderResultsData, ThrowOnError>,
+export const submitVerificationClientResult = <ThrowOnError extends boolean = false>(
+  options: Options<SubmitVerificationClientResultData, ThrowOnError>,
 ) => {
   return (options.client ?? client).post<
-    SubmitBuilderResultsResponses,
-    SubmitBuilderResultsErrors,
+    SubmitVerificationClientResultResponses,
+    SubmitVerificationClientResultErrors,
     ThrowOnError
   >({
     security: [
@@ -174,7 +160,7 @@ export const submitBuilderResults = <ThrowOnError extends boolean = false>(
         type: "apiKey",
       },
     ],
-    url: "/sessions/{sessionId}/results",
+    url: "/verifications/sessions/{sessionId}/results",
     ...options,
     headers: {
       "Content-Type": "application/json",

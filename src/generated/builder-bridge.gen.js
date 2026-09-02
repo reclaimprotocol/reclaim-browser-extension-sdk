@@ -1,5 +1,7 @@
 // src/generated/builder-bridge/types.gen.ts
-var ClientVerificationEvent = {
+var VerificationEvent = {
+  BILLING_REQUIRED: "billing_required",
+  SESSION_PENDING: "session_pending",
   VERIFICATION_CLIENT_OPENED: "verification_client_opened",
   VERIFICATION_CLIENT_READY: "verification_client_ready",
   VERIFICATION_CLIENT_WARNING: "verification_client_warning",
@@ -47,12 +49,39 @@ var ClientVerificationEvent = {
   VERIFICATION_RESULT_SUBMISSION_FAILED: "verification_result_submission_failed",
   VERIFICATION_SUCCESS: "verification_success",
   VERIFICATION_REJECTED: "verification_rejected",
-  VERIFICATION_ERROR: "verification_error"
-};
-var ServerVerificationEvent = {
-  BILLING_REQUIRED: "billing_required",
-  SESSION_PENDING: "session_pending",
+  VERIFICATION_ERROR: "verification_error",
   SESSION_EXPIRED: "session_expired"
+};
+var CredentialMode = {
+  SANDBOX: "SANDBOX",
+  PRODUCTION: "PRODUCTION"
+};
+var CallbackDeliveryStatus = {
+  PENDING: "pending",
+  DELIVERED: "delivered",
+  ATTEMPT_FAILED: "attempt_failed",
+  FAILED: "failed"
+};
+var VerificationStatus = {
+  PENDING: "pending",
+  SUCCESS: "success",
+  REJECTED: "rejected",
+  ERROR: "error",
+  CANCELLED: "cancelled",
+  EXPIRED: "expired"
+};
+var EntityStatus = {
+  ACTIVE: "ACTIVE",
+  ARCHIVED: "ARCHIVED"
+};
+var WriteRedactionMode = {
+  ZK: "zk",
+  KEY_UPDATE: "key-update"
+};
+var WebCredentialsType = {
+  OMIT: "omit",
+  SAME_ORIGIN: "same-origin",
+  INCLUDE: "include"
 };
 
 // node_modules/@hey-api/client-fetch/dist/index.js
@@ -300,18 +329,12 @@ var G = (s = {}) => {
 // src/generated/builder-bridge/client.gen.ts
 var client = G(
   w({
-    baseUrl: "/api/sdk/builder/v2"
+    baseUrl: "http://localhost:4001"
   })
 );
 
 // src/generated/builder-bridge/sdk.gen.ts
-var getBuilderBridgeOpenApi = (options) => {
-  return (options?.client ?? client).get({
-    url: "/openapi.yaml",
-    ...options
-  });
-};
-var bootstrapBuilderSession = (options) => {
+var bootstrapVerificationClient = (options) => {
   return (options.client ?? client).get({
     security: [
       {
@@ -319,11 +342,11 @@ var bootstrapBuilderSession = (options) => {
         type: "apiKey"
       }
     ],
-    url: "/sessions/{sessionId}/bootstrap",
+    url: "/verifications/sessions/{sessionId}/bootstrap",
     ...options
   });
 };
-var patchBuilderClaimant = (options) => {
+var patchVerificationClaimant = (options) => {
   return (options.client ?? client).patch({
     security: [
       {
@@ -331,7 +354,7 @@ var patchBuilderClaimant = (options) => {
         type: "apiKey"
       }
     ],
-    url: "/sessions/{sessionId}/claimant",
+    url: "/verifications/sessions/{sessionId}/claimant",
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -339,7 +362,7 @@ var patchBuilderClaimant = (options) => {
     }
   });
 };
-var reportBuilderEvent = (options) => {
+var reportVerificationEvent = (options) => {
   return (options.client ?? client).post({
     security: [
       {
@@ -347,7 +370,7 @@ var reportBuilderEvent = (options) => {
         type: "apiKey"
       }
     ],
-    url: "/sessions/{sessionId}/events",
+    url: "/verifications/sessions/{sessionId}/events",
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -355,7 +378,7 @@ var reportBuilderEvent = (options) => {
     }
   });
 };
-var createBuilderAttestorAuth = (options) => {
+var createVerificationAttestorAuth = (options) => {
   return (options.client ?? client).post({
     security: [
       {
@@ -363,7 +386,7 @@ var createBuilderAttestorAuth = (options) => {
         type: "apiKey"
       }
     ],
-    url: "/sessions/{sessionId}/attestor-auth",
+    url: "/verifications/sessions/{sessionId}/attestor-auth",
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -371,7 +394,7 @@ var createBuilderAttestorAuth = (options) => {
     }
   });
 };
-var submitBuilderResults = (options) => {
+var submitVerificationClientResult = (options) => {
   return (options.client ?? client).post({
     security: [
       {
@@ -379,7 +402,7 @@ var submitBuilderResults = (options) => {
         type: "apiKey"
       }
     ],
-    url: "/sessions/{sessionId}/results",
+    url: "/verifications/sessions/{sessionId}/results",
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -388,13 +411,17 @@ var submitBuilderResults = (options) => {
   });
 };
 export {
-  ClientVerificationEvent,
-  ServerVerificationEvent,
-  bootstrapBuilderSession,
+  CallbackDeliveryStatus,
+  CredentialMode,
+  EntityStatus,
+  VerificationEvent,
+  VerificationStatus,
+  WebCredentialsType,
+  WriteRedactionMode,
+  bootstrapVerificationClient,
   client,
-  createBuilderAttestorAuth,
-  getBuilderBridgeOpenApi,
-  patchBuilderClaimant,
-  reportBuilderEvent,
-  submitBuilderResults
+  createVerificationAttestorAuth,
+  patchVerificationClaimant,
+  reportVerificationEvent,
+  submitVerificationClientResult
 };

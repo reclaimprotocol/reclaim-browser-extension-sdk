@@ -1,21 +1,114 @@
-import { BACKEND_URL } from "./constants/constants.js";
 import {
-  ClientVerificationEvent as BUILDER_EVENTS,
-  bootstrapBuilderSession,
+  VerificationEvent as BUILDER_EVENTS,
+  bootstrapVerificationClient as bootstrapBuilderSession,
   client as generatedBuilderBridgeClient,
-  createBuilderAttestorAuth,
-  patchBuilderClaimant,
-  reportBuilderEvent,
-  submitBuilderResults,
+  createVerificationAttestorAuth as createBuilderAttestorAuth,
+  patchVerificationClaimant as patchBuilderClaimant,
+  reportVerificationEvent as reportBuilderEvent,
+  submitVerificationClientResult as submitBuilderResults,
 } from "../generated/builder-bridge.gen.js";
 
 export { BUILDER_EVENTS };
 
+// Builder owns the api=2 verification API. Keep legacy provider/session traffic on the
+// existing API origin, but default Builder verification to the Builder origin.
+export const BUILDER_BACKEND_URL = "https://build.reclaimprotocol.org";
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
- * Adds missing Builder template parameters from the session context.
- * Explicit parameters keep precedence. Context aliases resolve in this order:
+ * Validate and canonicalize a Builder Verification Client UUID. Builder
+ * compares this identifier in both request headers and session-bound payloads;
+ * keeping one representation avoids a casing mismatch between the two.
+ */
+export function normalizeVerificationClientId(value) {
+  if (typeof value !== "string" || !UUID_PATTERN.test(value.trim())) {
+    throw new Error("verificationClientId must be a registered Verification Client UUID");
+  }
+  return value.trim().toLowerCase();
+}
+
+/**
+ * Merge parameters discovered while observing a request with Builder's
+ * explicit values. Session parameters intentionally outrank URL/body/response
+ * captures; a provider script's requestClaim values are the most specific and
+ * therefore have final precedence.
+ */
+export function mergeBuilderParameterSources({
+  url = {},
+  body = {},
+  response = {},
+  template = {},
+  extracted = {},
+} = {}) {
+  return {
+    ...url,
+    ...body,
+    ...response,
+    ...template,
+    ...extracted,
+  };
+}
+
+/**
+ * Return the Builder contract's required extracted parameter map from a raw
+ * attestor proof. The attestor has emitted claim.context as either JSON text
+ * or an object in different client versions, so accept both representations
+ * and always provide the required object field to Builder.
+ */
+export function builderExtractedParameterValues(proof) {
+  if (proof && typeof proof === "object" && !Array.isArray(proof)) {
+    const explicit = proof.extractedParameterValues;
+    if (explicit && typeof explicit === "object" && !Array.isArray(explicit)) return explicit;
+
+    const context = proof.claim?.context;
+    if (context && typeof context === "object" && !Array.isArray(context)) {
+      const extracted = context.extractedParameters;
+      if (extracted && typeof extracted === "object" && !Array.isArray(extracted)) return extracted;
+    }
+
+    if (typeof context === "string") {
+      try {
+        const parsed = JSON.parse(context);
+        const extracted = parsed?.extractedParameters;
+        if (extracted && typeof extracted === "object" && !Array.isArray(extracted))
+          return extracted;
+      } catch {
+        // Older attestors can return a non-JSON context; the contract still
+        // requires a map, so fall back to the empty map below.
+      }
+    }
+  }
+  return {};
+}
+
+export function interpolateBuilderTemplate(value, parameters = {}) {
+  if (typeof value !== "string" || !value.includes("{{")) return value;
+  return value.replace(/\{\{([^{}]+)\}\}/g, (placeholder, parameter) =>
+    Object.prototype.hasOwnProperty.call(parameters, parameter)
+      ? String(parameters[parameter])
+      : placeholder,
+  );
+}
+
+/**
+ * Resolve values in a Builder request-header map. Header values are not passed
+ * through the attestor's normal URL/body substitution path, so static recipe
+ * headers need to be materialized before the claim is sent.
+ */
+export function interpolateBuilderHeaders(headers, parameters = {}) {
+  if (!headers || typeof headers !== "object" || Array.isArray(headers)) return {};
+  return Object.fromEntries(
+    Object.entries(headers).map(([name, value]) => [
+      name,
+      interpolateBuilderTemplate(value, parameters),
+    ]),
+  );
+}
+
+/**
+ * Adds only the Builder context parameters selected by the recipe. Explicit
+ * parameters keep precedence. Context aliases resolve in this order:
  * context.foo, context_foo, then foo.
  */
 export function builderTemplateParameters(explicitParameters, context, recipe) {
@@ -26,61 +119,78 @@ export function builderTemplateParameters(explicitParameters, context, recipe) {
       ? { ...explicitParameters }
       : {};
   if (!context || typeof context !== "object" || Array.isArray(context)) return parameters;
-  const names = builderRecipePlaceholderNames(recipe);
-
+  const requestedNames = builderRecipeParameterNames(recipe);
   for (const [key, value] of Object.entries(context)) {
     if (!["string", "number", "boolean"].includes(typeof value)) continue;
     const stringValue = String(value);
     const contextKey = `context.${key}`;
     const underscoreKey = `context_${key}`;
-    if (
-      key !== "reclaimSessionId" &&
-      key !== "attestationNonce" &&
-      !names.has(contextKey)
-    ) {
-      if (
-        names.has(underscoreKey) &&
-        !Object.prototype.hasOwnProperty.call(parameters, underscoreKey)
-      ) {
-        parameters[underscoreKey] = stringValue;
-      } else if (
-        names.has(key) &&
-        !Object.prototype.hasOwnProperty.call(parameters, key)
-      ) {
-        parameters[key] = stringValue;
-      }
-    }
-    if (!Object.prototype.hasOwnProperty.call(parameters, contextKey)) {
-      parameters[contextKey] = stringValue;
+    const selectedName = selectBuilderContextParameterName(
+      key,
+      contextKey,
+      underscoreKey,
+      requestedNames,
+    );
+    if (selectedName && !Object.prototype.hasOwnProperty.call(parameters, selectedName)) {
+      parameters[selectedName] = stringValue;
     }
   }
   return parameters;
 }
 
-function builderRecipePlaceholderNames(recipe) {
-  if (!recipe || typeof recipe !== "object" || Array.isArray(recipe)) return new Set();
-  const templates = [recipe.initialUrl, recipe.geoLocation];
+/**
+ * Resolve one provider's parameters while retaining the values supplied at
+ * session start when the next provider transition has no new request object.
+ */
+export function builderProviderParameters(
+  templateParameters,
+  persistedParameters,
+  context,
+  recipe,
+) {
+  return builderTemplateParameters(templateParameters ?? persistedParameters, context, recipe);
+}
+
+function selectBuilderContextParameterName(key, contextKey, underscoreKey, requestedNames) {
+  if (requestedNames.has(contextKey)) return contextKey;
+  if (key === "reclaimSessionId" || key === "attestationNonce") return null;
+  if (requestedNames.has(underscoreKey)) return underscoreKey;
+  if (requestedNames.has(key)) return key;
+  return null;
+}
+
+function builderRecipeParameterNames(recipe) {
+  const names = new Set();
+  if (!recipe || typeof recipe !== "object" || Array.isArray(recipe)) return names;
+
+  const collectTemplateNames = (value) => {
+    if (typeof value !== "string") return;
+    for (const match of value.matchAll(/\{\{([^{}]+)\}\}/g)) names.add(match[1]);
+  };
+  collectTemplateNames(recipe.initialUrl);
+  collectTemplateNames(recipe.geoLocation);
   for (const request of Array.isArray(recipe.requests) ? recipe.requests : []) {
-    templates.push(request?.url, request?.requestBodyTemplate);
-    if (request?.headers && typeof request.headers === "object") {
-      templates.push(...Object.values(request.headers));
+    if (!request || typeof request !== "object" || Array.isArray(request)) continue;
+    collectTemplateNames(request.url);
+    collectTemplateNames(request.requestBodyTemplate);
+    if (request.headers && typeof request.headers === "object" && !Array.isArray(request.headers)) {
+      for (const value of Object.values(request.headers)) collectTemplateNames(value);
     }
-    for (const match of Array.isArray(request?.responseMatches) ? request.responseMatches : []) {
-      templates.push(match?.value);
+    for (const match of Array.isArray(request.responseMatches) ? request.responseMatches : []) {
+      collectTemplateNames(match?.value);
     }
-    for (const redaction of Array.isArray(request?.responseRedactions)
+    for (const redaction of Array.isArray(request.responseRedactions)
       ? request.responseRedactions
       : []) {
-      if (redaction && typeof redaction === "object") {
-        templates.push(...Object.values(redaction));
+      if (!redaction || typeof redaction !== "object" || Array.isArray(redaction)) continue;
+      for (const value of Object.values(redaction)) {
+        collectTemplateNames(value);
+        if (typeof value !== "string") continue;
+        for (const match of value.matchAll(/\(\?<([A-Za-z_$][A-Za-z0-9_$]*)>/g)) {
+          names.add(match[1]);
+        }
       }
     }
-  }
-
-  const names = new Set();
-  for (const template of templates) {
-    if (typeof template !== "string") continue;
-    for (const match of template.matchAll(/\{\{([^{}]+)\}\}/g)) names.add(match[1]);
   }
   return names;
 }
@@ -105,13 +215,12 @@ export function parseVerificationUrl(value) {
   return { mode: "builder", sessionId, diagnosticMode: url.searchParams.get("diag") === "1", url };
 }
 
-export function createBuilderBridgeClient({ backendUrl = BACKEND_URL, verificationClientId }) {
-  if (typeof verificationClientId !== "string" || !UUID_PATTERN.test(verificationClientId.trim())) {
-    throw new Error("verificationClientId must be a registered Verification Client UUID");
-  }
-
+export function createBuilderBridgeClient({
+  backendUrl = BUILDER_BACKEND_URL,
+  verificationClientId,
+}) {
   const baseUrl = normalizeBackendUrl(backendUrl);
-  const vcId = verificationClientId.trim().toLowerCase();
+  const vcId = normalizeVerificationClientId(verificationClientId);
 
   return {
     async bootstrap(sessionId) {
@@ -186,9 +295,15 @@ export function createBuilderBridgeClient({ backendUrl = BACKEND_URL, verificati
     const normalized = String(sessionId || "").trim();
     if (!normalized) throw new Error("Builder sessionId must be a non-empty string");
     const generatedBaseUrl = generatedBuilderBridgeClient.getConfig().baseUrl;
-    if (!generatedBaseUrl) throw new Error("Generated Builder bridge client has no server URL");
+    if (!generatedBaseUrl) throw new Error("Generated Builder client has no server URL");
+    let generatedPath = "";
+    try {
+      generatedPath = new URL(generatedBaseUrl).pathname;
+    } catch {
+      generatedPath = generatedBaseUrl;
+    }
     return {
-      baseUrl: new URL(generatedBaseUrl, `${baseUrl}/`).toString().replace(/\/+$/, ""),
+      baseUrl: new URL(generatedPath || "/", `${baseUrl}/`).toString().replace(/\/+$/, ""),
       path: { sessionId: normalized },
       headers: { "x-reclaim-vc-id": vcId },
       throwOnError: true,
@@ -239,6 +354,7 @@ export function builderRecipeToProviderData(recipe, providerOrdinal) {
         urlType: url.includes("{{") ? "TEMPLATE" : "CONSTANT",
         method,
         responseMatches: Array.isArray(request.responseMatches) ? request.responseMatches : [],
+        builderMode: true,
         responseRedactions: Array.isArray(request.responseRedactions)
           ? request.responseRedactions
           : [],
@@ -276,6 +392,9 @@ function normalizeBackendUrl(value) {
   if (url.protocol !== "https:") {
     throw new Error("Builder backendUrl must use HTTPS");
   }
+  if (url.hostname.toLowerCase() === "api.reclaimprotocol.org") {
+    throw new Error("Builder backendUrl cannot use the legacy Reclaim API");
+  }
   return url.toString().replace(/\/+$/, "");
 }
 
@@ -292,7 +411,7 @@ function decodeAuthorizationEnvelope(body) {
     if (typeof decoded === "string") return decoded;
     if (decoded && typeof decoded.authorization === "string") return decoded.authorization;
   } catch {
-    // The bridge returns the legacy base64 body directly.
+    // Builder returns the legacy base64 body directly.
   }
   return body;
 }

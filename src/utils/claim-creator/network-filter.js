@@ -178,7 +178,12 @@ function describeRequestCriteria(request, filterCriteria, parameters = {}) {
   );
 }
 
-function describeResponseCriteria(responseText, matchCriteria, parameters = {}) {
+function describeResponseCriteria(
+  responseText,
+  matchCriteria,
+  parameters = {},
+  builderMode = false,
+) {
   if (!matchCriteria || matchCriteria.length === 0) {
     return matched();
   }
@@ -194,7 +199,7 @@ function describeResponseCriteria(responseText, matchCriteria, parameters = {}) 
     const regex = makeRegex(pattern);
     const matches = regex.test(responseText);
     const matchExpectation = match.invert ? !matches : matches;
-    if (match.isOptional && !matchExpectation) continue;
+    if (builderMode && match.isOptional && !matchExpectation) continue;
     if (!matchExpectation) {
       // `match.value` is provider-authored (a template with {{param}}
       // placeholders), so it is safe in the message; the response is not, and
@@ -306,9 +311,11 @@ export const describeRequestMatch = (request, filterCriteria, parameters = {}, l
     if (!requestVerdict.matched) return requestVerdict;
 
     // If criteria requires response validation but we have no response, reject
-    const needsResponse =
-      filterCriteria.responseRedactions?.length > 0 ||
-      filterCriteria.responseMatches?.some((match) => !match.isOptional || match.invert);
+    const builderMode = filterCriteria.builderMode === true;
+    const needsResponse = builderMode
+      ? filterCriteria.responseRedactions?.length > 0 ||
+        filterCriteria.responseMatches?.some((match) => !match.isOptional || match.invert)
+      : filterCriteria.responseRedactions?.length > 0 || filterCriteria.responseMatches?.length > 0;
     if (needsResponse && !request.responseText) {
       // Routine rather than fatal: the content script pairs a request with its
       // response asynchronously, so this is the normal state on the tick
@@ -321,6 +328,7 @@ export const describeRequestMatch = (request, filterCriteria, parameters = {}, l
         request.responseText,
         filterCriteria.responseMatches,
         parameters,
+        builderMode,
       );
       if (!responseVerdict.matched) return responseVerdict;
     }

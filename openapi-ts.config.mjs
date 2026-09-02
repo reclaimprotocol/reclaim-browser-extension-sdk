@@ -1,17 +1,16 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
-const adjacentContract = resolve(
-  "../devtools/reclaim-sdk-backend/backend/openapi/builder-bridge.openapi.yaml",
-);
+const adjacentContract = resolve("../project-new-tools/builder/packages/app/openapi.yaml");
 
 /** @type {import('@hey-api/openapi-ts').UserConfig} */
 export default {
   input:
+    process.env.BUILDER_OPENAPI ||
     process.env.BRIDGE_OPENAPI ||
     (existsSync(adjacentContract)
       ? adjacentContract
-      : "https://api.reclaimprotocol.org/api/sdk/builder/v2/openapi.yaml"),
+      : "https://build.reclaimprotocol.org/openapi.yaml"),
   output: {
     path: "src/generated/builder-bridge",
     format: "prettier",

@@ -112,7 +112,7 @@ class RemoteLogger {
    *
    * @param {string} message - Log message
    * @param {string} type - Log type/category
-   * @param {string} level - Log level ("ERROR" | "WARN" | "INFO" | "DEBUG")
+   * @param {string} level - Log level ("SEVERE" | "WARNING" | "INFO" | "FINE")
    * @param {Object} [options] - `{ eventType, payload }`. `payload` is sent as
    *   an object (chrome messaging structured-clones it) so the hub can redact it
    *   for the endpoint while both consoles show the real values.

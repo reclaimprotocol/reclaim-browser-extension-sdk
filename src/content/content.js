@@ -276,6 +276,7 @@ class ReclaimContentScript {
     this.sessionId = null;
     this.providerId = null;
     this.appId = null;
+    this.builderMetadata = null;
     this.filteringInterval = null;
     this.filteringStartTime = null;
     this.filteredRequests = [];
@@ -495,6 +496,7 @@ class ReclaimContentScript {
         this.sessionId = data.sessionId;
         this.providerId = data.providerId || "unknown";
         this.appId = data.appId || "unknown";
+        this.builderMetadata = data.builder || null;
 
         localStorage.setItem(
           "reclaimBrowserExtensionParameters",

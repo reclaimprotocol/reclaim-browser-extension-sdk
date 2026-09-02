@@ -4,7 +4,7 @@ import initBackground from "./background/background";
 import { BACKEND_URL, API_ENDPOINTS, RECLAIM_SDK_ACTIONS } from "./utils/constants";
 import { LOG_CONFIG_STORAGE_KEY, DEFAULT_LOG_CONFIG } from "./utils/logger/constants";
 import { withClientSource, getClientSource } from "./utils/logger/client-source";
-import { parseVerificationUrl } from "./utils/builder";
+import { BUILDER_BACKEND_URL, parseVerificationUrl } from "./utils/builder";
 
 // Global verification queue to serialize extension sessions (background is single-session)
 const _verificationQueue = [];
@@ -176,7 +176,7 @@ class ReclaimExtensionProofRequest {
         sessionId: verification.sessionId,
         verificationClientId: options.verificationClientId,
         claimantClientId: options.claimantClientId,
-        backendUrl: options.backendUrl || BACKEND_URL,
+        backendUrl: options.backendUrl || BUILDER_BACKEND_URL,
         claimantDetails: options.claimantDetails || {},
         diagnosticMode: verification.diagnosticMode,
       },
@@ -246,28 +246,50 @@ class ReclaimExtensionProofRequest {
     // Wait for VERIFICATION_FAILED propagated from content on cancel
     return new Promise((resolve) => {
       let done = false;
+      const finish = (result) => {
+        if (done) return;
+        done = true;
+        offErr();
+        resolve(result);
+      };
       const offErr = this.on("error", () => {
-        if (!done) {
-          done = true;
-          offErr();
-          resolve(true);
-        }
+        finish(true);
       });
-      // Post cancel
-      window.postMessage(
-        {
-          action: RECLAIM_SDK_ACTIONS.CANCEL_VERIFICATION,
-          messageId: this.sessionId,
-          extensionID: this.extensionID,
-        },
-        "*",
-      );
+      // Extension pages talk directly to the background. Web pages retain the
+      // window bridge so older consumers and content-script routing are
+      // unchanged.
+      if (this._mode === "extension") {
+        try {
+          chrome.runtime.sendMessage(
+            {
+              action: "CANCEL_VERIFICATION",
+              source: "content-script",
+              target: "background",
+              data: { sessionId: this.sessionId },
+            },
+            (response) => {
+              // Reading lastError prevents Chrome from logging an unchecked
+              // callback warning when the service worker is unavailable.
+              const runtimeError = chrome.runtime.lastError;
+              if (runtimeError || response?.success === false) finish(false);
+            },
+          );
+        } catch (error) {
+          this._emit("error", error instanceof Error ? error : new Error(String(error)));
+        }
+      } else {
+        window.postMessage(
+          {
+            action: RECLAIM_SDK_ACTIONS.CANCEL_VERIFICATION,
+            messageId: this.sessionId,
+            extensionID: this.extensionID,
+          },
+          "*",
+        );
+      }
       // Fallback timeout
       setTimeout(() => {
-        if (!done) {
-          offErr();
-          resolve(false);
-        }
+        finish(false);
       }, timeoutMs);
     });
   }

@@ -13,6 +13,21 @@ This is a **library**, not a shippable extension. It publishes prebuilt bundles 
 extension copies into its own `public/` folder — consumers cannot re-bundle them. Chrome MV3 primary,
 MV2/Firefox variants also emitted.
 
+## Contents
+
+- [Commands](#commands)
+- [Architecture](#architecture)
+- [The claim object must satisfy the attestor's schema exactly](#the-claim-object-must-satisfy-the-attestors-schema-exactly)
+- [Provider values wider than this SDK supports](#provider-values-wider-than-this-sdk-supports)
+- [Messaging](#messaging)
+- [Provider-facing page API](#provider-facing-page-api)
+- [CSP stripping](#csp-stripping)
+- [Offscreen document](#offscreen-document)
+- [Build output and bundle-format constraints](#build-output-and-bundle-format-constraints)
+- [Logging](#logging)
+- [`reclaim-api-client`](#reclaim-api-client)
+- [Documentation map](#documentation-map)
+
 ## Commands
 
 ```bash
@@ -90,6 +105,27 @@ match → FILTERED_REQUEST_FOUND → ctx.processFilteredRequest (background.js)
 proofQueue → generateProof → offscreen document → attestor-core → proof
 all requestHashes satisfied → sessionManager.submitProofs → callbackUrl / PROOF_SUBMITTED
 ```
+
+### Builder `api=2`
+
+The public Builder entry points are `fromVerificationUrl()` and
+`initBuilder()`. They accept only a URL whose query contains exactly `api=2`
+and a non-empty `sessionId`; all other URLs stay on the legacy path. Builder
+requests require the registered Verification Client UUID in
+`x-reclaim-vc-id` and use Builder's direct Verification API.
+
+The extension sends raw legacy `Proof` objects to Builder's `results` endpoint.
+Builder owns terminal-event storage, outer-result signing, callback encryption,
+and retries. Signing and encryption keys must never be added to extension code
+or claimant diagnostics. The extension does not render Builder consent UI, so
+consent-enabled sessions fail closed before opening a provider tab.
+
+The generated client is under `src/generated/builder-bridge/` for compatibility
+with the existing package layout; it is a Builder API client, not a backend
+bridge. Run `npm run generate:builder-bridge` after the Builder OpenAPI contract
+changes. Do not edit generated files. The generator reads
+`BUILDER_OPENAPI`, then the adjacent Builder app contract, then the deployed
+contract.
 
 Non-obvious properties of this pipeline:
 
@@ -524,7 +560,7 @@ Non-obvious properties:
   excluded, because a claim's `params.body` is a provider-authored template worth reading, not user data.
 
   The backend redacts unconditionally too
-  ([sanitize.ts](../reclaim-logs-backend/src/utils/sanitize.ts) blanks `deviceId`, `publicIpAddress`,
+  ([sanitize.ts](../devtools/reclaim-logs-backend/src/utils/sanitize.ts) blanks `deviceId`, `publicIpAddress`,
   `userAgent`, `metadata` on every `logDump`) — but it never touches `logLine`, so anything embedded in a
   message string reaches Loki verbatim regardless.
 
@@ -665,12 +701,10 @@ emits no `appLogs` of its own — the `USER_STARTED_VERIFICATION` analytics row 
 reclaim-sdk-backend in response to `updateSessionStatus`, and there is no extension equivalent of InApp's
 `FETCHED_PROVIDERS`.
 
-## Docs that drift
+## Documentation map
 
-[readme.md](readme.md) is the accurate consumer-facing integration guide (assets, manifest, permissions,
-troubleshooting). The per-module READMEs
-([background](src/background/README.md), [content](src/content/README.md),
-[offscreen](src/offscreen/README.md), [logger](src/utils/logger/README.md)) predate several refactors —
-they still reference `debugLogger`/`DebugLogType`, `loggerService`, and `ProviderVerificationPopup.js`,
-none of which exist. Read them for intent, verify against source, and prefer updating them over
-propagating their examples.
+[readme.md](readme.md) is the consumer-facing integration guide. The module
+READMEs describe implementation boundaries and current entry points:
+[background](src/background/README.md), [content](src/content/README.md),
+[offscreen](src/offscreen/README.md), and [logger](src/utils/logger/README.md).
+Keep examples aligned with exported symbols and the message constants.
