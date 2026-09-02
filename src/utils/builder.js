@@ -15,8 +15,8 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3
 
 /**
  * Adds missing Builder template parameters from the session context.
- * Explicit parameters keep precedence, and context.foo remains available for
- * templates that use the explicit context namespace.
+ * Explicit parameters keep precedence. Context aliases resolve in this order:
+ * context.foo, context_foo, then foo.
  */
 export function builderTemplateParameters(explicitParameters, context, recipe) {
   const parameters =
@@ -32,14 +32,23 @@ export function builderTemplateParameters(explicitParameters, context, recipe) {
     if (!["string", "number", "boolean"].includes(typeof value)) continue;
     const stringValue = String(value);
     const contextKey = `context.${key}`;
+    const underscoreKey = `context_${key}`;
     if (
       key !== "reclaimSessionId" &&
       key !== "attestationNonce" &&
-      names.has(key) &&
-      !names.has(contextKey) &&
-      !Object.prototype.hasOwnProperty.call(parameters, key)
+      !names.has(contextKey)
     ) {
-      parameters[key] = stringValue;
+      if (
+        names.has(underscoreKey) &&
+        !Object.prototype.hasOwnProperty.call(parameters, underscoreKey)
+      ) {
+        parameters[underscoreKey] = stringValue;
+      } else if (
+        names.has(key) &&
+        !Object.prototype.hasOwnProperty.call(parameters, key)
+      ) {
+        parameters[key] = stringValue;
+      }
     }
     if (!Object.prototype.hasOwnProperty.call(parameters, contextKey)) {
       parameters[contextKey] = stringValue;
@@ -50,11 +59,21 @@ export function builderTemplateParameters(explicitParameters, context, recipe) {
 
 function builderRecipePlaceholderNames(recipe) {
   if (!recipe || typeof recipe !== "object" || Array.isArray(recipe)) return new Set();
-  const templates = [recipe.geoLocation];
+  const templates = [recipe.initialUrl, recipe.geoLocation];
   for (const request of Array.isArray(recipe.requests) ? recipe.requests : []) {
     templates.push(request?.url, request?.requestBodyTemplate);
+    if (request?.headers && typeof request.headers === "object") {
+      templates.push(...Object.values(request.headers));
+    }
     for (const match of Array.isArray(request?.responseMatches) ? request.responseMatches : []) {
       templates.push(match?.value);
+    }
+    for (const redaction of Array.isArray(request?.responseRedactions)
+      ? request.responseRedactions
+      : []) {
+      if (redaction && typeof redaction === "object") {
+        templates.push(...Object.values(redaction));
+      }
     }
   }
 

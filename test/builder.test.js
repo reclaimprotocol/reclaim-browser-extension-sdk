@@ -204,6 +204,26 @@ test("fills only missing Builder parameters from session context", () => {
   );
 });
 
+test("uses context aliases in canonical, underscore, then bare order", () => {
+  const context = { accountId: "account-7" };
+
+  assert.deepEqual(builderTemplateParameters({}, context, {
+    requests: [{ url: "https://x.test/{{context.accountId}}/{{context_accountId}}/{{accountId}}" }],
+  }), { "context.accountId": "account-7" });
+  assert.deepEqual(builderTemplateParameters({}, context, {
+    requests: [{ headers: { "x-account": "{{context_accountId}}/{{accountId}}" } }],
+  }), {
+    "context.accountId": "account-7",
+    context_accountId: "account-7",
+  });
+  assert.deepEqual(builderTemplateParameters({}, context, {
+    requests: [{ responseRedactions: [{ regex: "{{accountId}}" }] }],
+  }), {
+    "context.accountId": "account-7",
+    accountId: "account-7",
+  });
+});
+
 test("does not create unused or redundant bare Builder context aliases", () => {
   const parameters = builderTemplateParameters(
     {},

@@ -163,8 +163,11 @@ The extension sends no legacy app secret or provider signature to the
 The extension resolves the bootstrap recipes, passes the session context and
 TEE nonce/application data into each legacy claim, obtains session-bound
 attestor authentication before each provider, and runs providers sequentially.
-Builder recipes support dotted `{{context.key}}` templates and fill a missing
-`{{key}}` parameter from the same session-context key; explicit parameters win.
+Builder recipes resolve scalar session context as `{{context.key}}`, then
+`{{context_key}}`, then `{{key}}`; a lower-priority alias is used only when a
+higher-priority spelling isn't present. Explicit parameters win. This applies
+to URLs, headers, bodies, response matches and redactions, custom injection,
+and interceptor-created claims.
 Builder-owned `reclaimSessionId` and `attestationNonce` remain context-only.
 Builder mode skips legacy
 offscreen session-status calls and uses the Builder bridge for session lifecycle

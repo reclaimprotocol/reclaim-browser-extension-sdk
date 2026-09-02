@@ -47,23 +47,20 @@ var ClientVerificationEvent = {
   VERIFICATION_RESULT_SUBMISSION_FAILED: "verification_result_submission_failed",
   VERIFICATION_SUCCESS: "verification_success",
   VERIFICATION_REJECTED: "verification_rejected",
-  VERIFICATION_ERROR: "verification_error",
+  VERIFICATION_ERROR: "verification_error"
 };
 var ServerVerificationEvent = {
   BILLING_REQUIRED: "billing_required",
   SESSION_PENDING: "session_pending",
-  SESSION_EXPIRED: "session_expired",
+  SESSION_EXPIRED: "session_expired"
 };
 
 // node_modules/@hey-api/client-fetch/dist/index.js
 var A = async (s, r) => {
   let e = typeof r == "function" ? await r(s) : r;
-  if (e)
-    return s.scheme === "bearer" ? `Bearer ${e}` : s.scheme === "basic" ? `Basic ${btoa(e)}` : e;
+  if (e) return s.scheme === "bearer" ? `Bearer ${e}` : s.scheme === "basic" ? `Basic ${btoa(e)}` : e;
 };
-var O = {
-  bodySerializer: (s) => JSON.stringify(s, (r, e) => (typeof e == "bigint" ? e.toString() : e)),
-};
+var O = { bodySerializer: (s) => JSON.stringify(s, (r, e) => typeof e == "bigint" ? e.toString() : e) };
 var U = { $body_: "body", $headers_: "headers", $path_: "path", $query_: "query" };
 var D = Object.entries(U);
 var B = (s) => {
@@ -116,24 +113,12 @@ var S = ({ allowReserved: s, explode: r, name: e, style: a, value: i }) => {
         return `${e}=${t}`;
     }
   }
-  let o = B(a),
-    n = i
-      .map((t) =>
-        a === "label" || a === "simple"
-          ? s
-            ? t
-            : encodeURIComponent(t)
-          : m({ allowReserved: s, name: e, value: t }),
-      )
-      .join(o);
+  let o = B(a), n = i.map((t) => a === "label" || a === "simple" ? s ? t : encodeURIComponent(t) : m({ allowReserved: s, name: e, value: t })).join(o);
   return a === "label" || a === "matrix" ? o + n : n;
 };
 var m = ({ allowReserved: s, name: r, value: e }) => {
   if (e == null) return "";
-  if (typeof e == "object")
-    throw new Error(
-      "Deeply-nested arrays/objects aren\u2019t supported. Provide your own `querySerializer()` to handle these.",
-    );
+  if (typeof e == "object") throw new Error("Deeply-nested arrays/objects aren\u2019t supported. Provide your own `querySerializer()` to handle these.");
   return `${r}=${s ? e : encodeURIComponent(e)}`;
 };
 var q = ({ allowReserved: s, explode: r, name: e, style: a, value: i, valueOnly: o }) => {
@@ -155,74 +140,51 @@ var q = ({ allowReserved: s, explode: r, name: e, style: a, value: i, valueOnly:
         return u;
     }
   }
-  let n = Q(a),
-    t = Object.entries(i)
-      .map(([l, u]) =>
-        m({ allowReserved: s, name: a === "deepObject" ? `${e}[${l}]` : l, value: u }),
-      )
-      .join(n);
+  let n = Q(a), t = Object.entries(i).map(([l, u]) => m({ allowReserved: s, name: a === "deepObject" ? `${e}[${l}]` : l, value: u })).join(n);
   return a === "label" || a === "matrix" ? n + t : t;
 };
 var J = /\{[^{}]+\}/g;
 var M = ({ path: s, url: r }) => {
-  let e = r,
-    a = r.match(J);
-  if (a)
-    for (let i of a) {
-      let o = false,
-        n = i.substring(1, i.length - 1),
-        t = "simple";
-      (n.endsWith("*") && ((o = true), (n = n.substring(0, n.length - 1))),
-        n.startsWith(".")
-          ? ((n = n.substring(1)), (t = "label"))
-          : n.startsWith(";") && ((n = n.substring(1)), (t = "matrix")));
-      let l = s[n];
-      if (l == null) continue;
-      if (Array.isArray(l)) {
-        e = e.replace(i, S({ explode: o, name: n, style: t, value: l }));
-        continue;
-      }
-      if (typeof l == "object") {
-        e = e.replace(i, q({ explode: o, name: n, style: t, value: l, valueOnly: true }));
-        continue;
-      }
-      if (t === "matrix") {
-        e = e.replace(i, `;${m({ name: n, value: l })}`);
-        continue;
-      }
-      let u = encodeURIComponent(t === "label" ? `.${l}` : l);
-      e = e.replace(i, u);
+  let e = r, a = r.match(J);
+  if (a) for (let i of a) {
+    let o = false, n = i.substring(1, i.length - 1), t = "simple";
+    n.endsWith("*") && (o = true, n = n.substring(0, n.length - 1)), n.startsWith(".") ? (n = n.substring(1), t = "label") : n.startsWith(";") && (n = n.substring(1), t = "matrix");
+    let l = s[n];
+    if (l == null) continue;
+    if (Array.isArray(l)) {
+      e = e.replace(i, S({ explode: o, name: n, style: t, value: l }));
+      continue;
     }
+    if (typeof l == "object") {
+      e = e.replace(i, q({ explode: o, name: n, style: t, value: l, valueOnly: true }));
+      continue;
+    }
+    if (t === "matrix") {
+      e = e.replace(i, `;${m({ name: n, value: l })}`);
+      continue;
+    }
+    let u = encodeURIComponent(t === "label" ? `.${l}` : l);
+    e = e.replace(i, u);
+  }
   return e;
 };
-var k =
-  ({ allowReserved: s, array: r, object: e } = {}) =>
-  (i) => {
-    let o = [];
-    if (i && typeof i == "object")
-      for (let n in i) {
-        let t = i[n];
-        if (t != null)
-          if (Array.isArray(t)) {
-            let l = S({ allowReserved: s, explode: true, name: n, style: "form", value: t, ...r });
-            l && o.push(l);
-          } else if (typeof t == "object") {
-            let l = q({
-              allowReserved: s,
-              explode: true,
-              name: n,
-              style: "deepObject",
-              value: t,
-              ...e,
-            });
-            l && o.push(l);
-          } else {
-            let l = m({ allowReserved: s, name: n, value: t });
-            l && o.push(l);
-          }
-      }
-    return o.join("&");
-  };
+var k = ({ allowReserved: s, array: r, object: e } = {}) => (i) => {
+  let o = [];
+  if (i && typeof i == "object") for (let n in i) {
+    let t = i[n];
+    if (t != null) if (Array.isArray(t)) {
+      let l = S({ allowReserved: s, explode: true, name: n, style: "form", value: t, ...r });
+      l && o.push(l);
+    } else if (typeof t == "object") {
+      let l = q({ allowReserved: s, explode: true, name: n, style: "deepObject", value: t, ...e });
+      l && o.push(l);
+    } else {
+      let l = m({ allowReserved: s, name: n, value: t });
+      l && o.push(l);
+    }
+  }
+  return o.join("&");
+};
 var E = (s) => {
   if (!s) return "stream";
   let r = s.split(";")[0]?.trim();
@@ -240,7 +202,7 @@ var $ = async ({ security: s, ...r }) => {
     let i = e.name ?? "Authorization";
     switch (e.in) {
       case "query":
-        (r.query || (r.query = {}), (r.query[i] = a));
+        r.query || (r.query = {}), r.query[i] = a;
         break;
       case "cookie":
         r.headers.append("Cookie", `${i}=${a}`);
@@ -253,39 +215,25 @@ var $ = async ({ security: s, ...r }) => {
     return;
   }
 };
-var C = (s) =>
-  L({
-    baseUrl: s.baseUrl,
-    path: s.path,
-    query: s.query,
-    querySerializer:
-      typeof s.querySerializer == "function" ? s.querySerializer : k(s.querySerializer),
-    url: s.url,
-  });
+var C = (s) => L({ baseUrl: s.baseUrl, path: s.path, query: s.query, querySerializer: typeof s.querySerializer == "function" ? s.querySerializer : k(s.querySerializer), url: s.url });
 var L = ({ baseUrl: s, path: r, query: e, querySerializer: a, url: i }) => {
-  let o = i.startsWith("/") ? i : `/${i}`,
-    n = (s ?? "") + o;
+  let o = i.startsWith("/") ? i : `/${i}`, n = (s ?? "") + o;
   r && (n = M({ path: r, url: n }));
   let t = e ? a(e) : "";
-  return (t.startsWith("?") && (t = t.substring(1)), t && (n += `?${t}`), n);
+  return t.startsWith("?") && (t = t.substring(1)), t && (n += `?${t}`), n;
 };
 var x = (s, r) => {
   let e = { ...s, ...r };
-  return (
-    e.baseUrl?.endsWith("/") && (e.baseUrl = e.baseUrl.substring(0, e.baseUrl.length - 1)),
-    (e.headers = j(s.headers, r.headers)),
-    e
-  );
+  return e.baseUrl?.endsWith("/") && (e.baseUrl = e.baseUrl.substring(0, e.baseUrl.length - 1)), e.headers = j(s.headers, r.headers), e;
 };
 var j = (...s) => {
   let r = new Headers();
   for (let e of s) {
     if (!e || typeof e != "object") continue;
     let a = e instanceof Headers ? e.entries() : Object.entries(e);
-    for (let [i, o] of a)
-      if (o === null) r.delete(i);
-      else if (Array.isArray(o)) for (let n of o) r.append(i, n);
-      else o !== void 0 && r.set(i, typeof o == "object" ? JSON.stringify(o) : o);
+    for (let [i, o] of a) if (o === null) r.delete(i);
+    else if (Array.isArray(o)) for (let n of o) r.append(i, n);
+    else o !== void 0 && r.set(i, typeof o == "object" ? JSON.stringify(o) : o);
   }
   return r;
 };
@@ -298,7 +246,7 @@ var g = class {
     this._fns = [];
   }
   getInterceptorIndex(r) {
-    return typeof r == "number" ? (this._fns[r] ? r : -1) : this._fns.indexOf(r);
+    return typeof r == "number" ? this._fns[r] ? r : -1 : this._fns.indexOf(r);
   }
   exists(r) {
     let e = this.getInterceptorIndex(r);
@@ -310,95 +258,57 @@ var g = class {
   }
   update(r, e) {
     let a = this.getInterceptorIndex(r);
-    return this._fns[a] ? ((this._fns[a] = e), r) : false;
+    return this._fns[a] ? (this._fns[a] = e, r) : false;
   }
   use(r) {
-    return ((this._fns = [...this._fns, r]), this._fns.length - 1);
+    return this._fns = [...this._fns, r], this._fns.length - 1;
   }
 };
 var v = () => ({ error: new g(), request: new g(), response: new g() });
-var V = k({
-  allowReserved: false,
-  array: { explode: true, style: "form" },
-  object: { explode: true, style: "deepObject" },
-});
+var V = k({ allowReserved: false, array: { explode: true, style: "form" }, object: { explode: true, style: "deepObject" } });
 var F = { "Content-Type": "application/json" };
 var w = (s = {}) => ({ ...O, headers: F, parseAs: "auto", querySerializer: V, ...s });
 var G = (s = {}) => {
-  let r = x(w(), s),
-    e = () => ({ ...r }),
-    a = (n) => ((r = x(r, n)), e()),
-    i = v(),
-    o = async (n) => {
-      let t = {
-        ...r,
-        ...n,
-        fetch: n.fetch ?? r.fetch ?? globalThis.fetch,
-        headers: j(r.headers, n.headers),
-      };
-      (t.security && (await $({ ...t, security: t.security })),
-        t.body && t.bodySerializer && (t.body = t.bodySerializer(t.body)),
-        (t.body === void 0 || t.body === "") && t.headers.delete("Content-Type"));
-      let l = C(t),
-        u = { redirect: "follow", ...t },
-        p = new Request(l, u);
-      for (let f of i.request._fns) f && (p = await f(p, t));
-      let d = t.fetch,
-        c = await d(p);
-      for (let f of i.response._fns) f && (c = await f(c, p, t));
-      let b = { request: p, response: c };
-      if (c.ok) {
-        if (c.status === 204 || c.headers.get("Content-Length") === "0")
-          return t.responseStyle === "data" ? {} : { data: {}, ...b };
-        let f = (t.parseAs === "auto" ? E(c.headers.get("Content-Type")) : t.parseAs) ?? "json";
-        if (f === "stream") return t.responseStyle === "data" ? c.body : { data: c.body, ...b };
-        let h = await c[f]();
-        return (
-          f === "json" &&
-            (t.responseValidator && (await t.responseValidator(h)),
-            t.responseTransformer && (h = await t.responseTransformer(h))),
-          t.responseStyle === "data" ? h : { data: h, ...b }
-        );
-      }
-      let R = await c.text();
-      try {
-        R = JSON.parse(R);
-      } catch {}
-      let y = R;
-      for (let f of i.error._fns) f && (y = await f(R, c, p, t));
-      if (((y = y || {}), t.throwOnError)) throw y;
-      return t.responseStyle === "data" ? void 0 : { error: y, ...b };
-    };
-  return {
-    buildUrl: C,
-    connect: (n) => o({ ...n, method: "CONNECT" }),
-    delete: (n) => o({ ...n, method: "DELETE" }),
-    get: (n) => o({ ...n, method: "GET" }),
-    getConfig: e,
-    head: (n) => o({ ...n, method: "HEAD" }),
-    interceptors: i,
-    options: (n) => o({ ...n, method: "OPTIONS" }),
-    patch: (n) => o({ ...n, method: "PATCH" }),
-    post: (n) => o({ ...n, method: "POST" }),
-    put: (n) => o({ ...n, method: "PUT" }),
-    request: o,
-    setConfig: a,
-    trace: (n) => o({ ...n, method: "TRACE" }),
+  let r = x(w(), s), e = () => ({ ...r }), a = (n) => (r = x(r, n), e()), i = v(), o = async (n) => {
+    let t = { ...r, ...n, fetch: n.fetch ?? r.fetch ?? globalThis.fetch, headers: j(r.headers, n.headers) };
+    t.security && await $({ ...t, security: t.security }), t.body && t.bodySerializer && (t.body = t.bodySerializer(t.body)), (t.body === void 0 || t.body === "") && t.headers.delete("Content-Type");
+    let l = C(t), u = { redirect: "follow", ...t }, p = new Request(l, u);
+    for (let f of i.request._fns) f && (p = await f(p, t));
+    let d = t.fetch, c = await d(p);
+    for (let f of i.response._fns) f && (c = await f(c, p, t));
+    let b = { request: p, response: c };
+    if (c.ok) {
+      if (c.status === 204 || c.headers.get("Content-Length") === "0") return t.responseStyle === "data" ? {} : { data: {}, ...b };
+      let f = (t.parseAs === "auto" ? E(c.headers.get("Content-Type")) : t.parseAs) ?? "json";
+      if (f === "stream") return t.responseStyle === "data" ? c.body : { data: c.body, ...b };
+      let h = await c[f]();
+      return f === "json" && (t.responseValidator && await t.responseValidator(h), t.responseTransformer && (h = await t.responseTransformer(h))), t.responseStyle === "data" ? h : { data: h, ...b };
+    }
+    let R = await c.text();
+    try {
+      R = JSON.parse(R);
+    } catch {
+    }
+    let y = R;
+    for (let f of i.error._fns) f && (y = await f(R, c, p, t));
+    if (y = y || {}, t.throwOnError) throw y;
+    return t.responseStyle === "data" ? void 0 : { error: y, ...b };
   };
+  return { buildUrl: C, connect: (n) => o({ ...n, method: "CONNECT" }), delete: (n) => o({ ...n, method: "DELETE" }), get: (n) => o({ ...n, method: "GET" }), getConfig: e, head: (n) => o({ ...n, method: "HEAD" }), interceptors: i, options: (n) => o({ ...n, method: "OPTIONS" }), patch: (n) => o({ ...n, method: "PATCH" }), post: (n) => o({ ...n, method: "POST" }), put: (n) => o({ ...n, method: "PUT" }), request: o, setConfig: a, trace: (n) => o({ ...n, method: "TRACE" }) };
 };
 
 // src/generated/builder-bridge/client.gen.ts
 var client = G(
   w({
-    baseUrl: "/api/sdk/builder/v2",
-  }),
+    baseUrl: "/api/sdk/builder/v2"
+  })
 );
 
 // src/generated/builder-bridge/sdk.gen.ts
 var getBuilderBridgeOpenApi = (options) => {
   return (options?.client ?? client).get({
     url: "/openapi.yaml",
-    ...options,
+    ...options
   });
 };
 var bootstrapBuilderSession = (options) => {
@@ -406,11 +316,11 @@ var bootstrapBuilderSession = (options) => {
     security: [
       {
         name: "x-reclaim-vc-id",
-        type: "apiKey",
-      },
+        type: "apiKey"
+      }
     ],
     url: "/sessions/{sessionId}/bootstrap",
-    ...options,
+    ...options
   });
 };
 var patchBuilderClaimant = (options) => {
@@ -418,15 +328,15 @@ var patchBuilderClaimant = (options) => {
     security: [
       {
         name: "x-reclaim-vc-id",
-        type: "apiKey",
-      },
+        type: "apiKey"
+      }
     ],
     url: "/sessions/{sessionId}/claimant",
     ...options,
     headers: {
       "Content-Type": "application/json",
-      ...options.headers,
-    },
+      ...options.headers
+    }
   });
 };
 var reportBuilderEvent = (options) => {
@@ -434,15 +344,15 @@ var reportBuilderEvent = (options) => {
     security: [
       {
         name: "x-reclaim-vc-id",
-        type: "apiKey",
-      },
+        type: "apiKey"
+      }
     ],
     url: "/sessions/{sessionId}/events",
     ...options,
     headers: {
       "Content-Type": "application/json",
-      ...options.headers,
-    },
+      ...options.headers
+    }
   });
 };
 var createBuilderAttestorAuth = (options) => {
@@ -450,15 +360,15 @@ var createBuilderAttestorAuth = (options) => {
     security: [
       {
         name: "x-reclaim-vc-id",
-        type: "apiKey",
-      },
+        type: "apiKey"
+      }
     ],
     url: "/sessions/{sessionId}/attestor-auth",
     ...options,
     headers: {
       "Content-Type": "application/json",
-      ...options.headers,
-    },
+      ...options.headers
+    }
   });
 };
 var submitBuilderResults = (options) => {
@@ -466,15 +376,15 @@ var submitBuilderResults = (options) => {
     security: [
       {
         name: "x-reclaim-vc-id",
-        type: "apiKey",
-      },
+        type: "apiKey"
+      }
     ],
     url: "/sessions/{sessionId}/results",
     ...options,
     headers: {
       "Content-Type": "application/json",
-      ...options.headers,
-    },
+      ...options.headers
+    }
   });
 };
 export {
@@ -486,5 +396,5 @@ export {
   getBuilderBridgeOpenApi,
   patchBuilderClaimant,
   reportBuilderEvent,
-  submitBuilderResults,
+  submitBuilderResults
 };

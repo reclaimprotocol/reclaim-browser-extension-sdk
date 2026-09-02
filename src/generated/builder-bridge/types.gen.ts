@@ -32,6 +32,28 @@ export type SessionProvider = {
   resolvedVersion: string;
 };
 
+export type VerificationFeatureFlagEvaluation = {
+  flagVersion: number;
+  source: "DEFAULT" | "RULE";
+  ruleId?: string;
+  rulePriority?: number;
+};
+
+/**
+ * Immutable Builder-mode feature configuration resolved when the Session was created. Verification Clients use values and must provide safe local defaults for absent keys.
+ */
+export type VerificationRuntimeConfig = {
+  schemaVersion: 1;
+  revision: number;
+  resolvedAt: string;
+  values: {
+    [key: string]: unknown;
+  };
+  evaluations: {
+    [key: string]: VerificationFeatureFlagEvaluation;
+  };
+};
+
 export type BuilderSession = {
   id: string;
   orgId: string;
@@ -46,6 +68,7 @@ export type BuilderSession = {
   themeId?: string;
   theme?: BuilderTheme;
   preferredLocale?: string;
+  runtimeConfig?: VerificationRuntimeConfig;
   verificationClientId: string;
   verificationClientIssuer: string;
   verificationClientJwksUrl: string;
@@ -168,6 +191,7 @@ export type ResponseRedaction = {
    * A regex string or a map of platform names to regex strings. Kept free-form because Dart and TypeScript generators otherwise create an invalid empty union wrapper for this legacy polymorphic field.
    */
   regex?: unknown;
+  hash?: "oprf" | "oprf-mpc" | "oprf-raw";
 };
 
 export type ClaimantDimensions = {
