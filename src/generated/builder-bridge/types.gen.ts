@@ -740,9 +740,7 @@ export type ClaimantDetails = {
   operatingSystem?: {
     [key: string]: unknown;
   };
-  browser?: {
-    [key: string]: unknown;
-  };
+  browser?: ClaimantBrowser;
   viewport?: ClaimantDimensions;
   display?: ClaimantDimensions;
   network?: {
@@ -758,6 +756,36 @@ export type ClaimantDimensions = {
   width: number;
   height: number;
   unit: "css-px" | "logical-px" | "physical-px";
+};
+
+export type ClaimantBrowser = {
+  name?: string;
+  version?: string;
+  userAgent?: string;
+  userAgentData?: ClaimantUserAgentData;
+  [key: string]: unknown | string | string | ClaimantUserAgentData | undefined;
+};
+
+/**
+ * Best-effort User-Agent Client Hints returned by the claimant browser. Browsers can omit or reduce any value for privacy or compatibility.
+ */
+export type ClaimantUserAgentData = {
+  architecture?: string;
+  bitness?: string;
+  brands?: Array<UserAgentBrandVersion>;
+  formFactors?: Array<string>;
+  fullVersionList?: Array<UserAgentBrandVersion>;
+  mobile?: boolean;
+  model?: string;
+  platform?: string;
+  platformVersion?: string;
+  uaFullVersion?: string;
+  wow64?: boolean;
+};
+
+export type UserAgentBrandVersion = {
+  brand: string;
+  version: string;
 };
 
 /**

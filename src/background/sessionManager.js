@@ -936,7 +936,10 @@ async function prepareBuilderProvider(ctx, templateData) {
         },
         device: { id: claimantClientId, ...observedDetails.device },
         operatingSystem: { platform: globalThis.navigator?.platform },
-        browser: { userAgent: globalThis.navigator?.userAgent },
+        browser: {
+          userAgent: globalThis.navigator?.userAgent,
+          ...observedDetails.browser,
+        },
         ...observedDetails.dimensions,
         ...config.claimantDetails,
         claimantClientId,
@@ -990,22 +993,50 @@ async function collectBrowserClaimantDetails() {
     if (!tab?.id) return { device: {}, dimensions: {} };
     const [result] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      func: () => ({
-        orientation: globalThis.screen?.orientation?.type,
-        viewportWidth: globalThis.innerWidth,
-        viewportHeight: globalThis.innerHeight,
-        displayWidth: Math.round(
-          (globalThis.screen?.width ?? 0) * (globalThis.devicePixelRatio ?? 1),
-        ),
-        displayHeight: Math.round(
-          (globalThis.screen?.height ?? 0) * (globalThis.devicePixelRatio ?? 1),
-        ),
-      }),
+      func: async () => {
+        const ua = globalThis.navigator?.userAgentData;
+        let highEntropy = {};
+        try {
+          highEntropy =
+            (await ua?.getHighEntropyValues?.([
+              "architecture",
+              "bitness",
+              "formFactors",
+              "fullVersionList",
+              "model",
+              "platformVersion",
+              "uaFullVersion",
+              "wow64",
+            ])) ?? {};
+        } catch {
+          // The browser can withhold high-entropy hints; low-entropy data remains useful.
+        }
+        return {
+          orientation: globalThis.screen?.orientation?.type,
+          viewportWidth: globalThis.innerWidth,
+          viewportHeight: globalThis.innerHeight,
+          displayWidth: Math.round(
+            (globalThis.screen?.width ?? 0) * (globalThis.devicePixelRatio ?? 1),
+          ),
+          displayHeight: Math.round(
+            (globalThis.screen?.height ?? 0) * (globalThis.devicePixelRatio ?? 1),
+          ),
+          userAgentData: ua
+            ? {
+                ...highEntropy,
+                ...(ua.brands ? { brands: ua.brands } : {}),
+                ...(typeof ua.mobile === "boolean" ? { mobile: ua.mobile } : {}),
+                ...(ua.platform ? { platform: ua.platform } : {}),
+              }
+            : undefined,
+        };
+      },
     });
     const value = result?.result;
     if (!value) return { device: {}, dimensions: {} };
     return {
       device: { orientation: value.orientation },
+      browser: value.userAgentData ? { userAgentData: value.userAgentData } : {},
       dimensions: {
         viewport: { width: value.viewportWidth, height: value.viewportHeight, unit: "css-px" },
         display: { width: value.displayWidth, height: value.displayHeight, unit: "physical-px" },

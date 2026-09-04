@@ -134,7 +134,10 @@ more convenient. Both entry points require a registered
 `verificationClientId`, reject URLs without an exact `api=2` query, and require
 a non-empty `sessionId`. They accept an optional HTTPS `backendUrl` and bounded
 `claimantDetails`. If `claimantClientId` is omitted, the extension generates a
-UUID and persists it in extension storage.
+UUID and persists it in extension storage. The extension automatically adds
+viewport and display dimensions, orientation, and all User-Agent Client Hints
+the active tab permits it to read. A browser can omit or reduce high-entropy
+hints; this never blocks verification.
 
 Builder mode uses the generated client for Builder's direct Verification API
 contract in `project-new-tools/builder/packages/app/openapi.yaml`. The deployed
