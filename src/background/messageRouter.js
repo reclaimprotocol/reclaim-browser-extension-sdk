@@ -4,6 +4,7 @@
 import { loggingHub } from "../utils/logger/LoggingHub";
 import { EVENT_TYPES } from "../utils/logger/constants";
 import { DEFAULT_INJECTION_TYPE } from "../utils/provider-normalization";
+import { BUILDER_EVENTS } from "../utils/builder";
 import * as sessionManager from "./sessionManager";
 import { MESSAGE_ACTIONS } from "../utils/constants/interfaces";
 
@@ -33,6 +34,20 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
         data.source || source,
         data.options,
       );
+      if (ctx.builder?.diagnosticMode && data.context === "provider_script") {
+        const message =
+          typeof data.message === "string" ? data.message : String(data.message || "");
+        await ctx.builder.client.reportEventBestEffort(
+          ctx.builder.sessionId,
+          BUILDER_EVENTS.PROVIDER_SCRIPT_LOG,
+          {
+            providerId: ctx.builder.currentProvider?.recipe?.providerId,
+            resolvedVersion: ctx.builder.currentProvider?.recipe?.resolvedVersion,
+            level: data.level === "SEVERE" ? "error" : "info",
+            message: message.slice(0, 2000),
+          },
+        );
+      }
       sendResponse({ success: true });
       return true;
     }
@@ -115,6 +130,28 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
             `[BACKGROUND] Successfully sent (pending) SHOW_PROVIDER_VERIFICATION_POPUP and PROVIDER_DATA_READY to tab ${sender.tab.id}`,
             "background.message",
           );
+          if (isManaged && ctx.builder) {
+            const eventData = {
+              providerId: ctx.builder.currentProvider.recipe.providerId,
+              resolvedVersion: ctx.builder.currentProvider.recipe.resolvedVersion,
+              ordinal: ctx.builder.providerOrdinal,
+            };
+            await ctx.builder.client.reportEventBestEffort(
+              ctx.builder.sessionId,
+              BUILDER_EVENTS.VERIFICATION_BROWSER_READY,
+              eventData,
+            );
+            await ctx.builder.client.reportEventBestEffort(
+              ctx.builder.sessionId,
+              BUILDER_EVENTS.VERIFICATION_PAGE_READY,
+              eventData,
+            );
+            await ctx.builder.client.reportEventBestEffort(
+              ctx.builder.sessionId,
+              BUILDER_EVENTS.VERIFICATION_REQUEST_INTERCEPTOR_READY,
+              eventData,
+            );
+          }
           sendResponse({ success: true });
           break;
         }
@@ -163,6 +200,7 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
                 callbackUrl: ctx.callbackUrl,
                 providerId: ctx.providerId,
                 appId: ctx.appId,
+                builder: ctx.builder?.sessionMetadata,
               },
             });
           } else {
@@ -290,8 +328,12 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
             "background.verification",
           );
 
-          await sessionManager.cancelSession(ctx, data?.sessionId);
-          sendResponse({ success: true });
+          const cancelled = await sessionManager.cancelSession(ctx, data?.sessionId);
+          sendResponse(
+            cancelled
+              ? { success: true }
+              : { success: false, error: "Verification session is no longer active" },
+          );
         } else {
           loggingHub.error(
             "[BACKGROUND] CANCEL_VERIFICATION: Action not supported",
@@ -456,6 +498,44 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
         }
         break;
       }
+      case ctx.MESSAGE_ACTIONS.UPDATE_USER_INTERACTION_REQUIREMENT: {
+        if (sender.tab?.id && ctx.managedTabs.has(sender.tab.id)) {
+          if (ctx.builder) {
+            await ctx.builder.client.reportEventBestEffort(
+              ctx.builder.sessionId,
+              data?.required
+                ? BUILDER_EVENTS.USER_INTERACTION_STARTED
+                : BUILDER_EVENTS.USER_INTERACTION_SUMMARY,
+              {
+                providerId: ctx.builder.currentProvider?.recipe?.providerId,
+                required: data?.required === true,
+              },
+            );
+          }
+          sendResponse({ success: true });
+        } else {
+          sendResponse({ success: false, error: "Tab is not managed by extension" });
+        }
+        break;
+      }
+      case ctx.MESSAGE_ACTIONS.REPORT_USER_LOGGED_IN: {
+        if (sender.tab?.id && ctx.managedTabs.has(sender.tab.id)) {
+          if (ctx.builder) {
+            await ctx.builder.client.reportEventBestEffort(
+              ctx.builder.sessionId,
+              BUILDER_EVENTS.AUTHENTICATED,
+              {
+                providerId: ctx.builder.currentProvider?.recipe?.providerId,
+                source: "provider_script",
+              },
+            );
+          }
+          sendResponse({ success: true });
+        } else {
+          sendResponse({ success: false, error: "Tab is not managed by extension" });
+        }
+        break;
+      }
       case ctx.MESSAGE_ACTIONS.GET_PARAMETERS:
         if (sender.tab?.id && ctx.managedTabs.has(sender.tab.id)) {
           // Key names only. `ctx.parameters` is an object, so concatenating it
@@ -508,6 +588,16 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
             if (!sessId) {
               sendResponse({ success: false, error: "Session not initialized" });
               break;
+            }
+            if (ctx.builder?.diagnosticMode) {
+              await ctx.builder.client.reportEventBestEffort(
+                ctx.builder.sessionId,
+                BUILDER_EVENTS.REQUEST_CLAIM_PARAMETERS_CAPTURED,
+                {
+                  providerId: ctx.builder.currentProvider?.recipe?.providerId,
+                  parameterNames: Object.keys(data.request?.extractedParams || {}),
+                },
+              );
             }
             const result = await ctx.processFilteredRequest(
               data.request,
