@@ -719,7 +719,7 @@ export type ConsentInfo = {
 export type ThemeId = string;
 
 /**
- * Latest diagnostic claimant and device snapshot. Values are best-effort and never participate in proof verification.
+ * Latest diagnostic claimant and device snapshot populated by Builder. Values are best-effort and never participate in proof verification.
  */
 export type ClaimantDetails = {
   /**
@@ -815,7 +815,40 @@ export type SessionProvider = {
   resolvedVersion: string;
 };
 
-export type PatchVerificationClaimantRequest = ClaimantDetails;
+export type PatchVerificationClaimantRequest = ClaimantDetailsRequest;
+
+/**
+ * Client-reported diagnostic claimant and device snapshot. Values are best-effort and never participate in proof verification. Server-observed values are added by Builder and cannot be supplied by the claimant.
+ */
+export type ClaimantDetailsRequest = {
+  /**
+   * Verification Client installation identifier. The Builder also stores it in the session's dedicated claimantClientId field.
+   */
+  claimantClientId: string;
+  claimantId?: string;
+  collectedAt?: Timestamp;
+  apiClient?: string;
+  locale?: string;
+  httpUserAgent?: string;
+  client?: {
+    [key: string]: unknown;
+  };
+  device?: {
+    [key: string]: unknown;
+  };
+  operatingSystem?: {
+    [key: string]: unknown;
+  };
+  browser?: ClaimantBrowser;
+  viewport?: ClaimantDimensions;
+  display?: ClaimantDimensions;
+  network?: {
+    reportedPublicIp?: string;
+  };
+  metadata?: {
+    [key: string]: unknown;
+  };
+};
 
 export type VerificationClientBootstrap = {
   session: VerificationSession;
@@ -1157,7 +1190,7 @@ export type BootstrapVerificationClientResponse =
   BootstrapVerificationClientResponses[keyof BootstrapVerificationClientResponses];
 
 export type PatchVerificationClaimantData = {
-  body: ClaimantDetails;
+  body: ClaimantDetailsRequest;
   path: {
     sessionId: SessionId;
   };
