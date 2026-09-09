@@ -23,6 +23,17 @@ test("clears the local CSP state even when rule removal fails", async () => {
   assert.equal(ctx._cspRuleId, null);
 });
 
+test("clears the local CSP state when rule removal throws synchronously", async () => {
+  const ctx = { _cspRuleId: 42, _cspRuleGeneration: 1 };
+
+  await clearBuilderCspRule(ctx, () => {
+    throw new Error("remove failed");
+  });
+
+  assert.equal(ctx._cspRuleId, null);
+  assert.equal(ctx._cspRuleGeneration, 2);
+});
+
 test("invalidates the previous CSP timer at a provider transition", async () => {
   const timer = setTimeout(() => {}, 60_000);
   const ctx = { _cspRuleId: 17, _cspRuleTimer: timer, _cspRuleGeneration: 4 };

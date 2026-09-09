@@ -926,7 +926,7 @@ async function prepareBuilderProvider(ctx, templateData) {
         client: {
           kind: "reclaim_browser_extension_sdk",
           verificationClient: {
-            id: builder.verificationClientId,
+            id: verificationClientId,
             name: "reclaim_browser_extension_sdk",
           },
           application: {
@@ -1210,33 +1210,34 @@ async function submitBuilderTerminal(ctx, status, reasonCode, title, retryable) 
   const builder = ctx.builder;
   if (!builder) return false;
   const problem = builderProblem(reasonCode, title, retryable);
-  try {
+  for (const attempt of [1, 2]) {
     await builder.client.reportEventBestEffort(
       ctx.sessionId,
       BUILDER_EVENTS.VERIFICATION_RESULT_SUBMITTING,
       {
         ...builderTotals(builder),
-        attempt: 1,
+        attempt,
         status,
       },
     );
-    await builder.client.submitResult(ctx.sessionId, {
-      status,
-      results: builder.results,
-      problem,
-    });
-    return true;
-  } catch {
+    try {
+      await builder.client.submitResult(ctx.sessionId, {
+        status,
+        results: builder.results,
+        problem,
+      });
+      return true;
+    } catch {}
     await builder.client.reportEventBestEffort(
       ctx.sessionId,
       BUILDER_EVENTS.VERIFICATION_RESULT_SUBMISSION_FAILED,
       {
-        attempt: 1,
+        attempt,
         problem: builderProblem("RESULT_SUBMISSION_FAILED", "Result submission failed", true),
       },
     );
-    return false;
   }
+  return false;
 }
 
 function claimBuilderTerminal(builder, status) {

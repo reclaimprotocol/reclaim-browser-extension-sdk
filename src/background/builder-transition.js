@@ -12,5 +12,9 @@ export async function clearBuilderCspRule(ctx, removeRule) {
     ctx._cspRuleGeneration = (ctx._cspRuleGeneration || 0) + 1;
     ctx._cspRuleId = null;
   }
-  if (typeof removeRule === "function") await removeRule().catch(() => {});
+  if (typeof removeRule === "function") {
+    try {
+      await removeRule();
+    } catch {}
+  }
 }
