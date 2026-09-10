@@ -82,6 +82,28 @@ export function builderExtractedParameterValues(proof) {
   return {};
 }
 
+/**
+ * Return the canonical legacy ReclaimProof fields for Builder submission.
+ * Engine-only state stays local. TEE attestation remains optional and is
+ * passed through without interpreting its client-specific representation.
+ */
+export function canonicalBuilderProof(formatted, source) {
+  return {
+    identifier: formatted.identifier,
+    claimData: formatted.claimData,
+    signatures: formatted.signatures,
+    witnesses: Array.isArray(source?.witnesses) ? source.witnesses : formatted.witnesses,
+    extractedParameterValues: builderExtractedParameterValues(source),
+    ...(source && Object.prototype.hasOwnProperty.call(source, "publicData")
+      ? { publicData: source.publicData }
+      : {}),
+    ...(source?.taskId != null ? { taskId: source.taskId } : {}),
+    ...(source && Object.prototype.hasOwnProperty.call(source, "teeAttestation")
+      ? { teeAttestation: source.teeAttestation }
+      : {}),
+  };
+}
+
 export function interpolateBuilderTemplate(value, parameters = {}) {
   if (typeof value !== "string" || !value.includes("{{")) return value;
   return value.replace(/\{\{([^{}]+)\}\}/g, (placeholder, parameter) =>

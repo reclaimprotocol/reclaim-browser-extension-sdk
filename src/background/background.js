@@ -10,11 +10,7 @@ import { RECLAIM_SESSION_STATUS, MESSAGE_ACTIONS, MESSAGE_SOURCES } from "../uti
 import { removeCspStrippingRule } from "./cspRuleManager";
 import { generateProof, formatProof } from "../utils/proof-generator";
 import { createClaimObject } from "../utils/claim-creator";
-import {
-  BUILDER_EVENTS,
-  builderExtractedParameterValues,
-  createBuilderBridgeClient,
-} from "../utils/builder";
+import { BUILDER_EVENTS, canonicalBuilderProof, createBuilderBridgeClient } from "../utils/builder";
 import { loggingHub } from "../utils/logger/LoggingHub";
 import { EVENT_TYPES } from "../utils/logger/constants";
 import { SessionTimerManager } from "../utils/session-timer";
@@ -142,14 +138,7 @@ export default function initBackground() {
     formatProof,
     formatBuilderProof: (proof, requestData) => {
       const formatted = formatProof(proof, requestData);
-      for (const [key, value] of Object.entries(proof || {})) {
-        if (["claim", "signatures", "witnesses", "publicData"].includes(key)) continue;
-        formatted[key] = value;
-      }
-      if (Array.isArray(proof?.witnesses)) formatted.witnesses = proof.witnesses;
-      if (proof?.taskId != null) formatted.taskId = proof.taskId;
-      formatted.extractedParameterValues = builderExtractedParameterValues(proof);
-      return formatted;
+      return canonicalBuilderProof(formatted, proof);
     },
     createClaimObject,
     createBuilderBridgeClient,

@@ -6,6 +6,7 @@ import {
   builderExtractedParameterValues,
   builderProviderParameters,
   builderRecipeToProviderData,
+  canonicalBuilderProof,
   createBuilderBridgeClient,
   builderTemplateParameters,
   interpolateBuilderHeaders,
@@ -28,6 +29,35 @@ const VC_ID = "550e8400-e29b-41d4-a716-446655440000";
 test("canonicalizes Verification Client UUIDs for Builder API headers and payloads", () => {
   assert.equal(normalizeVerificationClientId(VC_ID.toUpperCase()), VC_ID);
   assert.throws(() => normalizeVerificationClientId("not-a-uuid"), /verificationClientId/);
+});
+
+test("submits only canonical legacy ReclaimProof fields to Builder", () => {
+  const formatted = {
+    identifier: "proof-id",
+    claimData: { context: "{}" },
+    signatures: ["0xsig"],
+    witnesses: [{ id: "fallback", url: "wss://fallback" }],
+    providerRequest: { url: "https://internal.example" },
+  };
+  const source = {
+    witnesses: [{ id: "attestor", url: "wss://attestor" }],
+    extractedParameterValues: { account: "alice" },
+    publicData: { plan: "pro" },
+    taskId: 42,
+    teeAttestation: { technology: "client-specific" },
+    engineOnlyState: true,
+  };
+
+  assert.deepEqual(canonicalBuilderProof(formatted, source), {
+    identifier: "proof-id",
+    claimData: { context: "{}" },
+    signatures: ["0xsig"],
+    witnesses: [{ id: "attestor", url: "wss://attestor" }],
+    extractedParameterValues: { account: "alice" },
+    publicData: { plan: "pro" },
+    taskId: 42,
+    teeAttestation: { technology: "client-specific" },
+  });
 });
 
 test("Builder session parameters outrank captures, while requestClaim values win", () => {
