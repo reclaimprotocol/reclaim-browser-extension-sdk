@@ -958,7 +958,16 @@ async function prepareBuilderProvider(ctx, templateData) {
   if (!recipe) throw new Error("Builder session has no remaining provider recipes");
   const providerData = builderRecipeToProviderData(recipe, builder.providerOrdinal);
   const attestorAuthRequest = await builder.client.getAttestorAuth(builder.sessionId);
-  builder.currentProvider = { recipe, providerData, attestorAuthRequest };
+  // `hasReportedPageReady` lives on this fresh object (not on `builder`
+  // itself) so it resets for free every time a provider starts — the same
+  // way the in-app SDK gets a fresh `WebViewJSHandlerManager` per provider.
+  // See `shouldEmitPageReady` in `builder-event-redaction.js`.
+  builder.currentProvider = {
+    recipe,
+    providerData,
+    attestorAuthRequest,
+    hasReportedPageReady: false,
+  };
 
   await builder.client.reportEventBestEffort(
     builder.sessionId,

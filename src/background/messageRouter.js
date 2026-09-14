@@ -5,6 +5,14 @@ import { loggingHub } from "../utils/logger/LoggingHub";
 import { EVENT_TYPES } from "../utils/logger/constants";
 import { DEFAULT_INJECTION_TYPE } from "../utils/provider-normalization";
 import { BUILDER_EVENTS } from "../utils/builder";
+import {
+  decideProviderScriptLogAction,
+  providerScriptLogEventData,
+  ProviderScriptLogAction,
+  PROVIDER_SCRIPT_LOG_CAP_REACHED_MESSAGE,
+  requestClaimParametersCapturedEventData,
+  shouldEmitPageReady,
+} from "./builder-event-redaction";
 import * as sessionManager from "./sessionManager";
 import { MESSAGE_ACTIONS } from "../utils/constants/interfaces";
 
@@ -34,19 +42,33 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
         data.source || source,
         data.options,
       );
-      if (ctx.builder?.diagnosticMode && data.context === "provider_script") {
-        const message =
-          typeof data.message === "string" ? data.message : String(data.message || "");
-        await ctx.builder.client.reportEventBestEffort(
-          ctx.builder.sessionId,
-          BUILDER_EVENTS.PROVIDER_SCRIPT_LOG,
-          {
-            providerId: ctx.builder.currentProvider?.recipe?.providerId,
-            resolvedVersion: ctx.builder.currentProvider?.recipe?.resolvedVersion,
-            level: data.level === "SEVERE" ? "error" : "info",
-            message: message.slice(0, 2000),
-          },
-        );
+      // Always emitted, subject to the per-session cap below — diagnostics
+      // mode only changes how much of the message this carries (see
+      // providerScriptLogEventData). A provider script (not the claimant)
+      // controls how often window.Reclaim.log fires, so count every call and
+      // stop reporting once the cap is hit, with one final notice instead of
+      // a silent cutoff.
+      if (ctx.builder && data.context === "provider_script") {
+        ctx.builder.providerScriptLogCount = (ctx.builder.providerScriptLogCount || 0) + 1;
+        const action = decideProviderScriptLogAction(ctx.builder.providerScriptLogCount);
+        if (action !== ProviderScriptLogAction.DROP) {
+          const isCapReachedNotice = action === ProviderScriptLogAction.REPORT_CAP_REACHED_NOTICE;
+          const message =
+            typeof data.message === "string" ? data.message : String(data.message || "");
+          await ctx.builder.client.reportEventBestEffort(
+            ctx.builder.sessionId,
+            BUILDER_EVENTS.PROVIDER_SCRIPT_LOG,
+            {
+              providerId: ctx.builder.currentProvider?.recipe?.providerId,
+              resolvedVersion: ctx.builder.currentProvider?.recipe?.resolvedVersion,
+              ...providerScriptLogEventData({
+                level: isCapReachedNotice ? "info" : data.level === "SEVERE" ? "error" : "info",
+                message: isCapReachedNotice ? PROVIDER_SCRIPT_LOG_CAP_REACHED_MESSAGE : message,
+                diagnosticMode: ctx.builder.diagnosticMode,
+              }),
+            },
+          );
+        }
       }
       sendResponse({ success: true });
       return true;
@@ -141,11 +163,28 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
               BUILDER_EVENTS.VERIFICATION_BROWSER_READY,
               eventData,
             );
-            await ctx.builder.client.reportEventBestEffort(
-              ctx.builder.sessionId,
-              BUILDER_EVENTS.VERIFICATION_PAGE_READY,
-              eventData,
-            );
+            // The content script resends CONTENT_SCRIPT_LOADED on every
+            // full-page navigation in this managed tab (a login page, a 2FA
+            // step, a post-login redirect, ...), not only the first one.
+            // `verification_page_ready` is a per-provider "page became
+            // usable" milestone, so only the first load observed for the
+            // current provider may report it — see `shouldEmitPageReady`.
+            // Reporting it again on a later navigation would place it after
+            // the claimant has already started interacting, which is
+            // incoherent for an event that means the page just became usable.
+            if (
+              shouldEmitPageReady({
+                hasAlreadyEmittedPageReadyForProvider:
+                  ctx.builder.currentProvider.hasReportedPageReady,
+              })
+            ) {
+              ctx.builder.currentProvider.hasReportedPageReady = true;
+              await ctx.builder.client.reportEventBestEffort(
+                ctx.builder.sessionId,
+                BUILDER_EVENTS.VERIFICATION_PAGE_READY,
+                eventData,
+              );
+            }
             await ctx.builder.client.reportEventBestEffort(
               ctx.builder.sessionId,
               BUILDER_EVENTS.VERIFICATION_REQUEST_INTERCEPTOR_READY,
@@ -589,13 +628,19 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
               sendResponse({ success: false, error: "Session not initialized" });
               break;
             }
-            if (ctx.builder?.diagnosticMode) {
+            // Always emitted — diagnostics mode only changes whether parameter
+            // values accompany their names (see
+            // requestClaimParametersCapturedEventData).
+            if (ctx.builder) {
               await ctx.builder.client.reportEventBestEffort(
                 ctx.builder.sessionId,
                 BUILDER_EVENTS.REQUEST_CLAIM_PARAMETERS_CAPTURED,
                 {
                   providerId: ctx.builder.currentProvider?.recipe?.providerId,
-                  parameterNames: Object.keys(data.request?.extractedParams || {}),
+                  ...requestClaimParametersCapturedEventData({
+                    parameterValuesByName: data.request?.extractedParams || {},
+                    diagnosticMode: ctx.builder.diagnosticMode,
+                  }),
                 },
               );
             }

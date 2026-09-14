@@ -13,10 +13,13 @@ export const SHORT_SESSION_ID_LENGTH = 10;
  * A session id shortened for display.
  *
  * A full id is a 36-character UUID that means nothing to a claimant and
- * crowds the popup row. The leading characters are enough to read one back.
+ * crowds the popup row. Stripping the hyphens first packs more of the id
+ * into the same character budget. The leading characters are enough to read
+ * one back.
  */
 export function shortSessionId(sessionId) {
   if (typeof sessionId !== "string") return "";
-  if (sessionId.length <= SHORT_SESSION_ID_LENGTH) return sessionId;
-  return `${sessionId.substring(0, SHORT_SESSION_ID_LENGTH)}…`;
+  const strippedSessionId = sessionId.replaceAll("-", "");
+  if (strippedSessionId.length <= SHORT_SESSION_ID_LENGTH) return strippedSessionId;
+  return strippedSessionId.substring(0, SHORT_SESSION_ID_LENGTH);
 }

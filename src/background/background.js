@@ -233,6 +233,11 @@ export default function initBackground() {
           BUILDER_EVENTS.REQUEST_MATCHED,
           builderRequestEventData(ctx, criteria),
         );
+        // Stays diagnostics-gated, unlike the other Builder events this file
+        // reports: this fires once per intercepted request captured by the
+        // matcher, so a multi-page login flow can produce hundreds per
+        // session. Emitting it unconditionally would turn every session into
+        // a firehose of awaited Builder event POSTs, not an analytics signal.
         if (ctx.builder.diagnosticMode) {
           let observedUrl = request.url;
           try {
