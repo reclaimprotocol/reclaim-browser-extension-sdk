@@ -81,10 +81,24 @@ export type LegacyProof = {
   witnesses: Array<{
     id: string;
     url: string;
+    /**
+     * How this witness attested the claim. Every verification client emits the same envelope so consumers branch on `type` rather than on which client produced the proof. The attestor address and claim signature are always present and always checked; `type` selects what extra evidence, if any, comes with them.
+     */
     claimAttestation?: {
+      /**
+       * `embedded-attestor` — the in-app SDK and the browser extension, whose attestor signs the claim and may return its own `attestation_report`. `confidential-space` — portals, whose browser runtime signs inside a GCP Confidential Space and returns `tee_attestation`. Optional: proofs minted before this field existed carry no `type`, and consumers read an absent `type` as `embedded-attestor`.
+       */
+      type?: "embedded-attestor" | "confidential-space";
       attestor_address: string;
       claim_signature: string;
-      attestation_report: string;
+      /**
+       * `embedded-attestor` only, and optional even then: the attestor's own Confidential Space attestation as an RS256 JWT. Attestors in production sign claims without returning one.
+       */
+      attestation_report?: string;
+      /**
+       * `confidential-space` only: the runtime's TEE attestation, the same payload legacy proofs carry in the proof's top-level `teeAttestation`. Bound to the claim through `context.attestationNonce`. Preserve it exactly.
+       */
+      tee_attestation?: unknown;
     };
   }>;
   /**
