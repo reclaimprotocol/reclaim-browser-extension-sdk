@@ -1,6 +1,6 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { resolve, join } from "node:path";
+import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { load } from "js-yaml";
 
@@ -12,16 +12,13 @@ const selectedOperations = new Map([
   ["/verifications/sessions/{sessionId}/results", new Set(["post"])],
 ]);
 
-const adjacentContract = resolve("../project-new-tools/builder/packages/app/openapi.yaml");
-const configuredInput =
-  process.env.BUILDER_OPENAPI ||
-  process.env.BRIDGE_OPENAPI ||
-  (existsSync(adjacentContract)
-    ? adjacentContract
-    : "https://build.reclaimprotocol.org/openapi.yaml");
+const PRODUCTION_BUILDER_OPENAPI = "https://build.reclaimprotocol.org/openapi.yaml";
 
-const source = await readContract(configuredInput);
-const derived = selectBuilderOperations(source);
+const { input: configuredInput, source: inputSource } = resolveBuilderOpenApiInput();
+console.log(`Builder OpenAPI: ${configuredInput} (${inputSource})`);
+
+const contract = await readContract(configuredInput);
+const derived = selectBuilderOperations(contract);
 const temporaryDirectory = mkdtempSync(join(tmpdir(), "reclaim-builder-openapi-"));
 const temporaryContract = join(temporaryDirectory, "openapi.json");
 writeFileSync(temporaryContract, JSON.stringify(derived));
@@ -106,6 +103,21 @@ function collectReferences(value, references) {
   if (!value || typeof value !== "object") return;
   if (typeof value.$ref === "string") references.add(value.$ref);
   for (const child of Object.values(value)) collectReferences(child, references);
+}
+
+function resolveBuilderOpenApiInput() {
+  // BUILDER_OPENAPI is the documented variable. BRIDGE_OPENAPI stays as an
+  // alias so an existing script that sets it keeps working. There is no
+  // adjacent-checkout fallback: this repository sits alongside Builder under
+  // devtools/, not project-new-tools/, so that path never matched a real
+  // checkout and only misled anyone reading the resolution order.
+  if (process.env.BUILDER_OPENAPI) {
+    return { input: process.env.BUILDER_OPENAPI, source: "BUILDER_OPENAPI" };
+  }
+  if (process.env.BRIDGE_OPENAPI) {
+    return { input: process.env.BRIDGE_OPENAPI, source: "BRIDGE_OPENAPI" };
+  }
+  return { input: PRODUCTION_BUILDER_OPENAPI, source: "production fallback" };
 }
 
 async function readContract(input) {

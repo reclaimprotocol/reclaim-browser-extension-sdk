@@ -140,8 +140,8 @@ the active tab permits it to read. A browser can omit or reduce high-entropy
 hints; this never blocks verification.
 
 Builder mode uses the generated client for Builder's direct Verification API
-contract in `project-new-tools/builder/packages/app/openapi.yaml`. The deployed
-client routes are `/verifications/sessions/{sessionId}/bootstrap`, `/claimant`,
+contract. The deployed client routes are
+`/verifications/sessions/{sessionId}/bootstrap`, `/claimant`,
 `/events`, `/attestor-auth`, and `/results`. Every request includes
 `x-reclaim-vc-id`; Builder validates the session and Verification Client
 binding before it returns data. The header identifies the client for routing;
@@ -153,16 +153,29 @@ URLs that don't select `api=2`.
 
 Don't edit `src/generated/builder-bridge` or
 `src/generated/builder-bridge.gen.js`. The output directory keeps its historical
-name; it contains the Builder API client and no backend bridge. The generator prefers the adjacent
-Builder app checkout at `../project-new-tools/builder/packages/app/openapi.yaml`
-and falls back to the deployed Builder contract.
+name; it contains the Builder API client and no backend bridge. The generator
+resolves its OpenAPI source in two steps: an explicit `BUILDER_OPENAPI`
+environment variable (a local file path or an `http(s)` URL), otherwise
+Builder's production contract at `https://build.reclaimprotocol.org/openapi.yaml`.
+`BRIDGE_OPENAPI` still works as an alias for `BUILDER_OPENAPI`.
 Regenerate both after an API change:
 
 ```sh
 npm run generate:builder-bridge
 ```
 
-To test an unpublished Builder contract, set `BUILDER_OPENAPI`:
+The generator prints the resolved source before it runs, so a missing
+`BUILDER_OPENAPI` is visible instead of silently regenerating against
+production. To test against a Builder instance running locally, point
+`BUILDER_OPENAPI` at its `/openapi.yaml` endpoint:
+
+```sh
+BUILDER_OPENAPI=http://localhost:4001/openapi.yaml \
+  npm run generate:builder-bridge
+```
+
+To test an unpublished contract from a local checkout, use a file path
+instead:
 
 ```sh
 BUILDER_OPENAPI=/absolute/path/to/openapi.yaml \
