@@ -42,7 +42,7 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
         data.source || source,
         data.options,
       );
-      // Always emitted, subject to the per-session cap below — diagnostics
+      // Always emitted, subject to the per-session cap below — diagnostic
       // mode only changes how much of the message this carries (see
       // providerScriptLogEventData). A provider script (not the claimant)
       // controls how often window.Reclaim.log fires, so count every call and
@@ -217,11 +217,12 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
             // requestData is tens of kilobytes and its custom injection can be
             // far larger; logging it whole is what forced the backend to split
             // oversized entries in the first place.
+            const requestCount = ctx.providerData?.requestData?.length ?? 0;
             loggingHub.info(
               "[BACKGROUND] Sending provider data to content script: " +
                 `${ctx.providerData?.httpProviderId || ctx.providerId} ` +
                 `(${ctx.providerData?.name || "unnamed"}), ` +
-                `${ctx.providerData?.requestData?.length ?? 0} request(s)`,
+                `${requestCount} request${requestCount === 1 ? "" : "s"}`,
               "background.provider",
             );
             // The object, not a string: the hub prints it in full to the
@@ -489,7 +490,7 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
         break;
       case ctx.MESSAGE_ACTIONS.UPDATE_PUBLIC_DATA:
         if (sender.tab?.id && ctx.managedTabs.has(sender.tab.id)) {
-          // Whatever the provider's script scraped off the page — the user's
+          // Whatever the provider's script scraped off the page — the claimant's
           // name, balance, account id. Concatenating it into the message put it
           // past redaction entirely, because redaction cannot reach inside a
           // string that was already built at the call site. It travels as a
@@ -628,7 +629,7 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
               sendResponse({ success: false, error: "Session not initialized" });
               break;
             }
-            // Always emitted — diagnostics mode only changes whether parameter
+            // Always emitted — diagnostic mode only changes whether parameter
             // values accompany their names (see
             // requestClaimParametersCapturedEventData).
             if (ctx.builder) {

@@ -87,9 +87,10 @@ export async function startVerification(ctx, templateData) {
     }
     ctx.providerData = providerData;
 
+    const requestCount = providerData?.requestData?.length ?? 0;
     loggingHub.info(
       `[BACKGROUND] Fetched provider data for ${templateData.providerId}: ` +
-        `${providerData?.name || "unnamed"}, ${providerData?.requestData?.length ?? 0} request(s)`,
+        `${providerData?.name || "unnamed"}, ${requestCount} request${requestCount === 1 ? "" : "s"}`,
       "background.provider",
       { eventType: EVENT_TYPES.FETCHED_PROVIDERS },
     );
@@ -449,8 +450,8 @@ export async function submitProofs(ctx) {
     // At INFO the identifier, signatures, witnesses and providerRequest survive
     // redaction while `claimData` is blanked wholesale — the same shape the
     // InApp SDK's own PROOF_GENERATED line has. That is deliberate: `claimData`
-    // holds `context.extractedParameters`, which is the plaintext value the user
-    // is proving, and this used to reach Loki on every successful session.
+    // holds `context.extractedParameters`, which is the plaintext value the
+    // claimant is proving, and this used to reach Loki on every successful session.
     loggingHub.info("[BACKGROUND] Submitting proofs", "background.proof", {
       eventType: EVENT_TYPES.SUBMITTING_PROOF,
       payload: finalProofs,
@@ -462,7 +463,7 @@ export async function submitProofs(ctx) {
       return { success: true };
     }
 
-    // If callbackUrl provided, submit; otherwise just signal completion
+    // If callbackUrl provided, submit; otherwise signal completion
     if (ctx.callbackUrl && typeof ctx.callbackUrl === "string" && ctx.callbackUrl.length > 0) {
       try {
         loggingHub.info(
@@ -550,7 +551,7 @@ export async function submitProofs(ctx) {
     // Emitted once, before the notifications and independently of them. It used
     // to ride on the activeTabId branch below, so a flow that completed after
     // the provider tab had closed produced no PROOF_SUBMITTED event at all —
-    // the session simply stopped mid-stream in the logs. `submitted` is spelled
+    // the session stopped mid-stream in the logs. `submitted` is spelled
     // out because with no callbackUrl nothing is posted anywhere: the proofs are
     // handed back to the consumer, which the event name alone does not convey.
     loggingHub.info(

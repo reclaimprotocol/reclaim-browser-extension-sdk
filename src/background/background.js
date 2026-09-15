@@ -51,7 +51,7 @@ const EXTRACTION_FAILURE_REPORTS = {
  * The response content the stage was looking at goes in the log PAYLOAD, never
  * in the message: the payload path gives the console the full value and the
  * endpoint a redacted, capped one. Interpolating it into the message published
- * the user's authenticated page content to the diagnostic endpoint.
+ * the claimant's authenticated page content to the diagnostic endpoint.
  *
  * Repeats are demoted to debug. The content script re-polls every
  * NETWORK_FILTERING_INTERVAL_MS, so an unresolvable redaction is retried for the
@@ -233,7 +233,7 @@ export default function initBackground() {
           BUILDER_EVENTS.REQUEST_MATCHED,
           builderRequestEventData(ctx, criteria),
         );
-        // Stays diagnostics-gated, unlike the other Builder events this file
+        // Stays diagnostic-gated, unlike the other Builder events this file
         // reports: this fires once per intercepted request captured by the
         // matcher, so a multi-page login flow can produce hundreds per
         // session. Emitting it unconditionally would turn every session into
@@ -283,13 +283,13 @@ export default function initBackground() {
         );
       } catch (error) {
         // A redaction that doesn't resolve against *this* response is not a
-        // failure — the page usually just hasn't rendered the data yet. Report
+        // failure — the page usually hasn't rendered the data yet. Report
         // it as retryable so the content script keeps polling, and leave the
         // session (and the popup) alone.
         //
         // This path exists because the authoritative xPath/jsonPath resolution
         // moved here from the content-script gate; before, a non-matching
-        // response was simply never forwarded.
+        // response was never forwarded.
         if (error?.retryable) {
           reportExtractionFailure(ctx, error, criteria);
           return { success: false, retryable: true, error: error.message };
@@ -413,7 +413,8 @@ export default function initBackground() {
     const lostActive = tabId === ctx.activeTabId;
     const noManagedLeft = ctx.managedTabs.size === 0;
 
-    // If there is an active session and we lost its tab(s), fail immediately.
+    // If there is an active session and we lost its active tab or every
+    // managed tab, fail immediately.
     if (
       ctx.activeSessionId &&
       (lostActive || noManagedLeft) &&

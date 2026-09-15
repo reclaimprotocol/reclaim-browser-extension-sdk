@@ -1,14 +1,14 @@
 /**
- * Redaction rules for the Builder analytics events that diagnostics mode used
+ * Redaction rules for the Builder analytics events that diagnostic mode used
  * to suppress outright: `provider_script_log` and
  * `request_claim_parameters_captured`. Builder always emits these two events
- * now; diagnostics mode only changes how much detail a payload carries.
+ * now; diagnostic mode only changes how much detail a payload carries.
  *
  * `network_request_observed` (the third event that diagnostics used to gate)
  * keeps its existing all-or-nothing gate instead: it fires once per
  * intercepted request, so a multi-page login flow can produce hundreds per
  * session, and emitting it unconditionally would flood Builder's event
- * ingestion. See the diagnostics-only branch in `background.js`.
+ * ingestion. See the diagnostic-mode branch in `background.js`.
  *
  * These rules mirror the in-app SDK's `lib/src/utils/sanitize.dart` and
  * `lib/src/ui/claim_creation_webview/builder_request_events.dart` — one
@@ -55,7 +55,7 @@ const CREDENTIAL_PATTERN = new RegExp(
 );
 
 // URL query params carrying PII — value runs until the next `&`, whitespace,
-// or structural punctuation. Catches URL-encoded forms (e.g.
+// or structural punctuation. Catches URL-encoded forms (for example,
 // `email=foo%40bar.com`) the plain-email pattern below would miss.
 const PERSONAL_DATA_PATTERN = new RegExp(
   `\\b(?:${KEY_PREFIX}${PII_KEYS}\\s*=\\s*[^&\\s,;}"']+` +
@@ -100,7 +100,7 @@ function replaceSensitiveMatch(match) {
  * tokens, JWTs, private keys, secrets/passwords/tokens/API keys, proof data,
  * proofString, and raw request/response bodies.
  *
- * This is the one redaction Builder diagnostics mode does not relax. Builder
+ * This is the one redaction Builder diagnostic mode does not relax. Builder
  * has no encrypted-event format — event data lands in a plain JSONB column —
  * so a credential that reaches this function's caller is a security
  * incident, not a triage trade-off the way an un-redacted email address is.
@@ -255,13 +255,13 @@ export function requestClaimParametersCapturedEventData({ parameterValuesByName,
  * ("provider page became usable") that must fire at most once per provider,
  * on the first page load observed after that provider starts. The content
  * script resends `CONTENT_SCRIPT_LOADED` on every full-page navigation in the
- * managed tab — a login page, a two-factor step, a post-login redirect, and
- * so on all reinject and resend it — so the caller must track, per provider,
- * whether one has already been reported. `hasAlreadyEmittedPageReadyForProvider`
- * is that caller-owned state (mirrors the in-app SDK's
- * `shouldEmitPageReady` in `builder_request_events.dart`, which the same
- * reasoning applies to); this returns `true` only when nothing has been
- * reported yet for the current provider.
+ * managed tab (a login page, a two-factor step, a post-login redirect, and so
+ * on), since each one reinjects and resends it, so the caller must track, per
+ * provider, whether one has already been reported. `hasAlreadyEmittedPageReadyForProvider`
+ * is that caller-owned state (mirrors the in-app SDK's `shouldEmitPageReady`
+ * in `builder_request_events.dart`, to which the same reasoning applies);
+ * this returns `true` only when nothing has been reported yet for the
+ * current provider.
  */
 export function shouldEmitPageReady({ hasAlreadyEmittedPageReadyForProvider }) {
   return !hasAlreadyEmittedPageReadyForProvider;

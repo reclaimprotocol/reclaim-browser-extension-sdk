@@ -108,8 +108,9 @@ await request.startVerification();
 
 Create a Builder session with `verificationClientUrl` set to the registered
 extension URL. The session response includes `verificationUrl` and
-`verificationClientId`. The client ID is a public routing identifier, not an
-authentication credential. Pass both values to the extension:
+`verificationClientId`. The verification client id is a public routing
+identifier, not an authentication credential. Pass both values to the
+extension:
 
 ```js
 import { reclaimExtensionSDK } from "@reclaimprotocol/browser-extension-sdk";
