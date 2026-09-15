@@ -215,3 +215,20 @@ describe("why a request was rejected", () => {
     assert.equal(verdict.matched, true);
   });
 });
+
+describe("Builder response-match optionality", () => {
+  it("skips an unsatisfied optional match only in Builder mode", () => {
+    const optional = { value: "optional", type: "contains", isOptional: true };
+    const req = request("https://etherscan.io/myaccount", { responseText: "required" });
+
+    assert.equal(
+      describeRequestMatch(req, criteria({ responseMatches: [optional], builderMode: true }), {})
+        .matched,
+      true,
+    );
+    assert.equal(
+      describeRequestMatch(req, criteria({ responseMatches: [optional] }), {}).matched,
+      false,
+    );
+  });
+});

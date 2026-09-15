@@ -4,6 +4,15 @@
 import { loggingHub } from "../utils/logger/LoggingHub";
 import { EVENT_TYPES } from "../utils/logger/constants";
 import { DEFAULT_INJECTION_TYPE } from "../utils/provider-normalization";
+import { BUILDER_EVENTS } from "../utils/builder";
+import {
+  decideProviderScriptLogAction,
+  providerScriptLogEventData,
+  ProviderScriptLogAction,
+  PROVIDER_SCRIPT_LOG_CAP_REACHED_MESSAGE,
+  requestClaimParametersCapturedEventData,
+  shouldEmitPageReady,
+} from "./builder-event-redaction";
 import * as sessionManager from "./sessionManager";
 import { MESSAGE_ACTIONS } from "../utils/constants/interfaces";
 
@@ -33,6 +42,34 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
         data.source || source,
         data.options,
       );
+      // Always emitted, subject to the per-session cap below — diagnostic
+      // mode only changes how much of the message this carries (see
+      // providerScriptLogEventData). A provider script (not the claimant)
+      // controls how often window.Reclaim.log fires, so count every call and
+      // stop reporting once the cap is hit, with one final notice instead of
+      // a silent cutoff.
+      if (ctx.builder && data.context === "provider_script") {
+        ctx.builder.providerScriptLogCount = (ctx.builder.providerScriptLogCount || 0) + 1;
+        const action = decideProviderScriptLogAction(ctx.builder.providerScriptLogCount);
+        if (action !== ProviderScriptLogAction.DROP) {
+          const isCapReachedNotice = action === ProviderScriptLogAction.REPORT_CAP_REACHED_NOTICE;
+          const message =
+            typeof data.message === "string" ? data.message : String(data.message || "");
+          await ctx.builder.client.reportEventBestEffort(
+            ctx.builder.sessionId,
+            BUILDER_EVENTS.PROVIDER_SCRIPT_LOG,
+            {
+              providerId: ctx.builder.currentProvider?.recipe?.providerId,
+              resolvedVersion: ctx.builder.currentProvider?.recipe?.resolvedVersion,
+              ...providerScriptLogEventData({
+                level: isCapReachedNotice ? "info" : data.level === "SEVERE" ? "error" : "info",
+                message: isCapReachedNotice ? PROVIDER_SCRIPT_LOG_CAP_REACHED_MESSAGE : message,
+                diagnosticMode: ctx.builder.diagnosticMode,
+              }),
+            },
+          );
+        }
+      }
       sendResponse({ success: true });
       return true;
     }
@@ -115,6 +152,45 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
             `[BACKGROUND] Successfully sent (pending) SHOW_PROVIDER_VERIFICATION_POPUP and PROVIDER_DATA_READY to tab ${sender.tab.id}`,
             "background.message",
           );
+          if (isManaged && ctx.builder) {
+            const eventData = {
+              providerId: ctx.builder.currentProvider.recipe.providerId,
+              resolvedVersion: ctx.builder.currentProvider.recipe.resolvedVersion,
+              ordinal: ctx.builder.providerOrdinal,
+            };
+            await ctx.builder.client.reportEventBestEffort(
+              ctx.builder.sessionId,
+              BUILDER_EVENTS.VERIFICATION_BROWSER_READY,
+              eventData,
+            );
+            // The content script resends CONTENT_SCRIPT_LOADED on every
+            // full-page navigation in this managed tab (a login page, a 2FA
+            // step, a post-login redirect, ...), not only the first one.
+            // `verification_page_ready` is a per-provider "page became
+            // usable" milestone, so only the first load observed for the
+            // current provider may report it — see `shouldEmitPageReady`.
+            // Reporting it again on a later navigation would place it after
+            // the claimant has already started interacting, which is
+            // incoherent for an event that means the page just became usable.
+            if (
+              shouldEmitPageReady({
+                hasAlreadyEmittedPageReadyForProvider:
+                  ctx.builder.currentProvider.hasReportedPageReady,
+              })
+            ) {
+              ctx.builder.currentProvider.hasReportedPageReady = true;
+              await ctx.builder.client.reportEventBestEffort(
+                ctx.builder.sessionId,
+                BUILDER_EVENTS.VERIFICATION_PAGE_READY,
+                eventData,
+              );
+            }
+            await ctx.builder.client.reportEventBestEffort(
+              ctx.builder.sessionId,
+              BUILDER_EVENTS.VERIFICATION_REQUEST_INTERCEPTOR_READY,
+              eventData,
+            );
+          }
           sendResponse({ success: true });
           break;
         }
@@ -141,11 +217,12 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
             // requestData is tens of kilobytes and its custom injection can be
             // far larger; logging it whole is what forced the backend to split
             // oversized entries in the first place.
+            const requestCount = ctx.providerData?.requestData?.length ?? 0;
             loggingHub.info(
               "[BACKGROUND] Sending provider data to content script: " +
                 `${ctx.providerData?.httpProviderId || ctx.providerId} ` +
                 `(${ctx.providerData?.name || "unnamed"}), ` +
-                `${ctx.providerData?.requestData?.length ?? 0} request(s)`,
+                `${requestCount} request${requestCount === 1 ? "" : "s"}`,
               "background.provider",
             );
             // The object, not a string: the hub prints it in full to the
@@ -163,6 +240,7 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
                 callbackUrl: ctx.callbackUrl,
                 providerId: ctx.providerId,
                 appId: ctx.appId,
+                builder: ctx.builder?.sessionMetadata,
               },
             });
           } else {
@@ -290,8 +368,12 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
             "background.verification",
           );
 
-          await sessionManager.cancelSession(ctx, data?.sessionId);
-          sendResponse({ success: true });
+          const cancelled = await sessionManager.cancelSession(ctx, data?.sessionId);
+          sendResponse(
+            cancelled
+              ? { success: true }
+              : { success: false, error: "Verification session is no longer active" },
+          );
         } else {
           loggingHub.error(
             "[BACKGROUND] CANCEL_VERIFICATION: Action not supported",
@@ -408,7 +490,7 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
         break;
       case ctx.MESSAGE_ACTIONS.UPDATE_PUBLIC_DATA:
         if (sender.tab?.id && ctx.managedTabs.has(sender.tab.id)) {
-          // Whatever the provider's script scraped off the page — the user's
+          // Whatever the provider's script scraped off the page — the claimant's
           // name, balance, account id. Concatenating it into the message put it
           // past redaction entirely, because redaction cannot reach inside a
           // string that was already built at the call site. It travels as a
@@ -452,6 +534,44 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
             "[BACKGROUND] UPDATE_EXPECT_MANY_CLAIMS: Tab is not managed by extension",
             "background.claim",
           );
+          sendResponse({ success: false, error: "Tab is not managed by extension" });
+        }
+        break;
+      }
+      case ctx.MESSAGE_ACTIONS.UPDATE_USER_INTERACTION_REQUIREMENT: {
+        if (sender.tab?.id && ctx.managedTabs.has(sender.tab.id)) {
+          if (ctx.builder) {
+            await ctx.builder.client.reportEventBestEffort(
+              ctx.builder.sessionId,
+              data?.required
+                ? BUILDER_EVENTS.USER_INTERACTION_STARTED
+                : BUILDER_EVENTS.USER_INTERACTION_SUMMARY,
+              {
+                providerId: ctx.builder.currentProvider?.recipe?.providerId,
+                required: data?.required === true,
+              },
+            );
+          }
+          sendResponse({ success: true });
+        } else {
+          sendResponse({ success: false, error: "Tab is not managed by extension" });
+        }
+        break;
+      }
+      case ctx.MESSAGE_ACTIONS.REPORT_USER_LOGGED_IN: {
+        if (sender.tab?.id && ctx.managedTabs.has(sender.tab.id)) {
+          if (ctx.builder) {
+            await ctx.builder.client.reportEventBestEffort(
+              ctx.builder.sessionId,
+              BUILDER_EVENTS.AUTHENTICATED,
+              {
+                providerId: ctx.builder.currentProvider?.recipe?.providerId,
+                source: "provider_script",
+              },
+            );
+          }
+          sendResponse({ success: true });
+        } else {
           sendResponse({ success: false, error: "Tab is not managed by extension" });
         }
         break;
@@ -508,6 +628,22 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
             if (!sessId) {
               sendResponse({ success: false, error: "Session not initialized" });
               break;
+            }
+            // Always emitted — diagnostic mode only changes whether parameter
+            // values accompany their names (see
+            // requestClaimParametersCapturedEventData).
+            if (ctx.builder) {
+              await ctx.builder.client.reportEventBestEffort(
+                ctx.builder.sessionId,
+                BUILDER_EVENTS.REQUEST_CLAIM_PARAMETERS_CAPTURED,
+                {
+                  providerId: ctx.builder.currentProvider?.recipe?.providerId,
+                  ...requestClaimParametersCapturedEventData({
+                    parameterValuesByName: data.request?.extractedParams || {},
+                    diagnosticMode: ctx.builder.diagnosticMode,
+                  }),
+                },
+              );
             }
             const result = await ctx.processFilteredRequest(
               data.request,

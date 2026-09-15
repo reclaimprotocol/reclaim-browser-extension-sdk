@@ -276,6 +276,7 @@ class ReclaimContentScript {
     this.sessionId = null;
     this.providerId = null;
     this.appId = null;
+    this.builderMetadata = null;
     this.filteringInterval = null;
     this.filteringStartTime = null;
     this.filteredRequests = [];
@@ -495,6 +496,7 @@ class ReclaimContentScript {
         this.sessionId = data.sessionId;
         this.providerId = data.providerId || "unknown";
         this.appId = data.appId || "unknown";
+        this.builderMetadata = data.builder || null;
 
         localStorage.setItem(
           "reclaimBrowserExtensionParameters",
@@ -945,6 +947,29 @@ class ReclaimContentScript {
         () => {},
       );
       logger.info("[Content] Expect many claims set", "content.claim");
+      return;
+    }
+
+    if (
+      action === RECLAIM_SDK_ACTIONS.REQUIRES_USER_INTERACTION &&
+      typeof data?.required === "boolean"
+    ) {
+      chrome.runtime.sendMessage({
+        action: MESSAGE_ACTIONS.UPDATE_USER_INTERACTION_REQUIREMENT,
+        source: MESSAGE_SOURCES.CONTENT_SCRIPT,
+        target: MESSAGE_SOURCES.BACKGROUND,
+        data: { required: data.required },
+      });
+      return;
+    }
+
+    if (action === RECLAIM_SDK_ACTIONS.REPORT_USER_LOGGED_IN) {
+      chrome.runtime.sendMessage({
+        action: MESSAGE_ACTIONS.REPORT_USER_LOGGED_IN,
+        source: MESSAGE_SOURCES.CONTENT_SCRIPT,
+        target: MESSAGE_SOURCES.BACKGROUND,
+        data: {},
+      });
       return;
     }
 

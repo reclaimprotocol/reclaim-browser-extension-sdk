@@ -4,6 +4,7 @@ import initBackground from "./background/background";
 import { BACKEND_URL, API_ENDPOINTS, RECLAIM_SDK_ACTIONS } from "./utils/constants";
 import { LOG_CONFIG_STORAGE_KEY, DEFAULT_LOG_CONFIG } from "./utils/logger/constants";
 import { withClientSource, getClientSource } from "./utils/logger/client-source";
+import { BUILDER_BACKEND_URL, parseVerificationUrl } from "./utils/builder";
 
 // Global verification queue to serialize extension sessions (background is single-session)
 const _verificationQueue = [];
@@ -51,6 +52,7 @@ class ReclaimExtensionProofRequest {
     this.providerVersion = options.providerVersion || "";
     this.acceptAiProviders = !!options.acceptAiProviders;
     this.callbackUrl = options.callbackUrl || "";
+    this.builder = options.builder || null;
 
     this._backgroundInitialized = false;
     this._ctx = null;
@@ -155,6 +157,36 @@ class ReclaimExtensionProofRequest {
     return instance;
   }
 
+  /**
+   * Creates an api=2 request from an incoming verification URL. URLs without
+   * exact `api=2` deliberately stay on the existing legacy entry points.
+   */
+  static fromVerificationUrl(url, options = {}) {
+    const verification = parseVerificationUrl(url);
+    if (verification.mode !== "builder") {
+      throw new Error("This verification URL is not a Builder api=2 URL");
+    }
+    if (!options.verificationClientId) {
+      throw new Error("verificationClientId is required for Builder verification");
+    }
+    const instance = new ReclaimExtensionProofRequest("builder", "builder", {
+      ...options,
+      builder: {
+        apiVersion: "2",
+        sessionId: verification.sessionId,
+        verificationClientId: options.verificationClientId,
+        claimantClientId: options.claimantClientId,
+        backendUrl: options.backendUrl || BUILDER_BACKEND_URL,
+        claimantDetails: options.claimantDetails || {},
+        diagnosticMode: verification.diagnosticMode,
+      },
+    });
+    instance.sessionId = verification.sessionId;
+    instance.signature = "builder";
+    instance.timestamp = "builder";
+    return instance;
+  }
+
   // Configuration helpers
   setAppCallbackUrl(url, jsonProofResponse = false) {
     if (!url || typeof url !== "string") throw new Error("callbackUrl must be a non-empty string");
@@ -214,28 +246,50 @@ class ReclaimExtensionProofRequest {
     // Wait for VERIFICATION_FAILED propagated from content on cancel
     return new Promise((resolve) => {
       let done = false;
+      const finish = (result) => {
+        if (done) return;
+        done = true;
+        offErr();
+        resolve(result);
+      };
       const offErr = this.on("error", () => {
-        if (!done) {
-          done = true;
-          offErr();
-          resolve(true);
-        }
+        finish(true);
       });
-      // Post cancel
-      window.postMessage(
-        {
-          action: RECLAIM_SDK_ACTIONS.CANCEL_VERIFICATION,
-          messageId: this.sessionId,
-          extensionID: this.extensionID,
-        },
-        "*",
-      );
+      // Extension pages talk directly to the background. Web pages retain the
+      // window bridge so older consumers and content-script routing are
+      // unchanged.
+      if (this._mode === "extension") {
+        try {
+          chrome.runtime.sendMessage(
+            {
+              action: "CANCEL_VERIFICATION",
+              source: "content-script",
+              target: "background",
+              data: { sessionId: this.sessionId },
+            },
+            (response) => {
+              // Reading lastError prevents Chrome from logging an unchecked
+              // callback warning when the service worker is unavailable.
+              const runtimeError = chrome.runtime.lastError;
+              if (runtimeError || response?.success === false) finish(false);
+            },
+          );
+        } catch (error) {
+          this._emit("error", error instanceof Error ? error : new Error(String(error)));
+        }
+      } else {
+        window.postMessage(
+          {
+            action: RECLAIM_SDK_ACTIONS.CANCEL_VERIFICATION,
+            messageId: this.sessionId,
+            extensionID: this.extensionID,
+          },
+          "*",
+        );
+      }
       // Fallback timeout
       setTimeout(() => {
-        if (!done) {
-          offErr();
-          resolve(false);
-        }
+        finish(false);
       }, timeoutMs);
     });
   }
@@ -243,7 +297,7 @@ class ReclaimExtensionProofRequest {
   // Internals
   async _startVerificationInternal() {
     if (!this.sessionId) throw new Error("Session not initialized");
-    if (!this.signature) throw new Error("Signature not set");
+    if (!this.builder && !this.signature) throw new Error("Signature not set");
 
     const templateData = {
       sessionId: this.sessionId,
@@ -260,6 +314,7 @@ class ReclaimExtensionProofRequest {
       providerVersion: this.providerVersion || "",
       resolvedProviderVersion: this.resolvedProviderVersion || "",
       jsonProofResponse: !!this.jsonProofResponse,
+      ...(this.builder ? { builder: this.builder } : {}),
     };
 
     const messageId = this.sessionId;
@@ -439,6 +494,11 @@ class ReclaimExtensionSDK {
     return getClientSource();
   }
 
+  /** Returns the versioned routing decision without parsing legacy request data. */
+  parseVerificationUrl(verificationUrl) {
+    return parseVerificationUrl(verificationUrl);
+  }
+
   // Primary API: create a per-request instance
   async init(applicationId, appSecret, providerId, options = {}) {
     // If logConfig is provided, apply it FIRST before any other operations
@@ -458,6 +518,18 @@ class ReclaimExtensionSDK {
 
   fromJsonString(json, options = {}) {
     return ReclaimExtensionProofRequest.fromJsonString(json, options);
+  }
+
+  /**
+   * Starts the Builder-only api=2 path from a verification launch URL.
+   * Legacy URLs are rejected here instead of being reinterpreted.
+   */
+  async initBuilder(verificationUrl, options = {}) {
+    return ReclaimExtensionProofRequest.fromVerificationUrl(verificationUrl, options);
+  }
+
+  fromVerificationUrl(verificationUrl, options = {}) {
+    return ReclaimExtensionProofRequest.fromVerificationUrl(verificationUrl, options);
   }
 
   /**

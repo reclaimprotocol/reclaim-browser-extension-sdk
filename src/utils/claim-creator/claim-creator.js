@@ -2,8 +2,10 @@ import {
   extractParamsFromUrl,
   extractParamsFromBody,
   extractParamsFromResponse,
+  extractParamsFromBuilderResponse,
   separateParams,
 } from "./params-extractor";
+import { effectiveResponseMatches } from "./network-filter";
 import { MESSAGE_ACTIONS, MESSAGE_SOURCES } from "../constants";
 import { ensureOffscreenDocument } from "../offscreen-manager";
 import { getUserLocationBasedOnIp } from "./get-dynamic-geo";
@@ -11,6 +13,11 @@ import { PRIVATE_KEY_TIMEOUT_MS, DEFAULT_ZK_ENGINE } from "../constants/config";
 import { EVENT_TYPES } from "../logger/constants";
 import { normalizeRedactionHash } from "../provider-normalization";
 import { assertClaimShape } from "./claim-shape";
+import {
+  interpolateBuilderHeaders,
+  interpolateBuilderTemplate,
+  mergeBuilderParameterSources,
+} from "../builder.js";
 
 // Generate Chrome Android user agent (adapted from reference code)
 const generateChromeAndroidUserAgent = (chromeMajorVersion = 135, isMobile = true) => {
@@ -111,6 +118,15 @@ export const createClaimObject = async (
   loggingHub,
   context,
 ) => {
+  const isBuilderProvider = providerData?.builderMode === true;
+  const builderTemplateValues =
+    isBuilderProvider &&
+    providerData?.templateParameters &&
+    typeof providerData.templateParameters === "object" &&
+    !Array.isArray(providerData.templateParameters)
+      ? { ...providerData.templateParameters }
+      : {};
+
   loggingHub.info("[CLAIM-CREATOR] Creating claim object from request data", "claim.creation", {
     eventType: EVENT_TYPES.PREPARING_CLAIM,
   });
@@ -158,8 +174,16 @@ export const createClaimObject = async (
   params.url = providerData.urlType === "TEMPLATE" ? providerData.url : request.url;
   params.method = request.method || "GET";
 
+  // Builder recipes may provide static headers. Legacy providers only use the
+  // headers captured from the browser request; keeping this merge Builder-only
+  // preserves the legacy claim payload exactly.
+  const requestHeaders = {
+    ...(request.headers || {}),
+    ...(isBuilderProvider ? providerData.headers || {} : {}),
+  };
+
   // Process headers - split between public and secret
-  if (request.headers) {
+  if (Object.keys(requestHeaders).length > 0) {
     const publicHeaders = {
       "Sec-Fetch-Mode": "same-origin",
       "Sec-Fetch-Site": "same-origin",
@@ -181,7 +205,7 @@ export const createClaimObject = async (
       }
     }
 
-    Object.entries(request.headers).forEach(([key, value]) => {
+    Object.entries(requestHeaders).forEach(([key, value]) => {
       const lowerKey = key.toLowerCase();
       if (PUBLIC_HEADERS.includes(lowerKey)) {
         publicHeaders[key] = value;
@@ -212,26 +236,34 @@ export const createClaimObject = async (
   }
 
   // Extract dynamic parameters from various sources
-  let allParamValues = {};
+  // Builder context/parameters are resolved by the background before the
+  // provider tab is opened. Keep them in the claim accumulator from the
+  // beginning: URL/body/response extraction is observational and must not
+  // overwrite an explicit value supplied by the session.
+  let allParamValues = isBuilderProvider ? { ...builderTemplateValues } : {};
 
-  if (request?.extractedParams && typeof request.extractedParams === "object") {
+  if (
+    !isBuilderProvider &&
+    request?.extractedParams &&
+    typeof request.extractedParams === "object"
+  ) {
     allParamValues = { ...allParamValues, ...request.extractedParams };
   }
 
+  let urlParamValues = {};
+  let bodyParamValues = {};
+
   // 1. Extract params from URL if provider has URL template
   if (providerData.urlType === "TEMPLATE" && request.url) {
-    // append the extracted parameters to the existing allParamValues
-    allParamValues = { ...allParamValues, ...extractParamsFromUrl(providerData.url, request.url) };
+    urlParamValues = extractParamsFromUrl(providerData.url, request.url);
+    allParamValues = { ...allParamValues, ...urlParamValues };
   }
 
   // 2. Extract params from request body if provider has body template
 
   if (providerData?.bodySniff?.enabled && request.body) {
-    // append the extracted parameters to the existing allParamValues
-    allParamValues = {
-      ...allParamValues,
-      ...extractParamsFromBody(providerData.bodySniff.template, request.body),
-    };
+    bodyParamValues = extractParamsFromBody(providerData.bodySniff.template, request.body);
+    allParamValues = { ...allParamValues, ...bodyParamValues };
   }
 
   // 3. Extract params from response if available.
@@ -242,13 +274,21 @@ export const createClaimObject = async (
   // means the response doesn't carry the data yet, and the caller treats that
   // as retryable rather than failing the session.
   if (request.responseText && providerData.responseMatches) {
-    allParamValues = extractParamsFromResponse(
-      request.responseText,
-      providerData.responseMatches,
-      providerData.responseRedactions || [],
-      allParamValues,
-      loggingHub,
-    );
+    allParamValues = providerData.builderMode
+      ? extractParamsFromBuilderResponse(
+          request.responseText,
+          providerData.responseMatches,
+          providerData.responseRedactions || [],
+          allParamValues,
+          loggingHub,
+        )
+      : extractParamsFromResponse(
+          request.responseText,
+          providerData.responseMatches,
+          providerData.responseRedactions || [],
+          allParamValues,
+          loggingHub,
+        );
   }
 
   // 4. Explicit extractedParams (e.g. from a customInjection request
@@ -257,6 +297,34 @@ export const createClaimObject = async (
   // split of a path segment, so an injected script's precise value must win.
   if (request?.extractedParams && typeof request.extractedParams === "object") {
     allParamValues = { ...allParamValues, ...request.extractedParams };
+  }
+
+  // URL/body/response extraction can discover a value for the same placeholder
+  // as a Builder session parameter. Explicit session values win; injected
+  // requestClaim values are the most specific source and win over both.
+  if (isBuilderProvider) {
+    allParamValues = mergeBuilderParameterSources({
+      url: urlParamValues,
+      body: bodyParamValues,
+      response: allParamValues,
+      template: builderTemplateValues,
+      extracted:
+        request?.extractedParams && typeof request.extractedParams === "object"
+          ? request.extractedParams
+          : {},
+    });
+
+    // The attestor substitutes parameters in URLs, bodies, geo-location and
+    // response selectors, but request headers are already split into public
+    // and secret maps before it runs. Resolve Builder static header values
+    // here, after the complete precedence merge, so both public and secret
+    // headers receive the same explicit values.
+    if (params.headers) {
+      params.headers = interpolateBuilderHeaders(params.headers, allParamValues);
+    }
+    if (secretParams.headers) {
+      secretParams.headers = interpolateBuilderHeaders(secretParams.headers, allParamValues);
+    }
   }
 
   // 5. Separate parameters into public and secret, by NAME only — matching
@@ -289,7 +357,14 @@ export const createClaimObject = async (
   }
 
   if (providerData.responseMatches) {
-    params.responseMatches = providerData.responseMatches.map((match) => {
+    const responseMatches = isBuilderProvider
+      ? effectiveResponseMatches(
+          request.responseText || "",
+          providerData.responseMatches,
+          allParamValues,
+        )
+      : providerData.responseMatches;
+    params.responseMatches = responseMatches.map((match) => {
       // Create a clean object with only the required fields
       const cleanMatch = {
         value: match.value,
@@ -318,7 +393,9 @@ export const createClaimObject = async (
       // documents use "" for "not set", and the attestor would try to resolve it.
       for (const key of ["xPath", "jsonPath", "regex"]) {
         if (redaction?.[key]) {
-          cleanedRedaction[key] = redaction[key];
+          cleanedRedaction[key] = isBuilderProvider
+            ? interpolateBuilderTemplate(redaction[key], allParamValues)
+            : redaction[key];
         }
       }
 
@@ -358,6 +435,9 @@ export const createClaimObject = async (
   }
 
   let geoLocation = providerData?.geoLocation ?? "";
+  if (isBuilderProvider) {
+    geoLocation = interpolateBuilderTemplate(geoLocation, allParamValues);
+  }
 
   if (geoLocation === "{{DYNAMIC_GEO}}") {
     geoLocation = await getUserLocationBasedOnIp();
@@ -383,6 +463,9 @@ export const createClaimObject = async (
     zkEngine: providerData?.extensionConfig?.zkEngine || DEFAULT_ZK_ENGINE,
     client: {
       url: "wss://attestor.reclaimprotocol.org:444/ws",
+      ...(providerData?.attestorAuthRequest
+        ? { authRequest: providerData.attestorAuthRequest }
+        : {}),
     },
   };
 

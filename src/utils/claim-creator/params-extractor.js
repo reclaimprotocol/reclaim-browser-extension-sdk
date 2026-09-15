@@ -344,6 +344,64 @@ const firstTemplateMatch = ({ regex, named }, haystacks, paramNames) => {
 };
 
 /**
+ * Extracts Builder response parameters without pairing response matches and
+ * redactions by index. Named redaction regex groups are authoritative; match
+ * templates provide a whole-response fallback for still-unresolved values.
+ */
+export const extractParamsFromBuilderResponse = (
+  responseText,
+  responseMatches,
+  responseRedactions,
+  paramValues = {},
+  logger,
+) => {
+  if (!responseText) return paramValues;
+
+  for (const redaction of responseRedactions || []) {
+    if (!redaction?.regex) continue;
+    const groupNames = [...redaction.regex.matchAll(/\(\?<([A-Za-z_$][A-Za-z0-9_$]*)>/g)].map(
+      (match) => match[1],
+    );
+    if (!groupNames.length) continue;
+
+    try {
+      const slices = resolveRedaction(responseText, redaction);
+      if (redaction.hash && groupNames.length === 1) {
+        paramValues[groupNames[0]] ??= slices[0]?.value;
+        continue;
+      }
+      for (const slice of slices) {
+        const regex = makeRegex(redaction.regex);
+        regex.lastIndex = 0;
+        const match = regex.exec(slice.value);
+        for (const [name, value] of Object.entries(match?.groups || {})) {
+          if (value !== undefined) paramValues[name] ??= value;
+        }
+      }
+    } catch (error) {
+      logger?.debug?.(
+        `[PARAM-EXTRACTOR] Independent Builder redaction did not resolve: ${error.message}`,
+        "claim.params",
+      );
+    }
+  }
+
+  for (const responseMatch of responseMatches || []) {
+    if (!responseMatch?.value || responseMatch.type === "regex") continue;
+    const paramNames = extractDynamicParamNames(responseMatch.value);
+    if (!paramNames.length) continue;
+    const built = buildTemplateRegex(responseMatch.value, responseMatch.type, paramNames);
+    if (!built) continue;
+    const found = firstTemplateMatch(built, [responseText], paramNames);
+    for (const [name, value] of Object.entries(found || {})) {
+      paramValues[name] ??= value;
+    }
+  }
+
+  return paramValues;
+};
+
+/**
  * Names of params whose responseRedaction has a hash set (oprf, etc.) — these
  * must be routed to secretParams regardless of naming, since a hashed
  * redaction signals the provider wants this value kept out of the public
@@ -371,6 +429,18 @@ export const getHashedParamNames = (responseMatches, responseRedactions) => {
     if (paramNames.length > 0) hashed.add(paramNames[0]);
   }
 
+  return hashed;
+};
+
+/** Returns names captured by independently ordered hashed Builder redactions. */
+export const getBuilderHashedParamNames = (responseRedactions) => {
+  const hashed = new Set();
+  for (const redaction of responseRedactions || []) {
+    if (!redaction?.hash || !redaction.regex) continue;
+    for (const match of redaction.regex.matchAll(/\(\?<([A-Za-z_][A-Za-z0-9_]*)>/g)) {
+      hashed.add(match[1]);
+    }
+  }
   return hashed;
 };
 
