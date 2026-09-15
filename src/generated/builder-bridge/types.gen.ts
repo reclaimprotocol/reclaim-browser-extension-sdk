@@ -5,7 +5,7 @@ export type ClientOptions = {
 };
 
 /**
- * A claimant-facing Verification Client's terminal result. Proofs retain the exact legacy `Proof` shape; Builder signs only the outer result.
+ * A claimant-facing Verification Client's terminal result. Proofs retain the exact `Proof` shape; Builder signs only the outer result.
  */
 export type SubmitVerificationClientResultRequest = {
   status: "success" | "rejected" | "error" | "cancelled";
@@ -57,16 +57,16 @@ export type VerificationClientRequestResult = {
   requestId?: string;
   url?: string;
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
-  proof: LegacyProof;
+  proof: ReclaimRequestProof;
   extractedParameters?: {
     [key: string]: unknown;
   };
 };
 
 /**
- * Exact `Proof` object emitted by a legacy Reclaim Verification Client. The Verification Client must preserve this object without renaming, wrapping, or dropping fields. Consumers pass it directly to `@reclaimprotocol/client` `verifyProof`, normally through `verifyResultFull`. Do not trust any proof field until verification succeeds.
+ * Exact `Proof` object for one verified request within a provider, emitted by every Reclaim Verification Client — the in-app SDK, the browser extension, portals, and Builder's own client. The Verification Client must preserve this object without renaming, wrapping, or dropping fields. Consumers pass it directly to `@reclaimprotocol/client` `verifyRequestProof`, normally through `verifyResultFull`. Do not trust any proof field until verification succeeds.
  */
-export type LegacyProof = {
+export type ReclaimRequestProof = {
   identifier: string;
   claimData: {
     provider: string;
@@ -86,9 +86,9 @@ export type LegacyProof = {
      */
     claimAttestation?: {
       /**
-       * `embedded-attestor` — the in-app SDK and the browser extension, whose attestor signs the claim and may return its own `attestation_report`. `confidential-space` — portals, whose browser runtime signs inside a GCP Confidential Space and returns `tee_attestation`. Optional: proofs minted before this field existed carry no `type`, and consumers read an absent `type` as `embedded-attestor`.
+       * `embedded-attestor` — the in-app SDK and the browser extension, whose attestor signs the claim and may return its own `attestation_report`. `confidential-space` — portals, whose browser runtime signs inside a GCP Confidential Space and returns `tee_attestation`. Every client sets this explicitly.
        */
-      type?: "embedded-attestor" | "confidential-space";
+      type: "embedded-attestor" | "confidential-space";
       attestor_address: string;
       claim_signature: string;
       /**
@@ -102,7 +102,7 @@ export type LegacyProof = {
     };
   }>;
   /**
-   * Extraction values carried by the proof. Consumers trust only the values returned by `verifyProof` after successful verification.
+   * Extraction values carried by the proof. Consumers trust only the values returned by `verifyRequestProof` after successful verification.
    */
   extractedParameterValues: unknown;
   /**
@@ -273,6 +273,10 @@ export type VerificationSession = {
    * Legacy-only preference echoed for compatibility. Builder-mode clients run the structured recipe and do not enable AI or manual verification.
    */
   preferAiAgent?: boolean;
+  /**
+   * Whether this session was created with diagnostic mode enabled (see CreateVerificationSessionRequest.diagnostics). Set once at creation and never changes afterward. Gates whether Builder records claimant IP addresses and how much detail diagnostic events carry; the `diag` parameter on `verificationUrl` mirrors this value and is not itself authoritative.
+   */
+  diagnostics: boolean;
   /**
    * Consumer context, validated against the provider version's required parameters. Verification Clients resolve scalar values as `{{context.key}}`, then `{{context_key}}`, then `{{key}}`; explicit parameters win. The Builder injects `reclaimSessionId` after validation.
    */
@@ -757,6 +761,9 @@ export type ClaimantDetails = {
   browser?: ClaimantBrowser;
   viewport?: ClaimantDimensions;
   display?: ClaimantDimensions;
+  /**
+   * The claimant's IP addresses: `reportedPublicIp` as the Verification Client observed it, `serverObservedIp` as Builder's own request peer address. Present only when the session's `diagnostics` field is true; a non-diagnostic session never carries this object, even if a Verification Client sent one.
+   */
   network?: {
     reportedPublicIp?: string;
     serverObservedIp?: string;
@@ -856,6 +863,9 @@ export type ClaimantDetailsRequest = {
   browser?: ClaimantBrowser;
   viewport?: ClaimantDimensions;
   display?: ClaimantDimensions;
+  /**
+   * The claimant's own IP address, self-reported. Builder stores it only when the session's `diagnostics` field is true; it drops this object otherwise, regardless of what a Verification Client sends.
+   */
   network?: {
     reportedPublicIp?: string;
   };

@@ -63,7 +63,7 @@ export const bootstrapVerificationClient = <ThrowOnError extends boolean = false
 
 /**
  * Update claimant details
- * Updates the session's latest diagnostic claimant and device snapshot. The Builder captures the request's Reclaim client headers, HTTP user agent, and peer IP separately from client-reported values. These details never affect proof validity. The x-reclaim-vc-id must match the registered Verification Client selected at session creation.
+ * Updates the session's latest diagnostic claimant and device snapshot. The Builder captures the request's Reclaim client headers, HTTP user agent, and peer IP separately from client-reported values. These details never affect proof validity. The x-reclaim-vc-id must match the registered Verification Client selected at session creation. `claimantDetails.network` (the claimant's IP addresses) is stored only when the session's `diagnostics` field is true — see ClaimantDetails.network.
  */
 export const patchVerificationClaimant = <ThrowOnError extends boolean = false>(
   options: Options<PatchVerificationClaimantData, ThrowOnError>,
@@ -143,8 +143,8 @@ export const createVerificationAttestorAuth = <ThrowOnError extends boolean = fa
 };
 
 /**
- * Submit exact legacy proofs as a managed Builder result
- * Accepts exact legacy `Proof` objects from a claimant-facing `api=2` client. Builder atomically records the first terminal outcome, checks it against the submitted status, signs the outer Builder JWS with its managed key, optionally encrypts it for matching callback subscriptions, and enqueues delivery. Retrying the same terminal outcome is idempotent. This is the only result-submission endpoint; Verification Clients never receive signing or encryption keys.
+ * Submit exact proofs as a managed Builder result
+ * Accepts exact `Proof` objects from a claimant-facing `api=2` client. Builder atomically records the first terminal outcome, checks it against the submitted status, signs the outer Builder JWS with its managed key, optionally encrypts it for matching callback subscriptions, and enqueues delivery. Retrying the same terminal outcome is idempotent. This is the only result-submission endpoint; Verification Clients never receive signing or encryption keys.
  */
 export const submitVerificationClientResult = <ThrowOnError extends boolean = false>(
   options: Options<SubmitVerificationClientResultData, ThrowOnError>,

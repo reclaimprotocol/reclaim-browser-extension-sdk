@@ -1071,7 +1071,7 @@ async function completeBuilderProvider(ctx, proofs) {
       ...(providerRequest.builderRequestId ? { requestId: providerRequest.builderRequestId } : {}),
       ...(providerRequest.url ? { url: providerRequest.url } : {}),
       ...(providerRequest.method ? { method: providerRequest.method } : {}),
-      // Builder receives the extension's exact legacy proof output. Do not
+      // Builder receives the extension's exact proof output. Do not
       // deserialize, normalize, or verify nested attestation material here.
       proof,
       ...(extractedParameters && typeof extractedParameters === "object"

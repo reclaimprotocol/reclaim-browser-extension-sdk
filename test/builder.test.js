@@ -31,7 +31,7 @@ test("canonicalizes Verification Client UUIDs for Builder API headers and payloa
   assert.throws(() => normalizeVerificationClientId("not-a-uuid"), /verificationClientId/);
 });
 
-test("submits only canonical legacy ReclaimProof fields to Builder", () => {
+test("submits only canonical ReclaimRequestProof fields to Builder", () => {
   const formatted = {
     identifier: "proof-id",
     claimData: { context: "{}" },

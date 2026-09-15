@@ -83,7 +83,7 @@ export function builderExtractedParameterValues(proof) {
 }
 
 /**
- * Return the canonical legacy ReclaimProof fields for Builder submission.
+ * Return the canonical ReclaimRequestProof fields for Builder submission.
  * Engine-only state stays local. TEE attestation remains optional and is
  * passed through without interpreting its client-specific representation.
  */
