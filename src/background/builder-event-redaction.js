@@ -266,3 +266,41 @@ export function requestClaimParametersCapturedEventData({ parameterValuesByName,
 export function shouldEmitPageReady({ hasAlreadyEmittedPageReadyForProvider }) {
   return !hasAlreadyEmittedPageReadyForProvider;
 }
+
+/**
+ * Decides whether a `CONTENT_SCRIPT_LOADED` message should report
+ * `verification_browser_ready`.
+ *
+ * Unlike `verification_page_ready`, this milestone is per-SESSION, not
+ * per-provider: the catalogue's "Browser and provider execution" section
+ * describes it as "Browser became controllable" with no Provider fields in
+ * its metadata, and providers "reuse the same browser Session" (only one
+ * shared browser is ever allocated). The content script still resends
+ * `CONTENT_SCRIPT_LOADED` on every full-page navigation and on every new
+ * provider's first load, so the caller must track this at the session level
+ * (`builder`, not `builder.currentProvider`) and never reset it between
+ * providers — resetting it per provider would re-report "the browser became
+ * controllable" for a browser that never stopped being controllable.
+ */
+export function shouldEmitBrowserReady({ hasAlreadyEmittedBrowserReadyForSession }) {
+  return !hasAlreadyEmittedBrowserReadyForSession;
+}
+
+/**
+ * Decides whether a `CONTENT_SCRIPT_LOADED` message should report
+ * `verification_request_interceptor_ready`.
+ *
+ * This milestone is per-provider, like `verification_page_ready`: the
+ * catalogue lists Provider fields as required metadata, because request
+ * capture is (re)installed for each provider's page rather than once for the
+ * whole session. The content script resends `CONTENT_SCRIPT_LOADED` on every
+ * full-page navigation within one provider (a login page, a two-factor step,
+ * a post-login redirect, and so on), so only the first load observed for the
+ * current provider may report it — tracked on `builder.currentProvider`,
+ * which is rebuilt for every provider and so resets this for free.
+ */
+export function shouldEmitRequestInterceptorReady({
+  hasAlreadyEmittedRequestInterceptorReadyForProvider,
+}) {
+  return !hasAlreadyEmittedRequestInterceptorReadyForProvider;
+}

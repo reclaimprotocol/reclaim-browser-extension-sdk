@@ -11,7 +11,9 @@ import {
   redactCredentials,
   requestClaimParametersCapturedEventData,
   sanitizeMessage,
+  shouldEmitBrowserReady,
   shouldEmitPageReady,
+  shouldEmitRequestInterceptorReady,
 } from "./builder-event-redaction.js";
 
 test("redactCredentials redacts cookies, authorization headers, bearer tokens, and secrets", () => {
@@ -147,6 +149,32 @@ test("shouldEmitPageReady emits on the first page load for a provider", () => {
 
 test("shouldEmitPageReady does not emit again once the provider already reported one", () => {
   assert.equal(shouldEmitPageReady({ hasAlreadyEmittedPageReadyForProvider: true }), false);
+});
+
+test("shouldEmitBrowserReady emits when the session has not reported one yet", () => {
+  assert.equal(shouldEmitBrowserReady({ hasAlreadyEmittedBrowserReadyForSession: false }), true);
+});
+
+test("shouldEmitBrowserReady does not emit again once the session already reported one", () => {
+  assert.equal(shouldEmitBrowserReady({ hasAlreadyEmittedBrowserReadyForSession: true }), false);
+});
+
+test("shouldEmitRequestInterceptorReady emits on the first load for a provider", () => {
+  assert.equal(
+    shouldEmitRequestInterceptorReady({
+      hasAlreadyEmittedRequestInterceptorReadyForProvider: false,
+    }),
+    true,
+  );
+});
+
+test("shouldEmitRequestInterceptorReady does not emit again once the provider already reported one", () => {
+  assert.equal(
+    shouldEmitRequestInterceptorReady({
+      hasAlreadyEmittedRequestInterceptorReadyForProvider: true,
+    }),
+    false,
+  );
 });
 
 test("PROVIDER_SCRIPT_LOG_CAP_REACHED_MESSAGE names the configured cap", () => {

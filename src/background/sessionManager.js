@@ -877,6 +877,12 @@ async function prepareBuilderProvider(ctx, templateData) {
           : {},
       diagnosticMode: config.diagnosticMode === true,
       terminal: false,
+      // `verification_browser_ready` is a per-SESSION milestone (one shared
+      // browser is allocated for the whole session; providers reuse it), so
+      // this flag lives on `builder` itself rather than on
+      // `builder.currentProvider` — it must NOT reset when the next provider
+      // starts. See `shouldEmitBrowserReady` in `builder-event-redaction.js`.
+      hasReportedBrowserReady: false,
       sessionMetadata: {
         theme: bootstrap.session.theme ?? null,
         preferredLocale:
@@ -968,6 +974,11 @@ async function prepareBuilderProvider(ctx, templateData) {
     providerData,
     attestorAuthRequest,
     hasReportedPageReady: false,
+    // Per-provider, like `hasReportedPageReady` above: request capture is
+    // (re)installed per provider page, so this must reset on every provider
+    // start. See `shouldEmitRequestInterceptorReady` in
+    // `builder-event-redaction.js`.
+    hasReportedRequestInterceptorReady: false,
   };
 
   await builder.client.reportEventBestEffort(

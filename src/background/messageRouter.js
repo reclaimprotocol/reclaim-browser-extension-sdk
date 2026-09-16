@@ -12,6 +12,8 @@ import {
   PROVIDER_SCRIPT_LOG_CAP_REACHED_MESSAGE,
   requestClaimParametersCapturedEventData,
   shouldEmitPageReady,
+  shouldEmitBrowserReady,
+  shouldEmitRequestInterceptorReady,
 } from "./builder-event-redaction";
 import * as sessionManager from "./sessionManager";
 import { MESSAGE_ACTIONS } from "../utils/constants/interfaces";
@@ -158,14 +160,29 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
               resolvedVersion: ctx.builder.currentProvider.recipe.resolvedVersion,
               ordinal: ctx.builder.providerOrdinal,
             };
-            await ctx.builder.client.reportEventBestEffort(
-              ctx.builder.sessionId,
-              BUILDER_EVENTS.VERIFICATION_BROWSER_READY,
-              eventData,
-            );
             // The content script resends CONTENT_SCRIPT_LOADED on every
             // full-page navigation in this managed tab (a login page, a 2FA
-            // step, a post-login redirect, ...), not only the first one.
+            // step, a post-login redirect, ...), not only the first one, so
+            // every report below must be guarded instead of unconditional.
+            //
+            // `verification_browser_ready` is a per-SESSION milestone (one
+            // shared browser is allocated for the whole session; providers
+            // reuse it — see the catalogue's "Browser and provider
+            // execution" section), so the guard flag lives on `ctx.builder`
+            // and must NOT reset between providers — see
+            // `shouldEmitBrowserReady`.
+            if (
+              shouldEmitBrowserReady({
+                hasAlreadyEmittedBrowserReadyForSession: ctx.builder.hasReportedBrowserReady,
+              })
+            ) {
+              ctx.builder.hasReportedBrowserReady = true;
+              await ctx.builder.client.reportEventBestEffort(
+                ctx.builder.sessionId,
+                BUILDER_EVENTS.VERIFICATION_BROWSER_READY,
+                eventData,
+              );
+            }
             // `verification_page_ready` is a per-provider "page became
             // usable" milestone, so only the first load observed for the
             // current provider may report it — see `shouldEmitPageReady`.
@@ -185,11 +202,23 @@ export async function handleMessage(ctx, message, sender, sendResponse) {
                 eventData,
               );
             }
-            await ctx.builder.client.reportEventBestEffort(
-              ctx.builder.sessionId,
-              BUILDER_EVENTS.VERIFICATION_REQUEST_INTERCEPTOR_READY,
-              eventData,
-            );
+            // `verification_request_interceptor_ready` is also per-provider
+            // (the catalogue requires Provider fields for it, since request
+            // capture is reinstalled per provider page), so it resets with
+            // `currentProvider` — see `shouldEmitRequestInterceptorReady`.
+            if (
+              shouldEmitRequestInterceptorReady({
+                hasAlreadyEmittedRequestInterceptorReadyForProvider:
+                  ctx.builder.currentProvider.hasReportedRequestInterceptorReady,
+              })
+            ) {
+              ctx.builder.currentProvider.hasReportedRequestInterceptorReady = true;
+              await ctx.builder.client.reportEventBestEffort(
+                ctx.builder.sessionId,
+                BUILDER_EVENTS.VERIFICATION_REQUEST_INTERCEPTOR_READY,
+                eventData,
+              );
+            }
           }
           sendResponse({ success: true });
           break;
