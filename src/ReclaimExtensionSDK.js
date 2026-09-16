@@ -4,7 +4,11 @@ import initBackground from "./background/background";
 import { BACKEND_URL, API_ENDPOINTS, RECLAIM_SDK_ACTIONS } from "./utils/constants";
 import { LOG_CONFIG_STORAGE_KEY, DEFAULT_LOG_CONFIG } from "./utils/logger/constants";
 import { withClientSource, getClientSource } from "./utils/logger/client-source";
-import { BUILDER_BACKEND_URL, parseVerificationUrl } from "./utils/builder";
+import {
+  BROWSER_EXTENSION_VERIFICATION_CLIENT_ID,
+  BUILDER_BACKEND_URL,
+  parseVerificationUrl,
+} from "./utils/builder";
 
 // Global verification queue to serialize extension sessions (background is single-session)
 const _verificationQueue = [];
@@ -166,15 +170,14 @@ class ReclaimExtensionProofRequest {
     if (verification.mode !== "builder") {
       throw new Error("This verification URL is not a Builder api=2 URL");
     }
-    if (!options.verificationClientId) {
-      throw new Error("verificationClientId is required for Builder verification");
-    }
     const instance = new ReclaimExtensionProofRequest("builder", "builder", {
       ...options,
       builder: {
         apiVersion: "2",
         sessionId: verification.sessionId,
-        verificationClientId: options.verificationClientId,
+        // The extension is always the `reclaim-browser-extension` client, so
+        // it supplies its own id rather than trusting the page for one.
+        verificationClientId: BROWSER_EXTENSION_VERIFICATION_CLIENT_ID,
         claimantClientId: options.claimantClientId,
         backendUrl: options.backendUrl || BUILDER_BACKEND_URL,
         claimantDetails: options.claimantDetails || {},

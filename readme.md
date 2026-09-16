@@ -107,19 +107,17 @@ await request.startVerification();
 ### Builder mode (`api=2`)
 
 Create a Builder session with `verificationClientUrl` set to the registered
-extension URL. The session response includes `verificationUrl` and
-`verificationClientId`. The verification client id is a public routing
-identifier, not an authentication credential. Pass both values to the
-extension:
+extension URL, and pass the returned `verificationUrl` to the extension. That
+URL is all it needs: the extension supplies its own Verification Client id,
+because it is always the `reclaim-browser-extension` client.
 
 ```js
 import { reclaimExtensionSDK } from "@reclaimprotocol/browser-extension-sdk";
 
 // `session` is the response from your session-creation call:
-// { verificationUrl: string, verificationClientId: string }
+// { verificationUrl: string }
 async function startBuilderVerification(session) {
   const request = reclaimExtensionSDK.fromVerificationUrl(session.verificationUrl, {
-    verificationClientId: session.verificationClientId,
     extensionID: "your-chrome-extension-id", // omit inside the extension itself
   });
 
@@ -131,9 +129,10 @@ async function startBuilderVerification(session) {
 ```
 
 Use `initBuilder(verificationUrl, options)` when an asynchronous entry point is
-more convenient. Both entry points require a registered
-`verificationClientId`, reject URLs without an exact `api=2` query, and require
-a non-empty `sessionId`. They accept an optional HTTPS `backendUrl` and bounded
+more convenient. Both entry points reject URLs without an exact `api=2` query
+and require a non-empty `sessionId`. A session bound to a different
+Verification Client is rejected by Builder, so launch the extension only for a
+session created against the extension's registered URL. They accept an optional HTTPS `backendUrl` and bounded
 `claimantDetails`. If `claimantClientId` is omitted, the extension generates a
 UUID and persists it in extension storage. The extension automatically adds
 viewport and display dimensions, orientation, and all User-Agent Client Hints

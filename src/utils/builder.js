@@ -14,6 +14,23 @@ export { BUILDER_EVENTS };
 // existing API origin, but default Builder verification to the Builder origin.
 export const BUILDER_BACKEND_URL = "https://build.reclaimprotocol.org";
 
+/**
+ * Fixed, deployment-independent id for the browser-extension Verification
+ * Client.
+ *
+ * This value mirrors the `reclaim-browser-extension` entry in Builder's
+ * `BUILTIN_CLIENT_IDS` registry (`builder` repo,
+ * `packages/app/src/verification/builtin-clients.ts`). The two copies are
+ * necessarily duplicated across repos; changing one without the other breaks
+ * every caller that relies on the default.
+ *
+ * The extension knows which Verification Client it is, so a caller no longer
+ * supplies this. Taking an arbitrary id from the page would let the extension
+ * run a session recorded against a different client, leaving the dashboard
+ * naming a codebase that never ran.
+ */
+export const BROWSER_EXTENSION_VERIFICATION_CLIENT_ID = "00000000-0000-4000-8000-000000000005";
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**

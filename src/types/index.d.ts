@@ -28,8 +28,6 @@ export interface BuilderClaimantDetails {
 
 /** Builder-specific options. Legacy provider and callback options are ignored. */
 export interface BuilderInitOptions extends InitOptions {
-  /** Registered Builder Verification Client UUID. */
-  verificationClientId: string;
   /** Stable per-installation claimant UUID; generated and stored when omitted. */
   claimantClientId?: string;
   /** HTTPS Builder origin exposing `/verifications/sessions`; defaults to Builder. */

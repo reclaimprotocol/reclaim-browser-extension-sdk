@@ -12,6 +12,7 @@ import {
   interpolateBuilderHeaders,
   interpolateBuilderTemplate,
   mergeBuilderParameterSources,
+  BROWSER_EXTENSION_VERIFICATION_CLIENT_ID,
   normalizeVerificationClientId,
   parseVerificationUrl,
 } from "../src/utils/builder.js";
@@ -29,6 +30,21 @@ const VC_ID = "550e8400-e29b-41d4-a716-446655440000";
 test("canonicalizes Verification Client UUIDs for Builder API headers and payloads", () => {
   assert.equal(normalizeVerificationClientId(VC_ID.toUpperCase()), VC_ID);
   assert.throws(() => normalizeVerificationClientId("not-a-uuid"), /verificationClientId/);
+});
+
+test("pins the browser extension's own Verification Client id", () => {
+  // Builder's `BUILTIN_CLIENT_IDS` maps `reclaim-browser-extension` to this
+  // UUID, and every deployment seeds the same value. A caller no longer passes
+  // one: accepting an arbitrary id would let the extension run a session
+  // recorded against a different client.
+  assert.equal(
+    BROWSER_EXTENSION_VERIFICATION_CLIENT_ID,
+    "00000000-0000-4000-8000-000000000005",
+  );
+  assert.equal(
+    normalizeVerificationClientId(BROWSER_EXTENSION_VERIFICATION_CLIENT_ID),
+    BROWSER_EXTENSION_VERIFICATION_CLIENT_ID,
+  );
 });
 
 test("submits only canonical ReclaimRequestProof fields to Builder", () => {
