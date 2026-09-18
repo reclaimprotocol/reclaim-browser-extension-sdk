@@ -10,6 +10,7 @@ import { RECLAIM_SESSION_STATUS, MESSAGE_ACTIONS, MESSAGE_SOURCES } from "../uti
 import { removeCspStrippingRule } from "./cspRuleManager";
 import { generateProof, formatProof } from "../utils/proof-generator";
 import { createClaimObject } from "../utils/claim-creator";
+import { BUILDER_EVENTS, canonicalBuilderProof, createBuilderBridgeClient } from "../utils/builder";
 import { loggingHub } from "../utils/logger/LoggingHub";
 import { EVENT_TYPES } from "../utils/logger/constants";
 import { SessionTimerManager } from "../utils/session-timer";
@@ -50,7 +51,7 @@ const EXTRACTION_FAILURE_REPORTS = {
  * The response content the stage was looking at goes in the log PAYLOAD, never
  * in the message: the payload path gives the console the full value and the
  * endpoint a redacted, capped one. Interpolating it into the message published
- * the user's authenticated page content to the diagnostic endpoint.
+ * the claimant's authenticated page content to the diagnostic endpoint.
  *
  * Repeats are demoted to debug. The content script re-polls every
  * NETWORK_FILTERING_INTERVAL_MS, so an unresolvable redaction is retried for the
@@ -119,6 +120,11 @@ export default function initBackground() {
     providerDataMessage: new Map(),
     activeSessionId: null,
     _cspRuleId: null,
+    _cspRuleTimer: null,
+    _cspRuleGeneration: 0,
+    builder: null,
+    isBuilderMode: false,
+    isBuilderTransition: false,
     sessionTimerManager: new SessionTimerManager(),
     // Constants and dependencies
     fetchProviderData,
@@ -130,7 +136,12 @@ export default function initBackground() {
     EVENT_TYPES,
     generateProof,
     formatProof,
+    formatBuilderProof: (proof, requestData) => {
+      const formatted = formatProof(proof, requestData);
+      return canonicalBuilderProof(formatted, proof);
+    },
     createClaimObject,
+    createBuilderBridgeClient,
     loggingHub,
     // Methods to be set below
     processFilteredRequest: null,
@@ -216,12 +227,50 @@ export default function initBackground() {
         { eventType: EVENT_TYPES.STARTING_CLAIM_CREATION },
       );
 
+      if (ctx.builder) {
+        await ctx.builder.client.reportEventBestEffort(
+          ctx.builder.sessionId,
+          BUILDER_EVENTS.REQUEST_MATCHED,
+          builderRequestEventData(ctx, criteria),
+        );
+        // Stays diagnostic-gated, unlike the other Builder events this file
+        // reports: this fires once per intercepted request captured by the
+        // matcher, so a multi-page login flow can produce hundreds per
+        // session. Emitting it unconditionally would turn every session into
+        // a firehose of awaited Builder event POSTs, not an analytics signal.
+        if (ctx.builder.diagnosticMode) {
+          let observedUrl = request.url;
+          try {
+            const parsed = new URL(request.url);
+            observedUrl = `${parsed.origin}${parsed.pathname}`;
+          } catch {}
+          await ctx.builder.client.reportEventBestEffort(
+            ctx.builder.sessionId,
+            BUILDER_EVENTS.NETWORK_REQUEST_OBSERVED,
+            {
+              ...builderRequestEventData(ctx, criteria),
+              httpMethod: request.method,
+              url: observedUrl,
+            },
+          );
+        }
+      }
+
       let claimData = null;
       try {
         const criteriaWithGeo = {
           ...criteria,
+          // A requestClaim descriptor is created by the Builder provider
+          // script, not by the provider recipe matcher. Preserve the active
+          // mode so claim creation keeps Builder parameter precedence and
+          // independent response-redaction semantics.
+          ...(ctx.builder ? { builderMode: true } : {}),
           geoLocation: ctx.providerData?.geoLocation ?? "",
           extensionConfig: ctx.providerData?.extensionConfig,
+          templateParameters: ctx.parameters,
+          ...(ctx.builder?.currentProvider?.attestorAuthRequest
+            ? { attestorAuthRequest: ctx.builder.currentProvider.attestorAuthRequest }
+            : {}),
         };
         claimData = await ctx.createClaimObject(
           request,
@@ -234,13 +283,13 @@ export default function initBackground() {
         );
       } catch (error) {
         // A redaction that doesn't resolve against *this* response is not a
-        // failure — the page usually just hasn't rendered the data yet. Report
+        // failure — the page usually hasn't rendered the data yet. Report
         // it as retryable so the content script keeps polling, and leave the
         // session (and the popup) alone.
         //
         // This path exists because the authoritative xPath/jsonPath resolution
         // moved here from the content-script gate; before, a non-matching
-        // response was simply never forwarded.
+        // response was never forwarded.
         if (error?.retryable) {
           reportExtractionFailure(ctx, error, criteria);
           return { success: false, retryable: true, error: error.message };
@@ -258,6 +307,22 @@ export default function initBackground() {
           data: { requestHash: criteria.requestHash },
         });
 
+        if (ctx.builder) {
+          await ctx.builder.client.reportEventBestEffort(
+            ctx.builder.sessionId,
+            BUILDER_EVENTS.REQUEST_CLAIM_FAILED,
+            {
+              ...builderRequestEventData(ctx, criteria),
+              attempt: 1,
+              problem: {
+                title: "Claim creation failed",
+                reasonCode: "CLAIM_CREATION_FAILED",
+                retryable: false,
+              },
+            },
+          );
+        }
+
         ctx.failSession("Claim creation failed: " + error.message, criteria.requestHash);
         return { success: false, error: error.message };
       }
@@ -274,6 +339,13 @@ export default function initBackground() {
           "background.claim",
           { eventType: EVENT_TYPES.CLAIM_CREATION_STARTED },
         );
+        if (ctx.builder) {
+          await ctx.builder.client.reportEventBestEffort(
+            ctx.builder.sessionId,
+            BUILDER_EVENTS.REQUEST_CLAIM_CREATED,
+            { ...builderRequestEventData(ctx, criteria), attempt: 1 },
+          );
+        }
       }
       const providerRequest = {
         url: criteria?.url || request?.url || "",
@@ -306,6 +378,23 @@ export default function initBackground() {
     }
   };
 
+  function builderRequestEventData(context, criteria) {
+    const current = context.builder?.currentProvider;
+    const requests = current?.providerData?.requestData || [];
+    const requestOrdinal = requests.findIndex(
+      (request) => request.requestHash === criteria?.requestHash,
+    );
+    const request = requestOrdinal >= 0 ? requests[requestOrdinal] : undefined;
+    return {
+      providerId: current?.recipe?.providerId,
+      resolvedVersion: current?.recipe?.resolvedVersion,
+      ordinal: context.builder?.providerOrdinal,
+      ...(requestOrdinal >= 0 ? { requestOrdinal } : {}),
+      ...(request?.builderRequestId ? { requestId: request.builderRequestId } : {}),
+    };
+  }
+
+  // Set up session timer callbacks
   ctx.sessionTimerManager.setCallbacks((message, requestHash) =>
     ctx.failSession(message, requestHash, EVENT_TYPES.CLAIM_CREATION_TIMED_OUT_EXCEPTION),
   );
@@ -324,8 +413,14 @@ export default function initBackground() {
     const lostActive = tabId === ctx.activeTabId;
     const noManagedLeft = ctx.managedTabs.size === 0;
 
-    // If there is an active session and we lost its tab(s), fail immediately.
-    if (ctx.activeSessionId && (lostActive || noManagedLeft) && !ctx.aborted) {
+    // If there is an active session and we lost its active tab or every
+    // managed tab, fail immediately.
+    if (
+      ctx.activeSessionId &&
+      (lostActive || noManagedLeft) &&
+      !ctx.aborted &&
+      !ctx.isBuilderTransition
+    ) {
       ctx.aborted = true;
       try {
         loggingHub.error("[BACKGROUND] Verification tab closed by user", "background.tab", {
