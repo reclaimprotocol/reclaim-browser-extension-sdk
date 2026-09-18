@@ -442,9 +442,14 @@ export async function submitProofs(ctx) {
       );
     }
 
+    // A proof's own `publicData` comes from the attestor and is part of what
+    // was signed, so it wins. `ctx.publicData` is a session-scoped value only a
+    // provider script sets via UPDATE_PUBLIC_DATA, and it used to overwrite the
+    // attestor's unconditionally — destroying a signed field on every proof
+    // that carried one, silently, since the formatter had just preserved it.
     const finalProofs = formattedProofs.map((fp) => ({
       ...fp,
-      publicData: ctx.publicData ?? null,
+      publicData: fp.publicData ?? ctx.publicData ?? null,
     }));
 
     // At INFO the identifier, signatures, witnesses and providerRequest survive
