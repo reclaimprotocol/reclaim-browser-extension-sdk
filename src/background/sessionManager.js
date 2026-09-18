@@ -442,14 +442,22 @@ export async function submitProofs(ctx) {
       );
     }
 
-    // A proof's own `publicData` comes from the attestor and is part of what
-    // was signed, so it wins. `ctx.publicData` is a session-scoped value only a
-    // provider script sets via UPDATE_PUBLIC_DATA, and it used to overwrite the
-    // attestor's unconditionally — destroying a signed field on every proof
-    // that carried one, silently, since the formatter had just preserved it.
+    // Builder mode: a proof's own `publicData` comes from the attestor and is
+    // part of what was signed, so it wins. `ctx.publicData` is a session-scoped
+    // value only a provider script sets via UPDATE_PUBLIC_DATA, and it used to
+    // overwrite the attestor's unconditionally — silently destroying a signed
+    // field the formatter had just preserved, which breaks the contract's
+    // "preserve every Proof object exactly".
+    //
+    // Legacy keeps the old precedence deliberately. That path ships today and
+    // its formatter also sets `publicData`, so preferring the proof's value
+    // there would change what live integrations receive. Builder mode is the
+    // only thing these changes may affect.
     const finalProofs = formattedProofs.map((fp) => ({
       ...fp,
-      publicData: fp.publicData ?? ctx.publicData ?? null,
+      publicData: ctx.builder
+        ? fp.publicData ?? ctx.publicData ?? null
+        : ctx.publicData ?? null,
     }));
 
     // At INFO the identifier, signatures, witnesses and providerRequest survive
