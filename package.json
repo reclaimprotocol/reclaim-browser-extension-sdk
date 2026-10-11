@@ -152,7 +152,7 @@
     "webpack": "^5.75.0",
     "webpack-bundle-analyzer": "^4.10.2",
     "webpack-cli": "^4.10.0",
-    "webpack-dev-server": "5.2.2",
+    "webpack-dev-server": "5.2.6",
     "webpack-ext-reloader": "^1.1.12",
     "zip-webpack-plugin": "^4.0.1"
   },
