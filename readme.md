@@ -32,6 +32,11 @@ npm run reclaim-extension-setup
 
 This also downloads the ZK circuits (~280 MB, cached after the first run).
 
+Setup always copies the Stwo WASM shipped with the installed ZK package over the downloaded
+copy, so cached circuits cannot keep an older prover after an upgrade. Rebuild and reload
+your extension after running setup. The updated Stwo proof format requires an updated
+attestor verifier; proofs created with the previous format must be regenerated.
+
 ## 2. Update your manifest
 
 ```json

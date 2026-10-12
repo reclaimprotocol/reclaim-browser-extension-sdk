@@ -310,7 +310,8 @@ line make several versions unusable, and neither fails at install time:
 | 5.1.0-dev.1  | yes                      | yes (but a prerelease)  |
 | 5.1.0        | **no — 404**             | n/a                     |
 | 5.1.1        | yes                      | yes                     |
-| **5.1.3** ✅ | yes                      | **yes**                 |
+| 5.1.3        | yes                      | yes                     |
+| **5.1.5** ✅ | yes                      | **yes**                 |
 
 - 5.1.0 dropped `browser/resources/attestor-browser.min.mjs` from the tarball (unpacked size
   2.64 MB → 1.02 MB) while still declaring `exports["./browser"]`, which
@@ -333,7 +334,15 @@ line make several versions unusable, and neither fails at install time:
 the pinned version ships the bundle and that the bundle references `DEFAULT_ZK_ENGINE`. **Run `npm test`
 after any attestor bump** — that test turns both regressions from a runtime failure into a test failure.
 
-**What a bump has to be checked against**, beyond that test — all of it re-verified for 5.1.3:
+The current dependencies are pinned to attestor **5.1.5** and zk-symmetric-crypto **5.1.7**.
+The ZK release ships the public-input-binding fix from zk-symmetric-crypto PR #47 in
+`lib/stwo/s2circuits_bg.wasm`, but its download script still fetches an older resource commit.
+`install-assets.js` therefore always overwrites the consumer's downloaded Stwo WASM with the
+installed package's `lib/stwo/s2circuits_bg.wasm`. The downloaded web glue is compatible with
+this artifact. Do not remove the overwrite: simply bumping the dependencies leaves browsers
+on the old prover. Both prover and verifier need the updated proof format.
+
+**What a bump has to be checked against**, beyond that test — all of it re-verified for 5.1.5:
 
 - `exports["./browser"]` resolves and the bundle exports `createClaimOnAttestor`
   ([offscreen.js](src/offscreen/offscreen.js)); `exports["./external-rpc"]` exports
