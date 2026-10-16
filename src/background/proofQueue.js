@@ -78,6 +78,7 @@ export async function processNextQueueItem(ctx) {
         publicData: ctx.publicData ?? null,
       },
       loggingHub,
+      { skipLegacyStatus: Boolean(ctx.builder) },
     );
 
     if (ctx.aborted) {
@@ -125,7 +126,7 @@ export async function processNextQueueItem(ctx) {
       ctx.sessionTimerManager.resetSessionTimer();
     }
   } catch (error) {
-    // Not every rejection down this path is an Error: the offscreen bridge used
+    // Not every rejection down this path is an Error: older offscreen code used
     // to reject a bare `{success, error}` literal, which made this line — the
     // session's only explanation of a proof failure — read "…: undefined", and
     // put that same string on the consumer's Promise. Fixed at the source, but
