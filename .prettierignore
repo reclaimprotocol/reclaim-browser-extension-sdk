@@ -19,3 +19,4 @@ examples/
 coverage/
 .tmp/
 .DS_Store
+src/content/login-detector/login_script.js

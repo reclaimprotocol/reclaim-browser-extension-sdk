@@ -12,6 +12,7 @@ import {
   MATCH_STAGES,
   MATCH_STAGE_ORDER,
 } from "../utils/claim-creator/network-filter";
+import { startLoginDetection } from "./login-detector";
 import { createRemoteLogger } from "../utils/logger/RemoteLogger";
 import { LOG_CONFIG_STORAGE_KEY, EVENT_TYPES } from "../utils/logger/constants";
 import {
@@ -276,7 +277,9 @@ class ReclaimContentScript {
     this.sessionId = null;
     this.providerId = null;
     this.appId = null;
+    this.builderMetadata = null;
     this.filteringInterval = null;
+    this.loginDetection = null;
     this.filteringStartTime = null;
     this.filteredRequests = [];
     this.isFiltering = false;
@@ -394,6 +397,7 @@ class ReclaimContentScript {
               this.sessionId = response.data.sessionId;
               this.providerId = response.data.providerId || "unknown";
               this.appId = response.data.appId || "unknown";
+              this.builderMetadata = response.data.builder || null;
 
               logger.info(
                 "[Content] Provider data received from background script",
@@ -462,6 +466,7 @@ class ReclaimContentScript {
                 this.startNetworkFiltering();
               }
               this.setupUrlListener();
+              this.startBuilderLoginDetection();
             }
           },
         );
@@ -495,6 +500,7 @@ class ReclaimContentScript {
         this.sessionId = data.sessionId;
         this.providerId = data.providerId || "unknown";
         this.appId = data.appId || "unknown";
+        this.builderMetadata = data.builder || null;
 
         localStorage.setItem(
           "reclaimBrowserExtensionParameters",
@@ -528,6 +534,7 @@ class ReclaimContentScript {
         }
 
         this.setupUrlListener();
+        this.startBuilderLoginDetection();
 
         logger.info(
           "[Content] Provider data received, starting network filtering",
@@ -945,6 +952,29 @@ class ReclaimContentScript {
         () => {},
       );
       logger.info("[Content] Expect many claims set", "content.claim");
+      return;
+    }
+
+    if (
+      action === RECLAIM_SDK_ACTIONS.REQUIRES_USER_INTERACTION &&
+      typeof data?.required === "boolean"
+    ) {
+      chrome.runtime.sendMessage({
+        action: MESSAGE_ACTIONS.UPDATE_USER_INTERACTION_REQUIREMENT,
+        source: MESSAGE_SOURCES.CONTENT_SCRIPT,
+        target: MESSAGE_SOURCES.BACKGROUND,
+        data: { required: data.required },
+      });
+      return;
+    }
+
+    if (action === RECLAIM_SDK_ACTIONS.REPORT_USER_LOGGED_IN) {
+      chrome.runtime.sendMessage({
+        action: MESSAGE_ACTIONS.REPORT_USER_LOGGED_IN,
+        source: MESSAGE_SOURCES.CONTENT_SCRIPT,
+        target: MESSAGE_SOURCES.BACKGROUND,
+        data: {},
+      });
       return;
     }
 
@@ -1486,6 +1516,30 @@ class ReclaimContentScript {
     }
   }
 
+  /**
+   * Builder mode only: poll the portal's login probe and forward results to
+   * the background, which owns the sign-in state machine. Restarts on each
+   * provider data delivery; stops when the background says the provider
+   * execution is no longer active.
+   */
+  startBuilderLoginDetection() {
+    if (!this.builderMetadata) return;
+    this.loginDetection?.stop();
+    this.loginDetection = startLoginDetection(async ({ indicator, hasPassword }) => {
+      try {
+        const resp = await chrome.runtime.sendMessage({
+          action: MESSAGE_ACTIONS.REPORT_LOGIN_PROBE,
+          source: MESSAGE_SOURCES.CONTENT_SCRIPT,
+          target: MESSAGE_SOURCES.BACKGROUND,
+          data: { indicator, hasPassword },
+        });
+        return resp?.active !== false;
+      } catch {
+        return true;
+      }
+    });
+  }
+
   setupUrlListener() {
     let lastUrl = window.location.href;
 
@@ -1494,6 +1548,7 @@ class ReclaimContentScript {
       const currentUrl = window.location.href;
       if (currentUrl !== lastUrl) {
         lastUrl = currentUrl;
+        this.loginDetection?.notifyUrlChange();
         // Your logic here
         if (!this.providerData?.disableRequestReplay) {
           chrome.runtime.sendMessage({

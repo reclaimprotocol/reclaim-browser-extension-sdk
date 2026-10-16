@@ -1,3 +1,5 @@
+import { shortSessionId } from "../../utils/session-display.js";
+
 export function createProviderVerificationPopup(
   providerName,
   description,
@@ -104,6 +106,9 @@ export function createProviderVerificationPopup(
     const renderedHTML = htmlTemplate
       // .replace(/\{\{logoUrl\}\}/g, chrome.runtime.getURL("assets/img/logo.png"))
       .replace(/\{\{providerName\}\}/g, providerName)
+      // Order matters: the longer placeholder is replaced first, or
+      // `{{sessionId}}` would match the prefix of `{{sessionIdShort}}`.
+      .replace(/\{\{sessionIdShort\}\}/g, shortSessionId(sessionId))
       .replace(/\{\{sessionId\}\}/g, sessionId);
 
     popup.innerHTML = renderedHTML;
@@ -188,7 +193,11 @@ export function createProviderVerificationPopup(
 
         if (targetElement) {
           try {
-            const textToCopy = targetElement.textContent.trim();
+            // The element renders a shortened id; `data-full-value` carries
+            // the whole one so copying still yields something usable.
+            const textToCopy = (
+              targetElement.getAttribute("data-full-value") ?? targetElement.textContent
+            ).trim();
 
             if (navigator.clipboard && navigator.clipboard.writeText) {
               await navigator.clipboard.writeText(textToCopy);
